@@ -548,6 +548,11 @@ config HAPPYMEAL
 	  To compile this driver as a module, choose M here: the module
 	  will be called sunhme.
 
+config OPENCORES_ETHERNET
+       tristate "Opencores.org Ethernet MAC driver"
+       depends on NET_ETHERNET
+       help
+	  
 config SUNBMAC
 	tristate "Sun BigMAC 10/100baseT support (EXPERIMENTAL)"
 	depends on SBUS && EXPERIMENTAL
