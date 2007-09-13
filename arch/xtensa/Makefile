@@ -14,6 +14,7 @@
 # (Use VAR=<xtensa_config> to use another default compiler.)
 
 variant-$(CONFIG_XTENSA_VARIANT_FSF)		:= fsf
+variant-$(CONFIG_XTENSA_VARIANT_DC232L)		:= dc232l
 variant-$(CONFIG_XTENSA_VARIANT_LINUX_CUSTOM)	:= custom
 
 VARIANT = $(variant-y)

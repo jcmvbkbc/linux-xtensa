@@ -59,6 +59,9 @@ choice
 
 config XTENSA_VARIANT_FSF
 	bool "fsf"
+
+config XTENSA_VARIANT_DC232L
+	bool "dc232l"
 endchoice
 
 config MMU
