@@ -28,6 +28,7 @@ export VARIANT
 platform-$(CONFIG_XTENSA_PLATFORM_XT2000)	:= xt2000
 platform-$(CONFIG_XTENSA_PLATFORM_ISS)		:= iss
 platform-$(CONFIG_XTENSA_PLATFORM_S6105)	:= s6105
+platform-$(CONFIG_XTENSA_PLATFORM_LX60)		:= lx60
 
 PLATFORM = $(platform-y)
 export PLATFORM

@@ -158,6 +158,14 @@ config XTENSA_PLATFORM_S6105
 	select SERIAL_CONSOLE
 	select NO_IOPORT
 
+config XTENSA_PLATFORM_LX60
+	bool "LX60"
+	select SERIAL_CONSOLE
+	select ETHOC
+	help
+	  LX60 is the name of the new Tensilica board.
+	  This hardware is capable of running a full Linux distribution.
+
 endchoice
 
 
