@@ -61,7 +61,7 @@ SECTIONS
 	_end = .;
 	_param_start = .;
 
-	.ResetVector.text 0xfe000020 :
+	.ResetVector.text 0xfe000000 :
 	{
 		*(.ResetVector.text)
 	}
