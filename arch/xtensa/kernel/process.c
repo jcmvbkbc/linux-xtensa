@@ -230,7 +230,7 @@ void do_copy_regs (xtensa_gregset_t *elfregs, struct pt_regs *regs,
 	memset (elfregs->ar, 0, sizeof(elfregs->ar));
 
 	wb_offset = regs->windowbase * 4;
-	n = (regs->wmask&1)? 4 : (regs->wmask&2)? 8 : (regs->wmask&4)? 12 : 16;
+	n = (regs->wmask&2)? 4 : (regs->wmask&4)? 8 : (regs->wmask&8)? 12 : 16;
 
 	for (i = 0; i < n; i++)
 		elfregs->ar[(wb_offset + i) % XCHAL_NUM_AREGS] = regs->areg[i];
@@ -277,15 +277,15 @@ void do_restore_regs (xtensa_gregset_t *elfregs, struct pt_regs *regs,
 	/* Copy regs from live window frame. */
 
 	wb_offset = regs->windowbase * 4;
-	n = (regs->wmask&1)? 4 : (regs->wmask&2)? 8 : (regs->wmask&4)? 12 : 16;
+	n = (regs->wmask&2)? 4 : (regs->wmask&4)? 8 : (regs->wmask&8)? 12 : 16;
 
 	for (i = 0; i < n; i++)
-		regs->areg[(wb_offset+i) % XCHAL_NUM_AREGS] = elfregs->ar[i];
+		regs->areg[i] = elfregs->ar[(wb_offset+i) % XCHAL_NUM_AREGS];
 
 	n = (regs->wmask >> 4) * 4;
 
 	for (i = XCHAL_NUM_AREGS - n; n > 0; i++, n--)
-		regs->areg[(wb_offset+i) % XCHAL_NUM_AREGS] = elfregs->ar[i];
+		regs->areg[i] = elfregs->ar[(wb_offset+i) % XCHAL_NUM_AREGS];
 }
 
 /*
