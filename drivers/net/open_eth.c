@@ -57,6 +57,7 @@
 #include <linux/init.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/device.h>
 #include <linux/skbuff.h>
 #include <linux/module.h>
 #include <linux/ethtool.h>
@@ -119,7 +120,9 @@ struct oeth_private {
 	u8 tx_full;		/* Buffer ring full indicator */
 	u8 rx_cur;		/* Next buffer to be checked if packet received */
 	spinlock_t lock;
-	spinlock_t rx_lock;
+	spinlock_t napi_lock;
+	struct napi_struct napi;
+	unsigned int reschedule_in_poll;
 	struct net_device_stats stats;
 #if CONFIG_MII
 	struct mii_if_info mii_if;	/* MII lib hooks/info */
@@ -159,11 +162,15 @@ static int oeth_open(struct net_device *dev)
 	/*FIXME: just for debugging.... */
 	memset((void *)OETH_SRAM_BUFF_BASE, 0, 0x4000);
 
+	napi_enable(&cep->napi);
+
 	/* Install our interrupt handler. */
 	ret = request_irq(OETH_IRQ, oeth_interrupt, OETH_REQUEST_IRQ_FLAG,
 			  dev->name, (void *)dev);
 	if (ret) {
-		printk("request_irq failed for the Opencore ethernet device\n");
+		dev_err(&dev->dev, "request_irq failed for the Opencore "
+				"ethernet device\n");
+		napi_disable(&cep->napi);
 		return ret;
 	}
 	/* Enable the receiver and transmiter. */
@@ -180,6 +187,9 @@ static int oeth_close(struct net_device *dev)
 	struct oeth_regs *regs = cep->regs;
 	volatile struct oeth_bd *bdp;
 	int i;
+
+	netif_stop_queue(dev);
+	napi_disable(&cep->napi);
 
 	spin_lock_irq(&cep->lock);
 	/* Disable the receiver and transmiter. */
@@ -213,7 +223,7 @@ static int oeth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	if (cep->tx_full) {
 		/* All transmit buffers are full.  Bail out. */
-		printk("%s: tx queue full!.\n", dev->name);
+		dev_warn(&dev->dev, "tx queue full!.\n");
 		netif_stop_queue(dev);
 		spin_unlock_irqrestore(&cep->lock, flags);
 		return NETDEV_TX_BUSY;
@@ -221,7 +231,6 @@ static int oeth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	/* Fill in a Tx ring entry. */
 	bdp = cep->tx_bd_base + cep->tx_next;
-
 	len_status = bdp->len_status;
 
 	/* Clear all of the status flags. */
@@ -239,7 +248,7 @@ static int oeth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	if (skb->len > OETH_TX_BUFF_SIZE) {
 		if (net_ratelimit())
-			printk("%s: tx frame too long!.\n", dev->name);
+			dev_warn(&dev->dev, "tx frame too long!.\n");
 		dev_kfree_skb_irq(skb);
 		spin_unlock_irqrestore(&cep->lock, flags);
 		return NETDEV_TX_OK;
@@ -307,12 +316,18 @@ static irqreturn_t oeth_interrupt(int irq, void *dev_id)
 	   copy the packet from the internal buffer to an skb, doing
 	   that in an interrupt handler increases interrupt
 	   latency. */
-	if (int_events & (OETH_INT_RXF | OETH_INT_RXE | OETH_INT_BUSY))
-		if (netif_rx_schedule_prep(dev)) {
+	if (int_events & (OETH_INT_RXF | OETH_INT_RXE | OETH_INT_BUSY)
+	    && !cep->reschedule_in_poll) {
+		spin_lock(&cep->napi_lock);
+		if (netif_rx_schedule_prep(dev, &cep->napi)) {
 			regs->int_mask &= ~(OETH_INT_MASK_RXF
 					    | OETH_INT_MASK_RXE);
-			__netif_rx_schedule(dev);
+			__netif_rx_schedule(dev, &cep->napi);
+		} else {
+			cep->reschedule_in_poll++;
 		}
+		spin_unlock(&cep->napi_lock);
+	}
 
 	/* Handle transmit event in its own function. */
 	if (int_events & (OETH_INT_TXB | OETH_INT_TXE)) {
@@ -489,8 +504,7 @@ static unsigned int oeth_rx(struct net_device *dev, int budget)
 				panic("address exceeds the buffer!\n");
 			dann_rx_count++;
 		} else {
-			printk("%s: Memory squeeze, dropping packet.\n",
-			       dev->name);
+			dev_warn(&dev->dev,"Memory squeeze, dropping packet.\n");
 			cep->stats.rx_dropped++;
 		}
 
@@ -509,32 +523,44 @@ static unsigned int oeth_rx(struct net_device *dev, int budget)
 	return received;
 }
 
-static int oeth_poll(struct net_device *dev, int *budget)
+static int oeth_poll(struct napi_struct *napi, int budget)
 {
-	struct oeth_private *cep = netdev_priv(dev);
-	int orig_budget = min(*budget, dev->quota);
-	int done = 1;
-	unsigned int work_done;
+	struct oeth_private *cep = container_of(napi,struct oeth_private, napi);
+	struct net_device *dev = cep->mii_if.dev;
+	int work_done = 0;
 
-	spin_lock(&cep->rx_lock);
+rx_action:
+	oeth_tx(dev);
 
-	work_done = oeth_rx(dev, orig_budget);
-	if (likely(work_done > 0)) {
-		*budget -= work_done;
-		dev->quota -= work_done;
-		done = (work_done < orig_budget);
-		cep->stats.rx_fifo_errors++;
-	} else
-		cep->stats.rx_missed_errors++;
+	work_done += oeth_rx(dev, budget);
 
-	if (done) {
-		/* Stop polling and reenable interrupts. */
-		__netif_rx_complete(dev);
-		cep->regs->int_mask |= (OETH_INT_MASK_RXF | OETH_INT_MASK_RXE);
+	if (netif_running(dev) && (work_done < budget)) {
+		unsigned long flags;
+		int more;
+
+		spin_lock_irqsave(&cep->napi_lock, flags);
+
+		more = cep->reschedule_in_poll;
+		if (!more) {
+			/* Stop polling and reenable interrupts. */
+			__netif_rx_complete(dev, napi);
+			cep->regs->int_mask |= 
+				(OETH_INT_MASK_RXF | OETH_INT_MASK_RXE);
+		} else {
+			cep->reschedule_in_poll--;
+		}
+
+		spin_unlock_irqrestore(&cep->napi_lock, flags);
+
+		if (more)
+			goto rx_action;
+
+	//	cep->stats.rx_fifo_errors++;
 	}
-	spin_unlock(&cep->rx_lock);
+	//	cep->stats.rx_missed_errors++;
 
-	return !done;
+
+	return work_done;
 }
 
 static struct net_device_stats *oeth_get_stats(struct net_device *dev)
@@ -573,7 +599,7 @@ static struct net_device *__devinit oeth_probe(int unit)
 		return ERR_PTR(-ENOMEM);
 
 	if (!check_mem_region(OETH_BASE_ADDR, OETH_REGS_SIZE)) {
-		SET_MODULE_OWNER(dev);
+		//SET_MODULE_OWNER(dev);
 		if (oeth_init(dev, OETH_BASE_ADDR, OETH_IRQ) == 0) {
 			if (register_netdev(dev))
 				printk(KERN_WARNING
@@ -651,7 +677,7 @@ static int mdio_read(struct net_device *dev, int phy_id, int location)
 	regs->miicommand = OETH_MIICOMMAND_RSTAT;
 
 	/* Check if the MII is done. */
-	for (i = 10000; i >= 0; i--) {
+	for (i = 100; i >= 0; i--) {
 		v = regs->miistatus;
 		if (!(v & OETH_MIISTATUS_BUSY)) {
 			read_value = regs->miirx_data;
@@ -660,8 +686,9 @@ static int mdio_read(struct net_device *dev, int phy_id, int location)
 			regs->miicommand = 0;
 			return read_value;
 		}
+		msleep(10);
 	}
-	printk(KERN_ERR "mdio_read timeout %s\n", dev->name);
+	dev_warn(&dev->dev, "mdio_read timeout\n");
 	return -1;
 }
 
@@ -677,12 +704,13 @@ static void mdio_write(struct net_device *dev, int phy_id, int location,
 	regs->miitx_data = value;
 	regs->miicommand = OETH_MIICOMMAND_WCTRLDATA;
 	/* Check if the MII is done. */
-	for (i = 10000; i >= 0; i--) {
+	for (i = 100; i >= 0; i--) {
 		v = regs->miistatus;
 		if (!(v & OETH_MIISTATUS_BUSY))
 			return;
+		msleep(10);
 	}
-	printk(KERN_ERR "mdio_write timeout %s\n", dev->name);
+	dev_warn(&dev->dev, "mdio_write timeout\n");
 }
 
 /* Initialize the Open Ethernet MAC. */
@@ -697,7 +725,7 @@ static int oeth_init(struct net_device *dev, unsigned int base_addr,
 
 	/* Initialize the locks. */
 	spin_lock_init(&cep->lock);
-	spin_lock_init(&cep->rx_lock);
+	spin_lock_init(&cep->napi_lock);
 
 	/* Memory regions for the controller registers and buffer space. */
 	request_region(base_addr, OETH_REGS_SIZE, DRV_NAME);
@@ -774,9 +802,8 @@ static int oeth_init(struct net_device *dev, unsigned int base_addr,
 					break;
 			}
 			if (res & BMCR_RESET) {
-				printk(KERN_ERR
-				       "%s PHY reset timeout BMCR:0x%08x!\n",
-				       dev->name, res);
+				dev_warn (&dev->dev,
+					"PHY reset timeout BMCR:0x%08x!\n",res);
 				return -1;
 			}
 		}
@@ -858,13 +885,17 @@ static int oeth_init(struct net_device *dev, unsigned int base_addr,
 	dev->stop	     = oeth_close;
 	dev->get_stats	     = oeth_get_stats;
 	dev->set_mac_address = oeth_set_mac_address;
-	dev->poll	     = oeth_poll;
-	dev->weight	     = OETH_RXBD_NUM * 2 - 4;
+
+	netif_napi_add(dev, &cep->napi, oeth_poll, OETH_RXBD_NUM * 2 - 4);
 	dev->irq	     = irq;
 	/* FIXME: Something needs to be done with dev->tx_timeout and
 	   dev->watchdog timeout here. */
 
-	printk(KERN_INFO "Open Ethernet Core Version 1.0\n");
+	printk(KERN_INFO "Open Ethernet Core Version 1.0 "
+		         "(ADDR: %02x:%02x:%02x:%02x:%02x:%02x)\n",
+			 dev->dev_addr[0], dev->dev_addr[1],
+			 dev->dev_addr[2], dev->dev_addr[3],
+			 dev->dev_addr[4], dev->dev_addr[5]);
 
 	return 0;
 }
