@@ -19,7 +19,8 @@ config XTENSA
 	  primarily for embedded systems.  These processors are both
 	  configurable and extensible.  The Linux port to the Xtensa
 	  architecture supports all processor configurations and extensions,
-	  with reasonable minimum requirements.  The Xtensa Linux project has
+	  with reasonable minimum requirements, including the Diamond 232L
+	  Standard Core.  The Xtensa Linux project has
 	  a home page at <http://xtensa.sourceforge.net/>.
 
 config RWSEM_XCHGADD_ALGORITHM
@@ -55,21 +56,61 @@ menu "Processor type and features"
 
 choice
 	prompt "Xtensa Processor Configuration"
-	default XTENSA_VARIANT_FSF
+	default XTENSA_VARIANT_DC232A
+
+config XTENSA_VARIANT_MMUBASELE
+	bool "mmubasele - base little-endian processor configuration"
+	help
+	This actually refers to a base little-endian processor configuration (mmubasele)
+	that is a subset of the Diamond 232L Standard cores.
+
+config XTENSA_VARIANT_DC232A
+	bool "dc232a - Diamond 232L Standard Core Rev.A (LE)"
+	help
+	This variant refers to Tensilica's Diamond 232L Standard core Rev.A (LE).
+
+config XTENSA_VARIANT_DC232B
+	bool "dc232b - Diamond 232L Standard Core Rev.B (LE)"
+	help
+	This variant refers to Tensilica's Diamond 232L Standard core Rev.B (LE).
 
 config XTENSA_VARIANT_FSF
 	bool "fsf"
+	#  remove this option?
 
-config XTENSA_VARIANT_DC232L
-	bool "dc232l"
+config XTENSA_VARIANT_CUSTOM
+	bool "Custom Xtensa processor configuration"
+	help
+	Select this variant to use a custom Xtensa processor configuration.
+	You will be prompted for a processor variant name.
+
 endchoice
+
+config XTENSA_VARIANT_CUSTOM_NAME
+	string "Xtensa Processor Custom Variant Name"
+	depends on XTENSA_VARIANT_CUSTOM
+	default ""
+	help
+	  Provide the name of a custom Xtensa processor variant.
+	  The name should match what was provided to the overlay generation
+	  script.  This same NAME selects include/asm-xtensa/variant-NAME
+	  and the xtensa_NAME prefix for the toolchain.
+
+config XTENSA_VARIANT_NAME
+	string
+	depends on XTENSA_VARIANT_CUSTOM
+	default "dc232l" if XTENSA_VARIANT_MMUBASELE
+	default "dc232a" if XTENSA_VARIANT_DC232A
+	default "dc232b" if XTENSA_VARIANT_DC232B
+	default "fsf" if XTENSA_VARIANT_FSF
+	default XTENSA_VARIANT_CUSTOM_NAME if XTENSA_VARIANT_CUSTOM
 
 config MMU
 	bool
 	default y
 
 config XTENSA_UNALIGNED_USER
-	bool "Unaligned memory access in use space"
+	bool "Unaligned memory access in user space"
 	---help---
 	   The Xtensa architecture currently does not handle unaligned
 	   memory accesses in hardware but through an exception handler.
@@ -121,7 +162,7 @@ config XTENSA_PLATFORM_LX60
 	bool "LX60"
 	select OPENCORES_ETHERNET
 	help
-	  LX60 is the name of the new Tensilica board. 
+	  LX60 (XTAV60) is the name of the new Tensilica board. 
 	  This hardware is capable of running a full Linux distribution.
 
 endchoice
