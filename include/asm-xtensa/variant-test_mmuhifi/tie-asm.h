@@ -68,7 +68,7 @@
 	s32i	\at1, \ptr, .Lxchal_ofs_ + 0
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	.endm	// xchal_ncptie_store
+	.endm	// xchal_ncp_store
 
 /* Macro to save all non-coprocessor (extra) custom TIE and optional state
  * (not including zero-overhead loop registers).
@@ -109,7 +109,7 @@
 	wur	\at1, THREADPTR		// threadptr option
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	.endm	// xchal_ncptie_load
+	.endm	// xchal_ncp_load
 
 
 
@@ -148,6 +148,7 @@
 	AE_SQ56S.I aeq1, \ptr,  24
 	AE_SQ56S.I aeq2, \ptr,  32
 	AE_SQ56S.I aeq3, \ptr,  40
+	.set	.Lxchal_pofs_, .Lxchal_pofs_ + 64
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 112
 	.endif
 	.endm	// xchal_cp1_store
@@ -183,6 +184,7 @@
 	AE_LP24X2.I aep5, \ptr,  -24
 	AE_LP24X2.I aep6, \ptr,  -16
 	AE_LP24X2.I aep7, \ptr,  -8
+	.set	.Lxchal_pofs_, .Lxchal_pofs_ + 80
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 112
 	.endif
 	.endm	// xchal_cp1_load

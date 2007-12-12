@@ -62,7 +62,7 @@
 	s32i	\at1, \ptr, .Lxchal_ofs_ + 0
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	.endm	// xchal_ncptie_store
+	.endm	// xchal_ncp_store
 
 /* Macro to save all non-coprocessor (extra) custom TIE and optional state
  * (not including zero-overhead loop registers).
@@ -97,7 +97,7 @@
 	wur	\at1, THREADPTR		// threadptr option
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	.endm	// xchal_ncptie_load
+	.endm	// xchal_ncp_load
 
 
 

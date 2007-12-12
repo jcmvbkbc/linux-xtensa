@@ -76,6 +76,30 @@
  XCHAL_SA_REG(s,0,0,0,1,             m3, 4, 4, 4,0x0223,  sr,35 , 32,0,0,0) \
  XCHAL_SA_REG(s,0,2,1,1,      threadptr, 4, 4, 4,0x03E7,  ur,231, 32,0,0,0)
 
+#define XCHAL_CP0_SA_NUM	0
+#define XCHAL_CP0_SA_LIST(s)	/* empty */
+
+#define XCHAL_CP1_SA_NUM	0
+#define XCHAL_CP1_SA_LIST(s)	/* empty */
+
+#define XCHAL_CP2_SA_NUM	0
+#define XCHAL_CP2_SA_LIST(s)	/* empty */
+
+#define XCHAL_CP3_SA_NUM	0
+#define XCHAL_CP3_SA_LIST(s)	/* empty */
+
+#define XCHAL_CP4_SA_NUM	0
+#define XCHAL_CP4_SA_LIST(s)	/* empty */
+
+#define XCHAL_CP5_SA_NUM	0
+#define XCHAL_CP5_SA_LIST(s)	/* empty */
+
+#define XCHAL_CP6_SA_NUM	0
+#define XCHAL_CP6_SA_LIST(s)	/* empty */
+
+#define XCHAL_CP7_SA_NUM	0
+#define XCHAL_CP7_SA_LIST(s)	/* empty */
+
 /* Byte length of instruction from its first nibble (op0 field), per FLIX.  */
 #define XCHAL_OP0_FORMAT_LENGTHS	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3
 
