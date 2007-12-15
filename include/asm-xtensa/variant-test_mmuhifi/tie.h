@@ -98,7 +98,7 @@
  XCHAL_SA_REG(s,0,0,0,1,             m2, 4, 4, 4,0x0222,  sr,34 , 32,0,0,0) \
  XCHAL_SA_REG(s,0,0,0,1,             m3, 4, 4, 4,0x0223,  sr,35 , 32,0,0,0) \
  XCHAL_SA_REG(s,0,0,0,1,             br, 4, 4, 4,0x0204,  sr,4  , 16,0,0,0) \
- XCHAL_SA_REG(s,0,2,1,1,      threadptr, 4, 4, 4,0x03E7,  ur,231, 32,0,0,0)
+ XCHAL_SA_REG(s,1,2,1,1,      threadptr, 4, 4, 4,0x03E7,  ur,231, 32,0,0,0)
 
 #define XCHAL_CP0_SA_NUM	0
 #define XCHAL_CP0_SA_LIST(s)	/* empty */

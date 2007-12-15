@@ -68,7 +68,7 @@
 
 #define XCHAL_NCP_SA_NUM	1
 #define XCHAL_NCP_SA_LIST(s)	\
- XCHAL_SA_REG(s,0,2,1,1,      threadptr, 4, 4, 4,0x03E7,  ur,231, 32,0,0,0)
+ XCHAL_SA_REG(s,1,2,1,1,      threadptr, 4, 4, 4,0x03E7,  ur,231, 32,0,0,0)
 
 #define XCHAL_CP0_SA_NUM	0
 #define XCHAL_CP0_SA_LIST(s)	/* empty */
