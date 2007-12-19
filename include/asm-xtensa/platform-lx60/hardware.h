@@ -72,8 +72,8 @@
 #define OETH_MACADDR3           0x13
 #define OETH_MACADDR4           0x6f
 
-/* The ID for the PHY device. */
-#define OETH_PHY_ID             0
+/* The ID for the PHY device. Use auto-detection if undefined. */
+/* #define OETH_PHY_ID             0 */
 
 #define OETH_PLATFORM_SPECIFIC_INIT(regs)				\
 do {									\
