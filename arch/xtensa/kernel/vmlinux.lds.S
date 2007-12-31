@@ -161,6 +161,8 @@ SECTIONS
 		   .DoubleExceptionVector.literal);
     RELOCATE_ENTRY(_DoubleExceptionVector_text,
 		   .DoubleExceptionVector.text);
+    RELOCATE_ENTRY(_DebugInterruptVector_text,
+		   .DebugInterruptVector.text);
   
     __boot_reloc_table_end = ABSOLUTE(.) ;
   }
