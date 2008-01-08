@@ -62,12 +62,17 @@
 #include <linux/module.h>
 #include <linux/ethtool.h>
 #include <linux/mii.h>
+#include <linux/platform_device.h>
 
 #include <asm/platform/hardware.h>
 
 #include "open_eth.h"
 
+MODULE_DESCRIPTION("Opencores ethernet driver.");
+MODULE_LICENSE("GPL");
+
 #define DRV_NAME "OpencoresEthernet"
+#define DEV_NAME "oeth"
 
 /* The Opencores Ethernet driver needs some parameters from the
  * hardware implementation. They should be defined in the
@@ -124,9 +129,7 @@ struct oeth_private {
 	struct napi_struct napi;
 	unsigned int reschedule_in_poll;
 	struct net_device_stats stats;
-#if CONFIG_MII
 	struct mii_if_info mii_if;	/* MII lib hooks/info */
-#endif
 };
 
 static void oeth_tx(struct net_device *dev);
@@ -586,33 +589,44 @@ static int oeth_set_mac_address(struct net_device *dev, void *p)
 	return 0;
 }
 
-static int __init oeth_init(struct net_device *dev, unsigned int base_addr,
+static int __init oeth_setup(struct net_device *dev, unsigned int base_addr,
 			    unsigned int irq);
 
 /*
  * Probe for an Opencores ethernet controller.
  */
-static struct net_device *__devinit oeth_probe(int unit)
+static int __devinit oeth_probe(struct platform_device *pdev)
 {
 	struct net_device *dev = alloc_etherdev(sizeof(struct oeth_private));
-	if (!dev)
-		return ERR_PTR(-ENOMEM);
-
-	if (!check_mem_region(OETH_BASE_ADDR, OETH_REGS_SIZE)) {
-		//SET_MODULE_OWNER(dev);
-		if (oeth_init(dev, OETH_BASE_ADDR, OETH_IRQ) == 0) {
-			if (register_netdev(dev))
-				printk(KERN_WARNING
-				       "Openethernet: No card found\n");
-			else
-				return dev;
-		}
-
+	int res = 0;
+printk("OETH PROBE\n");
+	if (!dev) {
+		res = -ENOMEM;
+		goto fail;
 	}
-	return NULL;
+
+	if (check_mem_region(OETH_BASE_ADDR, OETH_REGS_SIZE)) {
+		res = -ENOMEM;
+		goto fail;
+	}
+
+	if ((res = oeth_setup(dev, OETH_BASE_ADDR, OETH_IRQ)) != 0)
+		goto fail;
+
+	if (register_netdev(dev)) {
+		printk(KERN_WARNING "Openethernet: No card found\n");
+		res = -ENODEV;
+		goto fail;
+	}
+
+	platform_set_drvdata(pdev, dev);
+	return 0;
+
+fail:
+	free_netdev(dev);
+	return res;
 }
 
-#if CONFIG_MII
 static void oeth_get_drvinfo(struct net_device *dev,
 			     struct ethtool_drvinfo *info)
 {
@@ -662,7 +676,6 @@ static struct ethtool_ops ethtool_ops = {
 	//.get_stats_count = ethtool_op_net_device_stats_get_stats_count,
 	//.get_ethtool_stats = ethtool_op_net_device_get_ethtool_stats,
 };
-#endif
 
 /* MII Data accesses. */
 static int mdio_read(struct net_device *dev, int phy_id, int location)
@@ -677,7 +690,7 @@ static int mdio_read(struct net_device *dev, int phy_id, int location)
 	regs->miicommand = OETH_MIICOMMAND_RSTAT;
 
 	/* Check if the MII is done. */
-	for (i = 100; i >= 0; i--) {
+	for (i = 10; i >= 0; i--) {
 		v = regs->miistatus;
 		if (!(v & OETH_MIISTATUS_BUSY)) {
 			read_value = regs->miirx_data;
@@ -714,14 +727,16 @@ static void mdio_write(struct net_device *dev, int phy_id, int location,
 }
 
 /* Initialize the Open Ethernet MAC. */
-static int oeth_init(struct net_device *dev, unsigned int base_addr,
+static int oeth_setup(struct net_device *dev, unsigned int base_addr,
 		     unsigned int irq)
 {
 	struct oeth_private *cep = netdev_priv(dev);
 	volatile struct oeth_regs *regs;
 	volatile struct oeth_bd *tx_bd, *rx_bd;
-	int i;
+	int i, phy_id;
 	unsigned long mem_addr = OETH_SRAM_BUFF_BASE;
+
+	printk(KERN_INFO "Open Ethernet Core Version 1.0\n");
 
 	/* Initialize the locks. */
 	spin_lock_init(&cep->lock);
@@ -770,16 +785,32 @@ static int oeth_init(struct net_device *dev, unsigned int base_addr,
 	/* Set control module mode. Do not deal with PAUSE frames for now. */
 	regs->ctrlmoder = 0;
 
-#if CONFIG_MII
+#ifdef OETH_PHY_ID
+	phy_id = OETH_PHY_ID;
+#else
+	/* Identify phy address. */
+	for (phy_id = 0; phy_id < 0x1f; phy_id++) {
+		int id1, id2;
+		id1 = mdio_read(dev, phy_id, MII_PHYSID1);
+		if (id1 < 0 || id1 == 0xffff)
+			continue;
+		id2 = mdio_read(dev, phy_id, MII_PHYSID2);
+		if (id2 < 0 || id2 == 0xffff)
+			continue;
+		dev_info(&dev->dev, "Found PHY %04x:%04x at %d.\n",
+			 id1, id2, phy_id);
+		break;
+	}
+#endif
+		       
 	/* Initialize MII. */
 	cep->mii_if.dev = dev;
 	cep->mii_if.mdio_read = mdio_read;
 	cep->mii_if.mdio_write = mdio_write;
-	cep->mii_if.phy_id = OETH_PHY_ID;
+	cep->mii_if.phy_id = phy_id;
 	cep->mii_if.phy_id_mask = OETH_MIIADDRESS_FIAD;
 	cep->mii_if.reg_num_mask = 0x1f;
 	SET_ETHTOOL_OPS(dev, &ethtool_ops);
-#endif
 
 	/* Platform specific initialization. This function should set
 	   at least set regs->mac_addr1 and regs->mac_addr2. */
@@ -794,7 +825,7 @@ static int oeth_init(struct net_device *dev, unsigned int base_addr,
 			mdio_write(dev, cep->mii_if.phy_id, MII_BMCR,
 				   BMCR_RESET);
 			/* Wait until the reset is complete. */
-			for (i = 10000; i >= 0; i--) {
+			for (i = 1000; i >= 0; i--) {
 				res =
 				    mdio_read(dev, cep->mii_if.phy_id,
 					      MII_BMCR);
@@ -891,8 +922,7 @@ static int oeth_init(struct net_device *dev, unsigned int base_addr,
 	/* FIXME: Something needs to be done with dev->tx_timeout and
 	   dev->watchdog timeout here. */
 
-	printk(KERN_INFO "Open Ethernet Core Version 1.0 "
-		         "(ADDR: %02x:%02x:%02x:%02x:%02x:%02x)\n",
+	dev_info(&dev->dev,"Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
 			 dev->dev_addr[0], dev->dev_addr[1],
 			 dev->dev_addr[2], dev->dev_addr[3],
 			 dev->dev_addr[4], dev->dev_addr[5]);
@@ -900,28 +930,66 @@ static int oeth_init(struct net_device *dev, unsigned int base_addr,
 	return 0;
 }
 
-static struct net_device *oeth_dev;
-
-static int __init oeth_init_module(void)
+static int __devexit oeth_remove (struct platform_device *pdev)
 {
-	oeth_dev = oeth_probe(0);
-	if (!oeth_dev)
-		return PTR_ERR(oeth_dev);
-	return 0;
-}
+	struct net_device *dev = platform_get_drvdata(pdev);
 
-static void __exit oeth_cleanup_module(void)
-{
-	unregister_netdev(oeth_dev);
-	release_region(oeth_dev->base_addr, OETH_REGS_SIZE);
+	unregister_netdev(dev);
+	release_region(dev->base_addr, OETH_REGS_SIZE);
 	release_region(OETH_SRAM_BUFF_BASE,
 		       OETH_TXBD_NUM * OETH_TX_BUFF_SIZE
 		       + OETH_RXBD_NUM * OETH_RX_BUFF_SIZE);
-	free_netdev(oeth_dev);
+	free_netdev(dev);
+
+	return 0;
 }
 
-module_init(oeth_init_module);
-module_exit(oeth_cleanup_module);
 
-MODULE_DESCRIPTION("Opencores ethernet driver.");
-MODULE_LICENSE("GPL");
+
+static struct platform_driver oeth_driver = {
+	.driver.name = "oeth",
+	.probe = oeth_probe,
+};
+
+static struct platform_device *oeth_device;
+
+int __init oeth_init(void)
+{
+	int res = 0;
+
+	res = platform_driver_register(&oeth_driver);
+	if (res)
+		goto out;
+	
+	oeth_device = platform_device_alloc(DEV_NAME, 0);
+	if (oeth_device == NULL) {
+		res = -ENOMEM;
+		goto out_unregister;
+	}
+
+	if (platform_device_add(oeth_device)) {
+		platform_device_put(oeth_device);
+		oeth_device = NULL;
+	}
+
+	return res;
+
+out_unregister:
+	platform_driver_unregister(&oeth_driver);
+out:
+	return res;
+}
+
+void __exit oeth_exit(void)
+{
+	platform_driver_unregister(&oeth_driver);
+
+	if (oeth_device) {
+		platform_device_unregister(oeth_device);
+		oeth_device = NULL;
+	}
+}
+
+module_init(oeth_init);
+module_exit(oeth_exit);
+

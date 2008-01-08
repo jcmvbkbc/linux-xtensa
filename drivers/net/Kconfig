@@ -549,9 +549,11 @@ config HAPPYMEAL
 	  will be called sunhme.
 
 config OPENCORES_ETHERNET
-       tristate "Opencores.org Ethernet MAC driver"
-       depends on NET_ETHERNET
-       help
+	tristate "Opencores.org Ethernet MAC driver"
+	select MII
+	depends on NET_ETHERNET
+	help
+	  This dirver support the Opencores Ethernet device.
 	  
 config SUNBMAC
 	tristate "Sun BigMAC 10/100baseT support (EXPERIMENTAL)"
