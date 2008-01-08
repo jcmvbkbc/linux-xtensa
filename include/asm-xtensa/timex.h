@@ -43,8 +43,8 @@ extern unsigned long ccount_nsec;
 #define CCOUNT_PER_JIFFY ccount_per_jiffy
 #define NSEC_PER_CCOUNT  ccount_nsec
 #else
-#define CCOUNT_PER_JIFFY (CONFIG_XTENSA_CPU_CLOCK*(1000000UL/HZ))
-#define NSEC_PER_CCOUNT (1000UL / CONFIG_XTENSA_CPU_CLOCK)
+#define CCOUNT_PER_JIFFY (CONFIG_XTENSA_CPU_CLOCK*(1000UL/HZ))
+#define NSEC_PER_CCOUNT (1000000UL / CONFIG_XTENSA_CPU_CLOCK)
 #endif
 
 

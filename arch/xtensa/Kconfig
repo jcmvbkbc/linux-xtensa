@@ -176,9 +176,9 @@ config XTENSA_CALIBRATE_CCOUNT
 	  against a well known, fixed frequency, such as an UART oscillator.
 
 config XTENSA_CPU_CLOCK
-	int "CPU clock rate [MHz]"
+	int "CPU clock rate [kHz]"
 	depends on !XTENSA_CALIBRATE_CCOUNT
-	default "16"
+	default "16000"
 
 config GENERIC_CALIBRATE_DELAY
 	bool "Auto calibration of the BogoMIPS value"
