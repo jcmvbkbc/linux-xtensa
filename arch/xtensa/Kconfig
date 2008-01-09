@@ -56,12 +56,12 @@ menu "Processor type and features"
 
 choice
 	prompt "Xtensa Processor Configuration"
-	default XTENSA_VARIANT_DC232A
+	default XTENSA_VARIANT_FSF
 
 config XTENSA_VARIANT_MMUBASELE
 	bool "mmubasele - base little-endian processor configuration"
 	help
-	This actually refers to a base little-endian processor configuration (mmubasele)
+	This variant refers to a base little-endian processor configuration (mmubasele)
 	that is a subset of the Diamond 232L Standard cores.
 
 config XTENSA_VARIANT_DC232A
@@ -75,8 +75,7 @@ config XTENSA_VARIANT_DC232B
 	This variant refers to Tensilica's Diamond 232L Standard core Rev.B (LE).
 
 config XTENSA_VARIANT_FSF
-	bool "fsf"
-	#  remove this option?
+	bool "fsf - default (not generic) configuration"
 
 config XTENSA_VARIANT_CUSTOM
 	bool "Custom Xtensa processor configuration"
