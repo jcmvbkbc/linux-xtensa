@@ -13,9 +13,6 @@
 
 
 struct sigcontext {
-	unsigned long	oldmask;
-
-	/* CPU registers */
 	unsigned long sc_pc;
 	unsigned long sc_ps;
 	unsigned long sc_lbeg;
@@ -24,6 +21,7 @@ struct sigcontext {
 	unsigned long sc_sar;
 	unsigned long sc_acclo;
 	unsigned long sc_acchi;
+	void *sc_xtregs;
 	unsigned long sc_a[16];
 };
 
