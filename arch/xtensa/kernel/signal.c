@@ -42,7 +42,9 @@ struct rt_sigframe
 	struct {
 		xtregs_opt_t opt;
 		xtregs_user_t user;
+#if XTENSA_HAVE_COPROCESSORS
 		xtregs_coprocessor_t cp;
+#endif
 	} xtregs;
 	unsigned char retcode[6];
 	unsigned int window[4];
