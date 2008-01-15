@@ -60,7 +60,7 @@ int ptrace_getregs(struct task_struct *child, void __user *uregs)
 	ret |= __copy_to_user(gregset->a, regs->areg, live * 4);
 	ret |= __copy_to_user(gregset->a + last, regs->areg + last, (wm>>4)*16);
 
-	return ret;
+	return ret ? -EFAULT : 0;
 }
 
 int ptrace_setregs(struct task_struct *child, void __user *uregs)
@@ -90,7 +90,7 @@ int ptrace_setregs(struct task_struct *child, void __user *uregs)
 	ret |= __copy_from_user(regs->areg, &gregset->a, live * 4);
 	ret |= __copy_from_user(regs->areg+last, &gregset->a+last, (wm>>4)*16);
 
-	return ret;
+	return ret ? -EFAULT : 0;
 }
 
 
@@ -115,7 +115,7 @@ int ptrace_getxregs(struct task_struct *child, void __user *uregs)
 	ret |= __copy_to_user(&xtregs->user,&ti->xtregs_user,
 			      sizeof(xtregs->user));
 
-	return ret;
+	return ret ? -EFAULT : 0;
 }
 
 int ptrace_setxregs(struct task_struct *child, void __user *uregs)
@@ -124,8 +124,6 @@ int ptrace_setxregs(struct task_struct *child, void __user *uregs)
 	struct pt_regs *regs = task_pt_regs(child);
 	elf_xtregs_t *xtregs = uregs;
 	int ret = 0;
-
-	ret = -EFAULT;
 
 #if XTENSA_HAVE_COPROCESSORS
 	/* Flush all coprocessors before we overwrite them. */
@@ -140,7 +138,7 @@ int ptrace_setxregs(struct task_struct *child, void __user *uregs)
 	ret |= __copy_from_user(&ti->xtregs_user, &xtregs->user,
 				sizeof(xtregs->user));
 
-	return ret;
+	return ret ? -EFAULT : 0;
 }
 
 int ptrace_peekusr(struct task_struct *child, long regno, long __user *ret)
