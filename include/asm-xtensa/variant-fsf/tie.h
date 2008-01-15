@@ -14,9 +14,9 @@
 #define _XTENSA_CORE_TIE_H
 
 #define XCHAL_CP_NUM			0	/* number of coprocessors */
-#define XCHAL_CP_MAX			8	/* max CP ID + 1 (0 if none) */
-#define XCHAL_CP_MASK			0x80	/* bitmask of all CPs by ID */
-#define XCHAL_CP_PORT_MASK		0x80	/* bitmask of only port CPs */
+#define XCHAL_CP_MAX			0	/* max CP ID + 1 (0 if none) */
+#define XCHAL_CP_MASK			0x00	/* bitmask of all CPs by ID */
+#define XCHAL_CP_PORT_MASK		0x00	/* bitmask of only port CPs */
 
 /*  Basic parameters of each coprocessor:  */
 #define XCHAL_CP7_NAME			"XTIOP"
