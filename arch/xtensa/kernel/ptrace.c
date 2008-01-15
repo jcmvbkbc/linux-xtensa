@@ -42,6 +42,8 @@ int ptrace_getregs(struct task_struct *child, void __user *uregs)
 {
 	struct pt_regs *regs = task_pt_regs(child);
 	xtensa_gregset_t __user *gregset = uregs;
+	unsigned long wb = regs->windowbase;
+	unsigned long ws = regs->windowstart;
 	unsigned long wm = regs->wmask;
 	int ret = 0;
 	int live, last;
@@ -49,11 +51,16 @@ int ptrace_getregs(struct task_struct *child, void __user *uregs)
 	if (!access_ok(VERIFY_WRITE, uregs, sizeof(xtensa_gregset_t)))
 		return -EIO;
 
+	/* Norm windowstart to a windowbase of 0. */
+
+	ws = ((ws>>wb) | (ws<<(WSBITS-wb))) & ((1<<WSBITS)-1);
+
 	ret |= __put_user(regs->pc, &gregset->pc);
 	ret |= __put_user(regs->ps & ~(1 << PS_EXCM_BIT), &gregset->ps);
 	ret |= __put_user(regs->lbeg, &gregset->lbeg);
 	ret |= __put_user(regs->lend, &gregset->lend);
 	ret |= __put_user(regs->lcount, &gregset->lcount);
+	ret |= __put_user(ws, &gregset->windowstart);
 
 	live = (wm & 2) ? 4 : (wm & 4) ? 8 : (wm & 8) ? 12 : 16;
 	last = XCHAL_NUM_AREGS - (wm >> 4) * 4;
