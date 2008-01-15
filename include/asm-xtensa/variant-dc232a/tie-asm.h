@@ -56,7 +56,7 @@
 	s32i	\at2, \ptr, .Lxchal_ofs_ + 12
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 16
 	.endif
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_GLOB) & ~\select
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~\select
 	xchal_sa_align	\ptr, 0, 1024-4, 4, 4
 	rur	\at1, THREADPTR		// threadptr option
 	s32i	\at1, \ptr, .Lxchal_ofs_ + 0
@@ -91,7 +91,7 @@
 	wsr	\at2, M3
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 16
 	.endif
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_GLOB) & ~\select
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~\select
 	xchal_sa_align	\ptr, 0, 1024-4, 4, 4
 	l32i	\at1, \ptr, .Lxchal_ofs_ + 0
 	wur	\at1, THREADPTR		// threadptr option

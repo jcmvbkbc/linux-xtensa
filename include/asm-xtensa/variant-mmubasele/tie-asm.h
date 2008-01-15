@@ -36,7 +36,7 @@
  */
 	.macro xchal_ncp_store  ptr at1 at2 at3 at4  continue=0 ofs=-1 select=XTHAL_SAS_ALL
 	xchal_sa_start	\continue, \ofs
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_GLOB) & ~\select
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~\select
 	xchal_sa_align	\ptr, 0, 1024-4, 4, 4
 	rur	\at1, THREADPTR		// threadptr option
 	s32i	\at1, \ptr, .Lxchal_ofs_ + 0
@@ -51,7 +51,7 @@
  */
 	.macro xchal_ncp_load  ptr at1 at2 at3 at4  continue=0 ofs=-1 select=XTHAL_SAS_ALL
 	xchal_sa_start	\continue, \ofs
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_GLOB) & ~\select
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~\select
 	xchal_sa_align	\ptr, 0, 1024-4, 4, 4
 	l32i	\at1, \ptr, .Lxchal_ofs_ + 0
 	wur	\at1, THREADPTR		// threadptr option
