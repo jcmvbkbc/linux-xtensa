@@ -93,9 +93,8 @@ int ptrace_setregs(struct task_struct *child, void __user *uregs)
 
 	live = (wm & 2) ? 4 : (wm & 4) ? 8 : (wm & 8) ? 12 : 16;
 	last = XCHAL_NUM_AREGS - (wm >> 4) * 4;
-	ret |= __copy_to_user(gregset->a, regs->areg, live * 4);
-	ret |= __copy_from_user(regs->areg, &gregset->a, live * 4);
-	ret |= __copy_from_user(regs->areg+last, &gregset->a+last, (wm>>4)*16);
+	ret |= __copy_from_user(regs->areg, gregset->a, live * 4);
+	ret |= __copy_from_user(regs->areg+last, gregset->a+last, (wm>>4)*16);
 
 	return ret ? -EFAULT : 0;
 }
