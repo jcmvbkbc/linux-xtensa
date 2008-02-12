@@ -469,4 +469,3 @@ int dmi_get_year(int field)
 
 	return year;
 }
-

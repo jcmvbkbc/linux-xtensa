@@ -1744,6 +1744,9 @@ int security_genfs_sid(const char *fstype,
 	struct ocontext *c;
 	int rc = 0, cmp = 0;
 
+	while (path[0] == '/' && path[1] == '/')
+		path++;
+
 	POLICY_RDLOCK;
 
 	for (genfs = policydb.genfs; genfs; genfs = genfs->next) {
@@ -2605,8 +2608,6 @@ int security_netlbl_sid_to_secattr(u32 sid, struct netlbl_lsm_secattr *secattr)
 {
 	int rc = -ENOENT;
 	struct context *ctx;
-
-	netlbl_secattr_init(secattr);
 
 	if (!ss_initialized)
 		return 0;

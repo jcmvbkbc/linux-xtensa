@@ -29,7 +29,6 @@
 #include <linux/list.h>
 #include <linux/sched.h>
 #include <linux/pm.h>
-#include <linux/pm_legacy.h>
 #include <linux/device.h>
 #include <linux/proc_fs.h>
 #ifdef CONFIG_X86
@@ -201,7 +200,7 @@ int acpi_bus_set_power(acpi_handle handle, int state)
 	 * Get device's current power state
 	 */
 	acpi_bus_get_power(device->handle, &device->power.state);
-	if (state == device->power.state) {
+	if ((state == device->power.state) && !device->flags.force_power_state) {
 		ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Device is already at D%d\n",
 				  state));
 		return 0;
@@ -764,16 +763,14 @@ static int __init acpi_init(void)
 	result = acpi_bus_init();
 
 	if (!result) {
-#ifdef CONFIG_PM_LEGACY
-		if (!PM_IS_ACTIVE())
-			pm_active = 1;
+		if (!(pm_flags & PM_APM))
+			pm_flags |= PM_ACPI;
 		else {
 			printk(KERN_INFO PREFIX
 			       "APM is already active, exiting\n");
 			disable_acpi();
 			result = -ENODEV;
 		}
-#endif
 	} else
 		disable_acpi();
 

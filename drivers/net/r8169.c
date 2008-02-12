@@ -2002,7 +2002,7 @@ static void rtl8169_set_magic_reg(void __iomem *ioaddr, unsigned mac_version)
 	u32 clk;
 
 	clk = RTL_R8(Config2) & PCI_Clock_66MHz;
-	for (i = 0; i < ARRAY_SIZE(cfg2_info); i++) {
+	for (i = 0; i < ARRAY_SIZE(cfg2_info); i++, p++) {
 		if ((p->mac_version == mac_version) && (p->clk == clk)) {
 			RTL_W32(0x7c, p->val);
 			break;
@@ -2398,6 +2398,8 @@ static void rtl8169_wait_for_quiescence(struct net_device *dev)
 	rtl8169_irq_mask_and_ack(ioaddr);
 
 #ifdef CONFIG_R8169_NAPI
+	tp->intr_mask = 0xffff;
+	RTL_W16(IntrMask, tp->intr_event);
 	napi_enable(&tp->napi);
 #endif
 }
