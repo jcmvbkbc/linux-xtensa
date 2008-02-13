@@ -654,3 +654,10 @@ config SOUND_SH_DAC_AUDIO_CHANNEL
 	int "DAC channel"
 	default "1"
 	depends on SOUND_SH_DAC_AUDIO
+
+config SOUND_LX200
+       tristate "LX200 Sound Driver"
+       depends on SOUND_PRIME
+       ---help---
+         LX200 Audio driver
+

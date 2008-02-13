@@ -45,6 +45,9 @@ obj-$(CONFIG_SOUND_WM97XX)	+= ac97_plugin_wm97xx.o
 
 obj-$(CONFIG_DMASOUND)		+= dmasound/
 
+obj-$(CONFIG_SOUND_LX200)       += sound_lx200.o
+
+
 # Declare multi-part drivers.
 
 sound-objs	:= 							\
