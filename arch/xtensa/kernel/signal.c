@@ -190,7 +190,7 @@ restore_sigcontext(struct pt_regs *regs, struct rt_sigframe __user *frame)
 	COPY(sar);
 #undef COPY
 
-	/* All registers were flushed to stack. Start with a prestine frame. */
+	/* All registers were flushed to stack. Start with a pristine frame. */
 
 	regs->wmask = 1;
 	regs->windowbase = 0;
