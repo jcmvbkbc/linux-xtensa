@@ -51,26 +51,8 @@ void platform_power_off(void)
 
 void platform_restart(void)
 {
-	/* Flush and reset the mmu, simulate a processor reset, and
-	 * jump to the reset vector. */
-  
-  
-	__asm__ __volatile__ ("movi	a2, 15\n\t"
-			      "wsr	a2, " __stringify(ICOUNTLEVEL) "\n\t"
-			      "movi	a2, 0\n\t"
-			      "wsr	a2, " __stringify(ICOUNT) "\n\t"
-			      "wsr	a2, " __stringify(IBREAKENABLE) "\n\t"
-			      "wsr	a2, " __stringify(LCOUNT) "\n\t"
-			      "movi	a2, 0x1f\n\t"
-			      "wsr	a2, " __stringify(PS) "\n\t"
-			      "isync\n\t"
-			      "jx	%0\n\t"
-			      :
-			      : "a" (XCHAL_RESET_VECTOR_VADDR)
-			      : "a2"
-			      );
-
-	/* control never gets here */
+  /* XTBOARD_SWRST_REG = XTBOARD_SWRST_RESETVALUE; */
+  *(volatile unsigned *)0xfd020010 = 0xdead;
 }
 
 void __init platform_setup(char** cmdline)
@@ -79,28 +61,6 @@ void __init platform_setup(char** cmdline)
 	//lcd_disp_at_pos("Xtensa Linux!!                           You know you want it!", 0);
 
 }
-
-/* static struct resource open_eth_resource[] = { */
-/* 	{ */
-/* 		.start	= OETH_BASE_ADDR, */
-/* 		.end	= OETH_BASE_ADDR + 0x1000, */
-/* 		.flags	= IORESOURCE_MEM, */
-/* 	}, { */
-/* 		.start	= OETH_SRAM_BUFF_BASE, */
-/* 		.end	= OETH_SRAM_BUFF_BASE + 0xFFFFFF, */
-/* 		.flags	= IORESOURCE_MEM, */
-/* 	}, */
-/* 	, { */
-/* 		.start	= OETH_IRQ, */
-/* 		.end	= OETH_IRQ, */
-/* 		.flags	= IORESOURCE_IRQ */
-/* 	}, { */
-/* 		.start	= OETH_RX_BUFF_SIZE, */
-/* 		.end	= OETH_SRAM_BUFF_BASE + 0xFFFFFF, */
-/* 		.flags	= IORESOURCE_MEM, */
-/* 	} */
-/* }; */
-
 
 /* early initialization */
 
@@ -112,21 +72,4 @@ void platform_init(bp_tag_t* first)
 
 void platform_heartbeat(void)
 {
-#if 0
-	static int i=0, t = 0;
-	if (--t < 0)
-	{
-		t = 59;
-		if (1) {
-			extern int dann_int_count,  dann_rx_count, dann_tx_count;
-			static char locbuff[256];
-			static int c = 0;
-			sprintf (locbuff, "c=%5d I=%5x                         T=%5x R=%5x", c, dann_int_count, dann_tx_count, dann_rx_count);
-			lcd_disp_at_pos (locbuff, 0);
-			c++;
-		}
-/* 		lcd_shiftleft(); */
-		i ^= 1;
-	}
-#endif
 }
