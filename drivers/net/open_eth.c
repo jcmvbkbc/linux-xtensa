@@ -1,7 +1,7 @@
 /*
  * Ethernet driver for Open Ethernet Controller (www.opencores.org).
  *      Copyright (c) 2002 Simon Srot (simons@opencores.org)
- *      Copyright (c) 2006 Tensilica Inc.
+ *      Copyright (c) 2006, 2007, 2008 Tensilica Inc.
  * 
  * Based on:
  *
@@ -64,7 +64,7 @@
 #include <linux/mii.h>
 #include <linux/platform_device.h>
 
-#include <asm/platform/hardware.h>
+#include <asm/hardware.h>
 
 #include "open_eth.h"
 
@@ -74,24 +74,6 @@ MODULE_LICENSE("GPL");
 #define DRV_NAME "OpencoresEthernet"
 #define DEV_NAME "oeth"
 
-/* The Opencores Ethernet driver needs some parameters from the
- * hardware implementation. They should be defined in the
- asm/hardware.h file. */
-
-#if 0
-#undef OETH_TXBD_NUM
-#undef OETH_RXBD_NUM
-#define OETH_RXBD_NUM           5
-#define OETH_TXBD_NUM           5
-#undef OETH_RX_BUFF_SIZE
-#undef OETH_TX_BUFF_SIZE
-#define OETH_RX_BUFF_SIZE       0x600
-#define OETH_TX_BUFF_SIZE       0x600
-#endif
-
-#define BUFFER_SCREWED 1
-/* #define BUFFER_SCREWED_ADDR (OETH_SRAM_BUFF_BASE + OETH_TXBD_NUM * OETH_TX_BUFF_SIZE + OETH_RXBD_NUM * OETH_RX_BUFF_SIZE + 4) */
-#define BUFFER_SCREWED_ADDR (0xfd803800 + 0x600)
 
 /* Debug helpers. */
 #undef OETH_DEBUG_TRANSMIT 
@@ -112,7 +94,7 @@ MODULE_LICENSE("GPL");
 #define OETH_BD_BASE    (OETH_BASE_ADDR + 0x400)
 #define OETH_TOTAL_BD   128
 
-/* The transmitter timeout FIXME: dann this needs to be handled */
+/* The transmitter timeout FIXME: this needs to be handled */
 #define OETH_TX_TIMEOUT	       (2*HZ)
 
 /* The buffer descriptors track the ring buffers. */
@@ -151,10 +133,6 @@ static void oeth_print_packet(u32 * add, int len)
 	printk("\n");
 }
 #endif
-
-int dann_int_count = 0;
-int dann_rx_count = 0;
-int dann_tx_count = 0;
 
 static int oeth_open(struct net_device *dev)
 {
@@ -303,8 +281,6 @@ static irqreturn_t oeth_interrupt(int irq, void *dev_id)
 	volatile struct oeth_regs *regs = cep->regs;
 	u32 int_events;
 
-	dann_int_count++;
-
 	spin_lock(&cep->lock);
 
 	/* Get the interrupt events that caused us to be here. */
@@ -341,7 +317,6 @@ static irqreturn_t oeth_interrupt(int irq, void *dev_id)
 	 * put them. */
 	if (int_events & OETH_INT_BUSY) {
 		if (!(int_events & (OETH_INT_RXF | OETH_INT_RXE))) {
-/* 			dann_tx_count++; */
 			oeth_rx(dev, 1);
 		}
 	}
@@ -388,7 +363,6 @@ static void oeth_tx(struct net_device *dev)
 		cep->stats.tx_packets++;
 		cep->stats.tx_bytes += len_status >> 16;
 		cep->stats.collisions += (len_status & OETH_TX_BD_RETRY) >> 4;
-		dann_tx_count++;
 
 		if (cep->tx_full) {
 			cep->tx_full = 0;
@@ -505,7 +479,6 @@ static unsigned int oeth_rx(struct net_device *dev, int budget)
 				* OETH_TX_BUFF_SIZE
 				+ OETH_RXBD_NUM * OETH_RX_BUFF_SIZE))
 				panic("address exceeds the buffer!\n");
-			dann_rx_count++;
 		} else {
 			dev_warn(&dev->dev,"Memory squeeze, dropping packet.\n");
 			cep->stats.rx_dropped++;
@@ -525,6 +498,7 @@ static unsigned int oeth_rx(struct net_device *dev, int budget)
 
 	return received;
 }
+
 
 static int oeth_poll(struct napi_struct *napi, int budget)
 {
@@ -821,11 +795,11 @@ static int oeth_setup(struct net_device *dev, unsigned int base_addr,
 
 		/* Reset the PHY. */
 		{
-			int i, res;
+			int j, res;
 			mdio_write(dev, cep->mii_if.phy_id, MII_BMCR,
 				   BMCR_RESET);
 			/* Wait until the reset is complete. */
-			for (i = 1000; i >= 0; i--) {
+			for (j = 1000; j >= 0; j--) {
 				res =
 				    mdio_read(dev, cep->mii_if.phy_id,
 					      MII_BMCR);
@@ -945,7 +919,6 @@ static int __devexit oeth_remove (struct platform_device *pdev)
 }
 
 
-
 static struct platform_driver oeth_driver = {
 	.driver.name = "oeth",
 	.probe = oeth_probe,
@@ -953,7 +926,7 @@ static struct platform_driver oeth_driver = {
 
 static struct platform_device *oeth_device;
 
-int __init oeth_init(void)
+static int __init oeth_init(void)
 {
 	int res = 0;
 
@@ -980,7 +953,7 @@ out:
 	return res;
 }
 
-void __exit oeth_exit(void)
+static void __exit oeth_exit(void)
 {
 	platform_driver_unregister(&oeth_driver);
 
