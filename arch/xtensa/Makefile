@@ -69,6 +69,12 @@ ifneq ($(SUBARCH),$(ARCH))
 endif
 
 #
+# Extra flags that neededed for sparse (i.e. when compiling with C=1)
+ifeq ($CONFIG_XTENSA_CPU_LINUX_LE,y)
+CHECKFLAGS      += -D__XTENSA_EL__=1
+else
+CHECKFLAGS      += -D__XTENSA_EB__=1
+endif
 
 ifneq ($(strip $(VARIANT)),)
 LIBGCC := $(shell $(CC) $(KBUILD_CFLAGS) -print-libgcc-file-name)
