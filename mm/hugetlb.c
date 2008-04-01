@@ -119,6 +119,7 @@ static void free_huge_page(struct page *page)
 	struct address_space *mapping;
 
 	mapping = (struct address_space *) page_private(page);
+	set_page_private(page, 0);
 	BUG_ON(page_count(page));
 	INIT_LIST_HEAD(&page->lru);
 
@@ -133,7 +134,6 @@ static void free_huge_page(struct page *page)
 	spin_unlock(&hugetlb_lock);
 	if (mapping)
 		hugetlb_put_quota(mapping, 1);
-	set_page_private(page, 0);
 }
 
 /*
@@ -602,6 +602,16 @@ int hugetlb_treat_movable_handler(struct ctl_table *table, int write,
 		htlb_alloc_mask = GFP_HIGHUSER_MOVABLE;
 	else
 		htlb_alloc_mask = GFP_HIGHUSER;
+	return 0;
+}
+
+int hugetlb_overcommit_handler(struct ctl_table *table, int write,
+			struct file *file, void __user *buffer,
+			size_t *length, loff_t *ppos)
+{
+	spin_lock(&hugetlb_lock);
+	proc_doulongvec_minmax(table, write, file, buffer, length, ppos);
+	spin_unlock(&hugetlb_lock);
 	return 0;
 }
 

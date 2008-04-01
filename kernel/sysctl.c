@@ -306,7 +306,7 @@ static struct ctl_table kern_table[] = {
 		.procname	= "sched_nr_migrate",
 		.data		= &sysctl_sched_nr_migrate,
 		.maxlen		= sizeof(unsigned int),
-		.mode		= 644,
+		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
 	},
 #endif
@@ -910,7 +910,7 @@ static struct ctl_table vm_table[] = {
 		.data		= &nr_overcommit_huge_pages,
 		.maxlen		= sizeof(nr_overcommit_huge_pages),
 		.mode		= 0644,
-		.proc_handler	= &proc_doulongvec_minmax,
+		.proc_handler	= &hugetlb_overcommit_handler,
 	},
 #endif
 	{
