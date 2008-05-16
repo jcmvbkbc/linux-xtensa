@@ -169,8 +169,9 @@ __die_if_kernel(const char *str, struct pt_regs *regs, long err)
 
 void do_unhandled(struct pt_regs *regs, unsigned long exccause)
 {
-	__die_if_kernel("Caught unhandled exception - should not happen",
-	    		regs, SIGKILL);
+	char buf[100];
+	sprintf(buf,"Caught unhandled exception - exccause=%d", exccause);
+	__die_if_kernel(buf, regs, SIGKILL);
 
 	/* If in user mode, send SIGILL signal to current process */
 	printk("Caught unhandled exception in '%s' "
