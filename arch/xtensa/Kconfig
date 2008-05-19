@@ -88,7 +88,7 @@ endchoice
 config XTENSA_VARIANT_CUSTOM_NAME
 	string "Xtensa Processor Custom Variant Name"
 	depends on XTENSA_VARIANT_CUSTOM
-	default ""
+	default "CORENAME"
 	help
 	  Provide the name of a custom Xtensa processor variant.
 	  The name should match what was provided to the overlay generation
@@ -208,6 +208,27 @@ config XTENSA_ISS_NETWORK
 	bool
 	depends on XTENSA_PLATFORM_ISS
 	default y
+
+config BLK_DEV_SIMDISK_COUNT
+	int "number of hostfile-based simulated block devices"
+	depends on XTENSA_PLATFORM_ISS
+	default 2
+
+config SIMDISK0_FILENAME
+	string "Host filename for a simulated device"
+	depends on XTENSA_PLATFORM_ISS
+	default "x"
+	help
+	Attach a first simdisk to a host file. Conventionally, this file
+	contains a root file system.
+
+config SIMDISK1_FILENAME
+	string "Host filename for a simulated device"
+	depends on XTENSA_PLATFORM_ISS && (BLK_DEV_SIMDISK_COUNT != 0)
+	default "x"
+	help
+	Another simulated disk in a host file for a buildroot-independent
+	storage.
 
 source "mm/Kconfig"
 
