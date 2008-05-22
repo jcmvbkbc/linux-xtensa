@@ -35,8 +35,8 @@
 
 #define CODEC_NAME		 "sound_lx200"
 
-#define BUFFER_SIZE 48000
-#define AUDIO_RATE_DEFAULT	      44100
+#define BUFFER_SIZE              TOTAL_AUDIO_FIFO_ENTRIES * 2
+#define AUDIO_RATE_DEFAULT       44100
 
 
 static spinlock_t lx200_lock;
