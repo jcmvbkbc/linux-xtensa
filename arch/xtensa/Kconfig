@@ -230,6 +230,10 @@ config SIMDISK1_FILENAME
 	Another simulated disk in a host file for a buildroot-independent
 	storage.
 
+config ARCH_SUPPORTS_OPROFILE
+	bool
+	default y
+
 source "mm/Kconfig"
 
 endmenu

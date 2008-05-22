@@ -93,6 +93,8 @@ archinc		:= include/asm-xtensa
 
 archprepare: $(archinc)/.platform
 
+drivers-$(CONFIG_OPROFILE)	+= arch/xtensa/oprofile/
+
 # Update processor variant and platform symlinks if something which affects
 # them changed.
 
