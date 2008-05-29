@@ -159,8 +159,12 @@ setup_sigcontext(struct rt_sigframe __user *frame, struct pt_regs *regs)
 		return err;
 
 #if XTENSA_HAVE_COPROCESSORS
-	coprocessor_flush_all(ti);
-	coprocessor_release_all(ti);
+	preempt_disable();
+	coprocessor_flush_all(ti, coprocessor_get_cpenable());
+	coprocessor_release_all(ti, coprocessor_get_cpenable());
+	ti->cpenable = 0;
+	coprocessor_clear_cpenable();
+	preempt_enable();
 	err |= __copy_to_user(&frame->xtregs.cp, &ti->xtregs_cp,
 			      sizeof (frame->xtregs.cp));
 #endif
@@ -224,7 +228,11 @@ restore_sigcontext(struct pt_regs *regs, struct rt_sigframe __user *frame)
 	 * signal handler created. */
 
 #if XTENSA_HAVE_COPROCESSORS
-	coprocessor_release_all(ti);
+	preempt_disable();
+	coprocessor_release_all(ti, coprocessor_get_cpenable());
+	ti->cpenable = 0;
+	coprocessor_clear_cpenable();
+	preempt_enable();
 	err |= __copy_from_user(&ti->xtregs_cp, &frame->xtregs.cp,
 				sizeof (frame->xtregs.cp));
 #endif
