@@ -2375,6 +2375,10 @@ config ATL1
 	  To compile this driver as a module, choose M here.  The module
 	  will be called atl1.
 
+config XTENSA_S5000_GMAC
+	bool "S5000 GMAC Ethernet"
+	depends on XTENSA_VARIANT_NAME="s5000"
+
 endif # NETDEV_1000
 
 #
