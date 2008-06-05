@@ -14,5 +14,6 @@ obj-y := align.o entry.o irq.o coprocessor.o process.o ptrace.o semaphore.o  \
 obj-$(CONFIG_KGDB) += xtensa-stub.o
 obj-$(CONFIG_PCI) += pci.o
 obj-$(CONFIG_MODULES) += xtensa_ksyms.o module.o
+obj-$(CONFIG_SMP) += smp.o mxpic.o mxhead.o
 
 

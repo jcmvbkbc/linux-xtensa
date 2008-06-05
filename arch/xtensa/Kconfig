@@ -50,6 +50,9 @@ config ARCH_HAS_ILOG2_U64
 config NO_IOPORT
 	def_bool y
 
+config IRQ_PER_CPU
+	def_bool y
+
 source "init/Kconfig"
 
 menu "Processor type and features"
@@ -97,7 +100,6 @@ config XTENSA_VARIANT_CUSTOM_NAME
 
 config XTENSA_VARIANT_NAME
 	string
-	depends on XTENSA_VARIANT_CUSTOM
 	default "dc232l" if XTENSA_VARIANT_MMUBASELE
 	default "dc232a" if XTENSA_VARIANT_DC232A
 	default "dc232b" if XTENSA_VARIANT_DC232B
@@ -138,6 +140,17 @@ config MATH_EMULATION
 config HIGHMEM
 	bool "High memory support"
 
+config SMP
+	bool "Symmetric multi-processing support"
+	help
+	  SMP
+
+config NR_CPUS
+        depends on SMP
+        int "Maximum number of CPUs (2-32)"
+        range 2 32
+        default "4"
+
 endmenu
 
 menu "Platform options"
@@ -164,7 +177,31 @@ config XTENSA_PLATFORM_LX60
 	  LX60 (XTAV60) is the name of the new Tensilica board. 
 	  This hardware is capable of running a full Linux distribution.
 
+config XTENSA_PLATFORM_S56XX
+	bool "s56xx"
+	help
+	  S5000 platform
+
+config XTENSA_PLATFORM_CUSTOM
+	bool "Custom Xtensa platform"
+	help
+	Select this variant to use a custom platform.
+	You will be prompted for a platform name.
+
 endchoice
+
+config XTENSA_PLATFORM_CUSTOM_NAME
+	string "Custom Platform Name"
+	depends on XTENSA_PLATFORM_CUSTOM
+	default ""
+
+config XTENSA_PLATFORM_NAME
+	string
+	default "iss" if XTENSA_PLATFORM_ISS
+	default "xt2000" if XTENSA_PLATFORM_XT2000
+	default "lx60" if XTENSA_PLATFORM_LX60
+	default "s5000" if XTENSA_PLATFORM_S5000
+	default XTENSA_PLATFORM_CUSTOM_NAME if XTENSA_PLATFORM_CUSTOM
 
 
 config XTENSA_CALIBRATE_CCOUNT

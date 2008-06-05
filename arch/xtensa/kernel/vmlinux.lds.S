@@ -13,7 +13,7 @@
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Joe Taylor <joe@tensilica.com, joetylr@yahoo.com>
  */
-
+/* FIXME strip trailing-ws */
 #include <asm-generic/vmlinux.lds.h>
 
 #include <asm/variant/core.h>
@@ -163,7 +163,13 @@ SECTIONS
 		   .DoubleExceptionVector.text);
     RELOCATE_ENTRY(_DebugInterruptVector_text,
 		   .DebugInterruptVector.text);
-  
+#ifdef CONFIG_SMP
+    RELOCATE_ENTRY(_SecondaryResetVector_literal,
+    		   .SecondaryResetVector.literal);
+    RELOCATE_ENTRY(_SecondaryResetVector_text,
+    		   .SecondaryResetVector.text);
+#endif
+
     __boot_reloc_table_end = ABSOLUTE(.) ;
   }
 
@@ -194,6 +200,20 @@ SECTIONS
 #endif
 
   PERCPU(4096)
+
+  . = ALIGN(1 << 12);
+
+  __init_end = .;
+
+  . = ALIGN(8192);
+
+  /* BSS section */
+  _bss_start = .;
+  .bss : { *(.bss.page_aligned) *(.bss) }
+  _bss_end = .;
+
+  _end = .;
+
 
 
   /* We need this dummy segment here */
@@ -247,20 +267,23 @@ SECTIONS
 		  XCHAL_DOUBLEEXC_VECTOR_VADDR,
 		  32,
 		  .DoubleExceptionVector.literal)
+  . = LOADADDR(.DoubleExceptionVector.text)+SIZEOF(.DoubleExceptionVector.text);
 
-  . = (LOADADDR( .DoubleExceptionVector.text ) + SIZEOF( .DoubleExceptionVector.text ) + 3) & ~ 3;
-  . = ALIGN(1 << 12);
+#ifdef CONFIG_SMP
 
-  __init_end = .;
+  SECTION_VECTOR (_SecondaryResetVector_literal,
+		  .SecondaryResetVector.literal,
+		  XCHAL_RESET_VECTOR1_VADDR - 4,
+		  SIZEOF(.DoubleExceptionVector.text),
+		  .DoubleExceptionVector.text)
+  SECTION_VECTOR (_SecondaryResetVector_text,
+		  .SecondaryResetVector.text,
+		  XCHAL_RESET_VECTOR1_VADDR,
+		  4,
+		  .SecondaryResetVector.literal)
+  . = LOADADDR(.SecondaryResetVector.text)+SIZEOF(.SecondaryResetVector.text);
 
-  . = ALIGN(8192);
-
-  /* BSS section */
-  _bss_start = .;
-  .bss : { *(.bss.page_aligned) *(.bss) }
-  _bss_end = .;
-
-  _end = .;
+#endif
 
   /* only used by the boot loader  */
 
