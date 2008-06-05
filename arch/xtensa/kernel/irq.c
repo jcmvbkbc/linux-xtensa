@@ -22,8 +22,6 @@
 #include <asm/uaccess.h>
 #include <asm/platform.h>
 
-static unsigned int cached_irq_mask;
-
 atomic_t irq_err_count;
 
 /*
@@ -43,9 +41,18 @@ void ack_bad_irq(unsigned int irq)
 
 asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
 {
+#if 1
 	struct pt_regs *old_regs = set_irq_regs(regs);
 	struct irq_desc *desc = irq_desc + irq;
+#else
+	struct pt_regs *old_regs; // = set_irq_regs(regs);
+	struct irq_desc *desc = irq_desc + irq;
+	register int a1 asm("a1");
 
+	if (irq <2)
+	printk("do_IRQ cpu %d regs %x a1 %x\n", smp_processor_id(), regs, a1);
+	old_regs = set_irq_regs(regs);
+#endif
 	if (irq >= NR_IRQS) {
 		printk(KERN_EMERG "%s: cannot handle IRQ %d\n",
 				__FUNCTION__, irq);
@@ -120,67 +127,3 @@ skip:
 	return 0;
 }
 
-static void xtensa_irq_mask(unsigned int irq)
-{
-	cached_irq_mask &= ~(1 << irq);
-	set_sr (cached_irq_mask, INTENABLE);
-}
-
-static void xtensa_irq_unmask(unsigned int irq)
-{
-	cached_irq_mask |= 1 << irq;
-	set_sr (cached_irq_mask, INTENABLE);
-}
-
-static void xtensa_irq_ack(unsigned int irq)
-{
-	set_sr(1 << irq, INTCLEAR);
-}
-
-static int xtensa_irq_retrigger(unsigned int irq)
-{
-	set_sr (1 << irq, INTSET);
-	return 1;
-}
-
-
-static struct irq_chip xtensa_irq_chip = {
-	.name		= "xtensa",
-	.mask		= xtensa_irq_mask,
-	.unmask		= xtensa_irq_unmask,
-	.ack		= xtensa_irq_ack,
-	.retrigger	= xtensa_irq_retrigger,
-};
-
-void __init init_IRQ(void)
-{
-	int index;
-
-	for (index = 0; index < XTENSA_NR_IRQS; index++) {
-		int mask = 1 << index;
-
-		if (mask & XCHAL_INTTYPE_MASK_SOFTWARE)
-			set_irq_chip_and_handler(index, &xtensa_irq_chip,
-						 handle_simple_irq);
-
-		else if (mask & XCHAL_INTTYPE_MASK_EXTERN_EDGE)
-			set_irq_chip_and_handler(index, &xtensa_irq_chip,
-						 handle_edge_irq);
-
-		else if (mask & XCHAL_INTTYPE_MASK_EXTERN_LEVEL)
-			set_irq_chip_and_handler(index, &xtensa_irq_chip,
-						 handle_level_irq);
-
-		else if (mask & XCHAL_INTTYPE_MASK_TIMER)
-			set_irq_chip_and_handler(index, &xtensa_irq_chip,
-						 handle_edge_irq);
-
-		else	/* XCHAL_INTTYPE_MASK_WRITE_ERROR */
-			/* XCHAL_INTTYPE_MASK_NMI */
-
-			set_irq_chip_and_handler(index, &xtensa_irq_chip,
-						 handle_level_irq);
-	}
-
-	cached_irq_mask = 0;
-}

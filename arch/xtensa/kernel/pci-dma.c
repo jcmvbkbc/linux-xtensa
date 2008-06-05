@@ -73,6 +73,10 @@ void dma_free_coherent(struct device *hwdev, size_t size,
 	free_pages(addr, get_order(size));
 }
 
+#ifdef CONFIG_SMP
+extern void system_invalidate_dcache_range(unsigned long, unsigned long);
+extern void system_flush_invalidate_dcache_range(unsigned long, unsigned long);
+#endif
 
 void consistent_sync(void *vaddr, size_t size, int direction)
 {
@@ -82,12 +86,25 @@ void consistent_sync(void *vaddr, size_t size, int direction)
 	case PCI_DMA_FROMDEVICE:        /* invalidate only */
 		__invalidate_dcache_range((unsigned long)vaddr,
 				          (unsigned long)size);
+#ifdef CONFIG_SMP
+if (in_interrupt())
+	printk("IN_INTERRUPT!!!!\n");
+		system_invalidate_dcache_range((unsigned long) vaddr,
+					       (unsigned long) size);
+#endif					    
 		break;
 
 	case PCI_DMA_TODEVICE:          /* writeback only */
 	case PCI_DMA_BIDIRECTIONAL:     /* writeback and invalidate */
 		__flush_invalidate_dcache_range((unsigned long)vaddr,
 				    		(unsigned long)size);
+#ifdef CONFIG_SMP
+if (in_interrupt())
+	printk("IN_INTERRUPT!!!!\n");
+		system_flush_invalidate_dcache_range((unsigned long) vaddr,
+						     (unsigned long) size);
+#endif					    
+		break;
 		break;
 	}
 }

@@ -14,12 +14,15 @@
  * Marc Gauthier<marc@tensilica.com> <marc@alumni.uwaterloo.ca>
  */
 
+#include <linux/smp.h>
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/proc_fs.h>
 #include <linux/screen_info.h>
 #include <linux/bootmem.h>
 #include <linux/kernel.h>
+#include <linux/percpu.h>
+#include <linux/cpu.h>
 
 #if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE)
 # include <linux/console.h>
@@ -114,22 +117,25 @@ typedef struct tagtable {
 
 static int __init parse_tag_mem(const bp_tag_t *tag)
 {
-	meminfo_t *mi = (meminfo_t*)(tag->data);
+	bp_memory_t *mi = (bp_memory_t*)(tag->data);
+	int i;
 
-	if (mi->type != MEMORY_TYPE_CONVENTIONAL)
+	if (mi->type != BP_MEMORY_TYPE_SYSMEM)
 		return -1;
 
-	if (sysmem.nr_banks >= SYSMEM_BANKS_MAX) {
-		printk(KERN_WARNING
-		       "Ignoring memory bank 0x%08lx size %ldKB\n",
-		       (unsigned long)mi->start,
-		       (unsigned long)mi->end - (unsigned long)mi->start);
-		return -EINVAL;
+	while (i < mi->nr_banks) {
+		bp_memory_bank_t* bank = &mi->bank[i];
+
+		if (mi->nr_banks >= SYSMEM_BANKS_MAX) {
+			printk(KERN_WARNING
+			       "Ignoring memory bank 0x%08lx size %ldKB\n",
+			       bank->start, bank->end - bank->start);
+			return -EINVAL;
+		}
+		sysmem.bank[sysmem.nr_banks].start = PAGE_ALIGN(bank->start);
+		sysmem.bank[sysmem.nr_banks].end   = bank->end & PAGE_SIZE;
+		sysmem.nr_banks++;
 	}
-	sysmem.bank[sysmem.nr_banks].type  = mi->type;
-	sysmem.bank[sysmem.nr_banks].start = PAGE_ALIGN(mi->start);
-	sysmem.bank[sysmem.nr_banks].end   = mi->end & PAGE_SIZE;
-	sysmem.nr_banks++;
 
 	return 0;
 }
@@ -154,6 +160,7 @@ __tagtable(BP_TAG_INITRD, parse_tag_initrd);
 
 static int __init parse_tag_cmdline(const bp_tag_t* tag)
 {
+return 0;
 	strncpy(command_line, (char*)(tag->data), COMMAND_LINE_SIZE);
 	command_line[COMMAND_LINE_SIZE - 1] = '\0';
 	return 0;
@@ -200,12 +207,14 @@ static int __init parse_bootparam(const bp_tag_t* tag)
 void __init init_arch(bp_tag_t *bp_start)
 {
 
+#if 0
 #ifdef CONFIG_BLK_DEV_INITRD
 	initrd_start = &__initrd_start;
 	initrd_end = &__initrd_end;
 #endif
 
 	sysmem.nr_banks = 0;
+#endif
 
 #ifdef CONFIG_CMDLINE_BOOL
 	strcpy(command_line, default_command_line);
@@ -249,6 +258,10 @@ extern char _UserExceptionVector_text_end;
 extern char _DoubleExceptionVector_literal_start;
 extern char _DoubleExceptionVector_text_end;
 
+#ifdef CONFIG_SMP
+extern __init void smp_init_cpus(void);
+#endif
+
 void __init setup_arch(char **cmdline_p)
 {
 	extern int mem_reserve(unsigned long, unsigned long, int);
@@ -257,6 +270,13 @@ void __init setup_arch(char **cmdline_p)
 	memcpy(boot_command_line, command_line, COMMAND_LINE_SIZE);
 	boot_command_line[COMMAND_LINE_SIZE-1] = '\0';
 	*cmdline_p = command_line;
+
+	if (sysmem.nr_banks == 0) {
+		sysmem.nr_banks = 1;
+		sysmem.bank[0].start = PLATFORM_DEFAULT_MEM_START;
+		sysmem.bank[0].end = PLATFORM_DEFAULT_MEM_START
+				     + PLATFORM_DEFAULT_MEM_SIZE;
+	}
 
 	/* Reserve some memory regions */
 
@@ -291,6 +311,9 @@ void __init setup_arch(char **cmdline_p)
 
 	platform_setup(cmdline_p);
 
+#ifdef CONFIG_SMP
+	smp_init_cpus();
+#endif
 
 	paging_init();
 
@@ -306,6 +329,25 @@ void __init setup_arch(char **cmdline_p)
 	platform_pcibios_init();
 #endif
 }
+
+DEFINE_PER_CPU(struct cpu, cpu_devices);
+
+static int __init topology_init(void)
+{
+	int cpuid, ret;
+
+	for_each_possible_cpu(cpuid) {
+		ret = register_cpu(&per_cpu(cpu_devices, cpuid), cpuid);
+		if (unlikely(ret))
+			printk(KERN_WARNING "%s: register_cpu %d failed (%d)\n",
+			       __FUNCTION__, cpuid, ret);
+	}
+	return 0;
+}
+
+subsys_initcall(topology_init);
+
+
 
 void machine_restart(char * cmd)
 {
@@ -333,7 +375,7 @@ static int
 c_show(struct seq_file *f, void *slot)
 {
 	/* high-level stuff */
-	seq_printf(f,"processor\t: 0\n"
+	seq_printf(f,"processor\t: %d\n"
 		     "vendor_id\t: Tensilica\n"
 		     "model\t\t: Xtensa " XCHAL_HW_VERSION_NAME "\n"
 		     "core ID\t\t: " XCHAL_CORE_ID "\n"
@@ -341,6 +383,7 @@ c_show(struct seq_file *f, void *slot)
 		     "byte order\t: %s\n"
  		     "cpu MHz\t\t: %lu.%02lu\n"
 		     "bogomips\t: %lu.%02lu\n",
+		     *(int*) slot,
 		     XCHAL_BUILD_UNIQUE_ID,
 		     XCHAL_HAVE_BE ?  "big" : "little",
 		     CCOUNT_PER_JIFFY/(1000000/HZ),
@@ -425,7 +468,7 @@ c_show(struct seq_file *f, void *slot)
 		     "icache size\t: %d\n"
 		     "icache flags\t: "
 #if XCHAL_ICACHE_LINE_LOCKABLE
-		     "lock"
+		     "lock "
 #endif
 		     "\n"
 		     "dcache line size: %d\n"
@@ -433,10 +476,10 @@ c_show(struct seq_file *f, void *slot)
 		     "dcache size\t: %d\n"
 		     "dcache flags\t: "
 #if XCHAL_DCACHE_IS_WRITEBACK
-		     "writeback"
+		     "writeback "
 #endif
 #if XCHAL_DCACHE_LINE_LOCKABLE
-		     "lock"
+		     "lock "
 #endif
 		     "\n",
 		     XCHAL_ICACHE_LINESIZE,
@@ -455,13 +498,14 @@ c_show(struct seq_file *f, void *slot)
 static void *
 c_start(struct seq_file *f, loff_t *pos)
 {
-	return (void *) ((*pos == 0) ? (void *)1 : NULL);
+	return (*pos < NR_CPUS && cpu_online(*pos)) ? (void*) pos : NULL;
 }
 
 static void *
 c_next(struct seq_file *f, void *v, loff_t *pos)
 {
-	return NULL;
+	*pos = next_cpu(*pos, cpu_online_map);
+	return c_start(f, pos);
 }
 
 static void

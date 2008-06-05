@@ -33,10 +33,18 @@
 /* Default assignment of LX60 devices to external interrupts. */
 
 /*  UART interrupt: */
+#ifdef CONFIG_SMP
+#define DUART16552_INTNUM	2
+#else
 #define DUART16552_INTNUM	0
+#endif
 
 /*  Ethernet interrupt:  */
+#ifdef CONFIG_SMP
+#define OETH_IRQ                3
+#else
 #define OETH_IRQ                1
+#endif
 #define OETH_REQUEST_IRQ_FLAG   0
 /*
  *  Device addresses and parameters.

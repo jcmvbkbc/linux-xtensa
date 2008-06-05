@@ -33,11 +33,6 @@
 #undef PREEMPTIBLE_KERNEL
 #undef ALLOCA_EXCEPTION_IN_IRAM
 
-/* Not well tested.
- *
- * - fast_coprocessor
- */
-
 /*
  * Macro to find first bit set in WINDOWBASE from the left + 1
  *
@@ -91,9 +86,9 @@
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original value in depc
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave1:	a3
+ *   excsave1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -111,7 +106,6 @@ ENTRY(user_exception)
 
 	/* Save a2, a3, and depc, restore excsave_1 and set SP. */
 
-	xsr	a3, EXCSAVE_1
 	rsr	a0, DEPC
 	s32i	a1, a2, PT_AREG1
 	s32i	a0, a2, PT_AREG2
@@ -251,7 +245,6 @@ ENTRY(kernel_exception)
 
 	/* Save a0, a2, a3, DEPC and set SP. */
 
-	xsr	a3, EXCSAVE_1		# restore a3, excsave_1
 	rsr	a0, DEPC		# get a2
 	s32i	a1, a2, PT_AREG1
 	s32i	a0, a2, PT_AREG2
@@ -370,6 +363,13 @@ common_exception:
 	s32i	a2, a1, PT_LBEG
 	s32i	a3, a1, PT_LEND
 
+	/* Save SCOMPARE1 */
+
+#if XCHAL_HAVE_S32C1I
+	rsr	a2, SCOMPARE1
+	s32i	a2, a1, PT_SCOMPARE1
+#endif
+
 	/* Save optional registers. */
 
 	save_xtregs_opt a1 a2 a4 a5 a6 a7 PT_XTREGS_OPT
@@ -378,7 +378,8 @@ common_exception:
 	 * exception handler and call the exception handler.
 	 */
 
-	movi	a4, exc_table
+	//movi	a4, exc_table
+	rsr	a4, EXCSAVE_1
 	mov	a6, a1			# pass stack frame
 	mov	a7, a0			# pass EXCCAUSE
 	addx4	a4, a0, a4
@@ -427,6 +428,13 @@ common_exception_return:
 4:	/* Restore optional registers. */
 
 	load_xtregs_opt a1 a2 a4 a5 a6 a7 PT_XTREGS_OPT
+
+	/* Restore SCOMPARE1 */
+
+#if XCHAL_HAVE_S32C1I
+	l32i	a2, a1, PT_SCOMPARE1
+	wsr	a2, SCOMPARE1
+#endif
 
 	wsr	a3, PS		/* disable interrupts */
 
@@ -724,7 +732,7 @@ unrecoverable_text:
 	.ascii "Unrecoverable error in exception handler\0"
 
 ENTRY(unrecoverable_exception)
-
+99: j 99b
 	movi	a0, 1
 	movi	a1, 0
 
@@ -766,9 +774,9 @@ ENTRY(unrecoverable_exception)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -791,18 +799,18 @@ ENTRY(fast_alloca)
 
 	rsr	a0, DEPC		# get a2
 	s32i	a4, a2, PT_AREG4	# save a4 and
+	s32i	a3, a2, PT_AREG3
 	s32i	a0, a2, PT_AREG2	# a2 to stack
 
-	/* Exit critical section. */
+
+// FIXME: why?
+	/* Exit (any) critical section. */
 
 	movi	a0, 0
+	rsr	a3, EXCSAVE_1
 	s32i	a0, a3, EXC_TABLE_FIXUP
 
-	/* Restore a3, excsave_1 */
-
-	xsr	a3, EXCSAVE_1		# make sure excsave_1 is valid for dbl.
 	rsr	a4, EPC_1		# get exception address
-	s32i	a3, a2, PT_AREG3	# save a3 to stack
 
 #ifdef ALLOCA_EXCEPTION_IN_IRAM
 #error	iram not supported
@@ -940,9 +948,9 @@ ENTRY(fast_alloca)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  */
 
 ENTRY(fast_syscall_kernel)
@@ -1042,7 +1050,7 @@ ENTRY(fast_syscall_unrecoverable)
 67:
 
 ENTRY(fast_syscall_xtensa)
-
+89: j 89b
 	xsr	a3, EXCSAVE_1		# restore a3, excsave1
 
 	s32i	a7, a2, PT_AREG7	# we need an additional register
@@ -1116,6 +1124,7 @@ CATCH
 
 ENTRY(fast_syscall_spill_registers)
 
+99: j 99b
 	/* Register a FIXUP handler (pass current wb as a parameter) */
 
 	movi	a0, fast_syscall_spill_registers_fixup
@@ -1178,14 +1187,14 @@ fast_syscall_spill_registers_fixup:
 	 * in WS, so that the exception handlers save them to the task stack.
 	 */
 
-	rsr	a3, EXCSAVE_1	# get spill-mask
+	xsr	a3, EXCSAVE_1	# get spill-mask, restore EXCSAVE_1
 	slli	a2, a3, 1	# shift left by one
 
 	slli	a3, a2, 32-WSBITS
 	src	a2, a2, a3	# a1 = xxwww1yyxxxwww1yy......
 	wsr	a2, WINDOWSTART	# set corrected windowstart
 
-	movi	a3, exc_table
+	rsr	a3, EXCSAVE_1	# retrieve exc_table[cpu]
 	l32i	a2, a3, EXC_TABLE_DOUBLE_SAVE	# restore a2
 	l32i	a3, a3, EXC_TABLE_PARAM	# original WB (in user task)
 
@@ -1218,11 +1227,11 @@ fast_syscall_spill_registers_fixup:
 	/* Make sure we return to this fixup handler. */
 
 	movi	a3, fast_syscall_spill_registers_fixup_return
-	s32i	a3, a2, PT_DEPC		# setup depc
+	s32i	a3, a2, PT_DEPC			# setup depc
 
 	/* Jump to the exception handler. */
 
-	movi	a3, exc_table
+	rsr	a3, EXCSAVE_1			# retrive exc_table[cpu]
 	rsr	a0, EXCCAUSE
         addx4	a0, a0, a3              	# find entry in table
         l32i	a0, a0, EXC_TABLE_FAST_USER     # load handler
@@ -1239,6 +1248,7 @@ fast_syscall_spill_registers_fixup_return:
 	xsr	a3, EXCSAVE_1
 	movi	a2, fast_syscall_spill_registers_fixup
 	s32i	a2, a3, EXC_TABLE_FIXUP
+	s32i	a0, a3, EXC_TABLE_DOUBLE_SAVE
 	rsr	a2, WINDOWBASE
 	s32i	a2, a3, EXC_TABLE_PARAM
 	l32i	a2, a3, EXC_TABLE_KSTK
@@ -1251,9 +1261,11 @@ fast_syscall_spill_registers_fixup_return:
 	rsync
 
 	/* Restore a3 and return. */
-
+// FIXME
+#if 0
 	movi	a3, exc_table
 	xsr	a3, EXCSAVE_1
+#endif
 
 	rfde
 
@@ -1265,7 +1277,7 @@ fast_syscall_spill_registers_fixup_return:
  *
  *  - must be called with call0.
  *  - uses a3, a4 and SAR.
- *  - the last 'valid' register of each frame are clobbered.
+ *  - the last 'valid' register of each frame is clobbered.
  *  - the caller must have registered a fixup handler
  *    (or be inside a critical section)
  *  - PS_EXCM must be set (PS_WOE cleared?)
@@ -1441,9 +1453,13 @@ ENTRY(_spill_registers)
 
 	movi	a0, 0
 
+#if 0
 	movi	a3, exc_table
 	l32i	a1, a3, EXC_TABLE_KSTK
 	wsr	a3, EXCSAVE_1
+#endif
+	rsr	a3, EXCSAVE_1
+	l32i	a1, a3, EXC_TABLE_KSTK
 
 	movi	a4, (1 << PS_WOE_BIT) | 1
 	wsr	a4, PS
@@ -1482,9 +1498,9 @@ ENTRY(fast_second_level_miss_double_kernel)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1492,9 +1508,10 @@ ENTRY(fast_second_level_miss_double_kernel)
 
 ENTRY(fast_second_level_miss)
 
-	/* Save a1. Note: we don't expect a double exception. */
+	/* Save a1 and a3. */
 
 	s32i	a1, a2, PT_AREG1
+	s32i	a3, a2, PT_AREG3
 
 	/* We need to map the page of PTEs for the user task.  Find
 	 * the pointer to that page.  Also, it's possible for tsk->mm
@@ -1517,7 +1534,8 @@ ENTRY(fast_second_level_miss)
 	beqz	a0, 9f
 
 
-	/* We deliberately destroy a3 that holds the exception table. */
+// FIXME no:
+/* We deliberately destroy a3 that holds the exception table. */
 
 8:	rsr	a3, EXCVADDR		# fault address
 	_PGD_OFFSET(a0, a3, a1)
@@ -1569,7 +1587,7 @@ ENTRY(fast_second_level_miss)
 
 	/* Exit critical section. */
 
-4:	movi	a3, exc_table		# restore a3
+4:	rsr	a3, EXCSAVE_1
 	movi	a0, 0
 	s32i	a0, a3, EXC_TABLE_FIXUP
 
@@ -1577,8 +1595,8 @@ ENTRY(fast_second_level_miss)
 
 	l32i	a0, a2, PT_AREG0
 	l32i	a1, a2, PT_AREG1
+	l32i	a3, a2, PT_AREG3
 	l32i	a2, a2, PT_DEPC
-	xsr	a3, EXCSAVE_1
 
 	bgeui	a2, VALID_DOUBLE_EXCEPTION_ADDRESS, 1f
 
@@ -1665,11 +1683,8 @@ ENTRY(fast_second_level_miss)
 
 2:	/* Invalid PGD, default exception handling */
 
-	movi	a3, exc_table
 	rsr	a1, DEPC
-	xsr	a3, EXCSAVE_1
 	s32i	a1, a2, PT_AREG2
-	s32i	a3, a2, PT_AREG3
 	mov	a1, a2
 
 	rsr	a2, PS
@@ -1688,9 +1703,9 @@ ENTRY(fast_second_level_miss)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1698,53 +1713,51 @@ ENTRY(fast_second_level_miss)
 
 ENTRY(fast_store_prohibited)
 
-	/* Save a1 and a4. */
+	/* Save a1 and a3. */
 
 	s32i	a1, a2, PT_AREG1
-	s32i	a4, a2, PT_AREG4
+	s32i	a3, a2, PT_AREG3
 
 	GET_CURRENT(a1,a2)
 	l32i	a0, a1, TASK_MM		# tsk->mm
 	beqz	a0, 9f
 
 8:	rsr	a1, EXCVADDR		# fault address
-	_PGD_OFFSET(a0, a1, a4)
+	_PGD_OFFSET(a0, a1, a3)
 	l32i	a0, a0, 0
 	beqz	a0, 2f
 
 	/* Note that we assume _PAGE_WRITABLE_BIT is only set if pte is valid.*/
 
-	_PTE_OFFSET(a0, a1, a4)
-	l32i	a4, a0, 0		# read pteval
-	bbci.l	a4, _PAGE_WRITABLE_BIT, 2f
+	_PTE_OFFSET(a0, a1, a3)
+	l32i	a3, a0, 0		# read pteval
+	bbci.l	a3, _PAGE_WRITABLE_BIT, 2f
 
 	movi	a1, _PAGE_ACCESSED | _PAGE_DIRTY | _PAGE_HW_WRITE
-	or	a4, a4, a1
+	or	a3, a3, a1
 	rsr	a1, EXCVADDR
-	s32i	a4, a0, 0
+	s32i	a3, a0, 0
 
 	/* We need to flush the cache if we have page coloring. */
 #if (DCACHE_WAY_SIZE > PAGE_SIZE) && XCHAL_DCACHE_IS_WRITEBACK
 	dhwb	a0, 0
 #endif
 	pdtlb	a0, a1
-	wdtlb	a4, a0
+	wdtlb	a3, a0
 
 	/* Exit critical section. */
 
 	movi	a0, 0
+	rsr	a3, EXCSAVE_1
 	s32i	a0, a3, EXC_TABLE_FIXUP
 
 	/* Restore the working registers, and return. */
 
-	l32i	a4, a2, PT_AREG4
+	l32i	a3, a2, PT_AREG3
 	l32i	a1, a2, PT_AREG1
 	l32i	a0, a2, PT_AREG0
 	l32i	a2, a2, PT_DEPC
 
-	/* Restore excsave1 and a3. */
-
-	xsr	a3, EXCSAVE_1
 	bgeui	a2, VALID_DOUBLE_EXCEPTION_ADDRESS, 1f
 
 	rsr	a2, DEPC
@@ -1761,11 +1774,8 @@ ENTRY(fast_store_prohibited)
 
 2:	/* If there was a problem, handle fault in C */
 
-	rsr	a4, DEPC	# still holds a2
-	xsr	a3, EXCSAVE_1
-	s32i	a4, a2, PT_AREG2
-	s32i	a3, a2, PT_AREG3
-	l32i	a4, a2, PT_AREG4
+	rsr	a3, DEPC		# still holds a2
+	s32i	a3, a2, PT_AREG2
 	mov	a1, a2
 
 	rsr	a2, PS

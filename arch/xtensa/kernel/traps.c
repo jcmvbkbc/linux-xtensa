@@ -85,39 +85,38 @@ typedef struct {
 
 static dispatch_init_table_t __initdata dispatch_init_table[] = {
 
-{ EXCCAUSE_ILLEGAL_INSTRUCTION,	0,	   do_illegal_instruction},
-{ EXCCAUSE_SYSTEM_CALL,		KRNL,	   fast_syscall_kernel },
-{ EXCCAUSE_SYSTEM_CALL,		USER,	   fast_syscall_user },
-{ EXCCAUSE_SYSTEM_CALL,		0,	   system_call },
+{ EXCCAUSE_ILLEGAL_INSTRUCTION,		0,	   do_illegal_instruction},
+{ EXCCAUSE_SYSTEM_CALL,			KRNL,	   fast_syscall_kernel },
+{ EXCCAUSE_SYSTEM_CALL,			USER,	   fast_syscall_user },
+{ EXCCAUSE_SYSTEM_CALL,			0,	   system_call },
 /* EXCCAUSE_INSTRUCTION_FETCH unhandled */
 /* EXCCAUSE_LOAD_STORE_ERROR unhandled*/
-{ EXCCAUSE_LEVEL1_INTERRUPT,	0,	   do_interrupt },
-{ EXCCAUSE_ALLOCA,		USER|KRNL, fast_alloca },
+{ EXCCAUSE_LEVEL1_INTERRUPT,		0,	   do_interrupt },
+{ EXCCAUSE_ALLOCA,			USER|KRNL, fast_alloca },
 /* EXCCAUSE_INTEGER_DIVIDE_BY_ZERO unhandled */
 /* EXCCAUSE_PRIVILEGED unhandled */
 #if XCHAL_UNALIGNED_LOAD_EXCEPTION || XCHAL_UNALIGNED_STORE_EXCEPTION
 #ifdef CONFIG_UNALIGNED_USER
-{ EXCCAUSE_UNALIGNED,		USER,	   fast_unaligned },
+{ EXCCAUSE_UNALIGNED,			USER,	   fast_unaligned },
 #else
-{ EXCCAUSE_UNALIGNED,		0,	   do_unaligned_user },
+{ EXCCAUSE_UNALIGNED,			0,	   do_unaligned_user },
 #endif
-{ EXCCAUSE_UNALIGNED,		KRNL,	   fast_unaligned },
+{ EXCCAUSE_UNALIGNED,			KRNL,	   fast_unaligned },
 #endif
-{ EXCCAUSE_ITLB_MISS,		0,	   do_page_fault },
-{ EXCCAUSE_ITLB_MISS,		USER|KRNL, fast_second_level_miss},
+{ EXCCAUSE_ITLB_MISS,			0,	   do_page_fault },
+{ EXCCAUSE_ITLB_MISS,			USER|KRNL, fast_second_level_miss},
 { EXCCAUSE_ITLB_MULTIHIT,		0,	   do_multihit },
-{ EXCCAUSE_ITLB_PRIVILEGE,	0,	   do_page_fault },
+{ EXCCAUSE_ITLB_PRIVILEGE,		0,	   do_page_fault },
 /* EXCCAUSE_SIZE_RESTRICTION unhandled */
 { EXCCAUSE_FETCH_CACHE_ATTRIBUTE,	0,	   do_page_fault },
-{ EXCCAUSE_DTLB_MISS,		USER|KRNL, fast_second_level_miss},
-{ EXCCAUSE_DTLB_MISS,		0,	   do_page_fault },
+{ EXCCAUSE_DTLB_MISS,			USER|KRNL, fast_second_level_miss},
+{ EXCCAUSE_DTLB_MISS,			0,	   do_page_fault },
 { EXCCAUSE_DTLB_MULTIHIT,		0,	   do_multihit },
-{ EXCCAUSE_DTLB_PRIVILEGE,	0,	   do_page_fault },
+{ EXCCAUSE_DTLB_PRIVILEGE,		0,	   do_page_fault },
 /* EXCCAUSE_DTLB_SIZE_RESTRICTION unhandled */
 { EXCCAUSE_STORE_CACHE_ATTRIBUTE,	USER|KRNL, fast_store_prohibited },
 { EXCCAUSE_STORE_CACHE_ATTRIBUTE,	0,	   do_page_fault },
 { EXCCAUSE_LOAD_CACHE_ATTRIBUTE,	0,	   do_page_fault },
-/* XCCHAL_EXCCAUSE_FLOATING_POINT unhandled */
 #if XTENSA_HAVE_COPROCESSOR(0)
 COPROCESSOR(0),
 #endif
@@ -152,7 +151,7 @@ COPROCESSOR(7),
  * 2. it is a temporary memory buffer for the exception handlers.
  */
 
-unsigned long exc_table[EXC_TABLE_SIZE/4];
+DEFINE_PER_CPU(unsigned long, exc_table[EXC_TABLE_SIZE/4]);
 
 void die(const char*, struct pt_regs*, long);
 
@@ -303,18 +302,29 @@ do_debug(struct pt_regs *regs)
  * See vectors.S for more details.
  */
 
-#define set_handler(idx,handler) (exc_table[idx] = (unsigned long) (handler))
+//#define set_handler(idx,handler) (exc_table[idx] = (unsigned long) (handler))
+
+static void set_handler(int idx, void (*handler)(void))
+{
+	unsigned int cpu;
+
+	for (cpu = 0; cpu < NR_CPUS; cpu++)
+		per_cpu(exc_table, cpu)[idx] = (unsigned long) handler;
+}
 
 void __init trap_init(void)
 {
 	int i;
+	unsigned long excsave1;
+
+	printk("trap_init %d\n", smp_processor_id());
 
 	/* Setup default vectors. */
 
 	for(i = 0; i < 64; i++) {
 		set_handler(EXC_TABLE_FAST_USER/4   + i, user_exception);
 		set_handler(EXC_TABLE_FAST_KERNEL/4 + i, kernel_exception);
-		set_handler(EXC_TABLE_DEFAULT/4 + i, do_unhandled);
+		set_handler(EXC_TABLE_DEFAULT/4 + i, (void(*)(void))do_unhandled);
 	}
 
 	/* Setup specific handlers. */
@@ -335,9 +345,25 @@ void __init trap_init(void)
 
 	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
 
+	excsave1 = (unsigned long) per_cpu(exc_table, smp_processor_id());
+	asm volatile ("wsr %0, "__stringify(EXCSAVE_1)"\n" : : "a" (excsave1));
+#if 0
 	i = (unsigned long)exc_table;
 	__asm__ __volatile__("wsr  %0, "__stringify(EXCSAVE_1)"\n" : : "a" (i));
+#endif
 }
+
+#ifdef CONFIG_SMP
+void __init secondary_trap_init(void)
+{
+	unsigned long excsave1;
+
+	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
+
+	excsave1 = (unsigned long) per_cpu(exc_table, smp_processor_id());
+	asm volatile ("wsr %0, "__stringify(EXCSAVE_1)"\n" : : "a" (excsave1));
+}
+#endif
 
 /*
  * This function dumps the current valid window frame and other base registers.

@@ -11,17 +11,38 @@
 #ifndef _XTENSA_SMP_H
 #define _XTENSA_SMP_H
 
-extern struct xtensa_cpuinfo boot_cpu_data;
+//#ifndef CONFIG_SMP
+//# error "<asm-xtensa/smp.h> included in non-SMP build"
+//#endif
 
-#define cpu_data (&boot_cpu_data)
-#define current_cpu_data boot_cpu_data
+#include <linux/cpumask.h>
+
+#define raw_smp_processor_id() (current_thread_info()->cpu)
+
+
+//#define cpu_data (&boot_cpu_data)
+//#define current_cpu_data boot_cpu_data
 
 struct xtensa_cpuinfo {
-	unsigned long	*pgd_cache;
-	unsigned long	*pte_cache;
-	unsigned long	pgtable_cache_sz;
+	unsigned long asid_cache;
+//	unsigned long	*pgd_cache;
+//	unsigned long	*pte_cache;
+//	unsigned long	pgtable_cache_sz;
 };
+//extern struct xtensa_cpuinfo boot_cpu_data;
+extern struct xtensa_cpuinfo cpu_data[NR_CPUS];
 
 #define cpu_logical_map(cpu)	(cpu)
+
+#ifdef CONFIG_SMP
+# define SMP_LOCAL(func)	local_##func
+#else
+# define SMP_LOCAL(func)	func
+#endif
+
+enum ipi_msg_type {
+	IPI_RESCHEDULE = 0,
+	IPI_CALL_FUNC,
+};
 
 #endif	/* _XTENSA_SMP_H */

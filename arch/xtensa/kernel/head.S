@@ -31,7 +31,7 @@
  *   compiled to.
  * - a2 contains either 0 or a pointer to a list of boot parameters.
  *   (see setup.c for more details)
- *
+ * - caches have been initialized before we come here.
  */
 
 /*
@@ -54,6 +54,7 @@ _start:	_j	2f
 	jx	a0
 
 	.text
+	.global _startup
 	.align 4
 _startup:
 
@@ -134,22 +135,14 @@ _startup:
 	wsr	a1, PS
 	rsync
 
-	/*  Initialize the caches.
-	 *  a2, a3 are just working registers (clobbered).
-	 */
+	/* End of baisc initialization. */
 
-#if XCHAL_DCACHE_LINE_LOCKABLE
-	___unlock_dcache_all a2 a3
-#endif
+#ifdef CONFIG_SMP
 
-#if XCHAL_ICACHE_LINE_LOCKABLE
-	___unlock_icache_all a2 a3
-#endif
+	rsr	a2, PRID
+	bnez	a2, .Lboot_secondary
 
-	___invalidate_dcache_all a2 a3
-	___invalidate_icache_all a2 a3
-
-	isync
+#endif	/* CONFIG_SMP */
 
 	/* Unpack data sections
 	 *
@@ -199,10 +192,21 @@ _startup:
 	___flush_dcache_all a2 a3
 #endif
 
+// FIXME: CPU should come up that way
+
+	___invalidate_dcache_all a2 a3
+	movi	a2, 0x220
+	movi	a3, 1
+	wer	a2, a3
+
+
+
+.Lboot_secondary:
+
 	/* Setup stack and enable window exceptions (keep irqs disabled) */
 
-	movi	a1, init_thread_union
-	addi	a1, a1, KERNEL_STACK_SIZE
+	movi	a1, start_info
+	l32i	a1, a1, 0
 
 	movi	a2, 0x00040001		# WOE=1, INTLEVEL=1, UM=0
 	wsr	a2, PS			# (enable reg-windows; progmode stack)
@@ -213,22 +217,38 @@ _startup:
 	movi	a2, debug_exception
 	wsr	a2, EXCSAVE + XCHAL_DEBUGLEVEL
 
+#if 0
 	/* Set up EXCSAVE[1] to point to the exc_table. */
 
-	movi	a6, exc_table
+	rsr	a4, PRID
+	movi	a6, per_cpu__exc_table
+	slli	a4, a4, EXC_TABLE_SIZE_LOG2
+	add	a6, a6, a4
 	xsr	a6, EXCSAVE_1
+#endif
 
 	/* init_arch kick-starts the linux kernel */
 
 	movi	a4, init_arch
 	callx4	a4
 
-	movi	a4, start_kernel
+	movi	a4, start_info
+	l32i	a4, a4, 4
 	callx4	a4
 
 should_never_return:
 	j	should_never_return
 
+/*
+ * DATA section
+ */
+
+	/* .section ".init.data" */
+	.data
+	.align	4
+ENTRY(start_info)
+	.long	init_thread_union + KERNEL_STACK_SIZE
+	.long	start_kernel
 
 /*
  * BSS section

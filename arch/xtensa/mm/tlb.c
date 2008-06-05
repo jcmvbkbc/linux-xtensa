@@ -49,7 +49,7 @@ static inline void __flush_dtlb_all (void)
 }
 
 
-void flush_tlb_all (void)
+void SMP_LOCAL(flush_tlb_all) (void)
 {
 	__flush_itlb_all();
 	__flush_dtlb_all();
@@ -61,17 +61,21 @@ void flush_tlb_all (void)
  * a new context will be assigned to it.
  */
 
-void flush_tlb_mm(struct mm_struct *mm)
+void SMP_LOCAL(flush_tlb_mm)(struct mm_struct *mm)
 {
+	int cpu = smp_processor_id();
+
 	if (mm == current->active_mm) {
 		int flags;
+		// FIXME: enought here?? use spinlock!
 		local_save_flags(flags);
-		__get_new_mmu_context(mm);
-		__load_mmu_context(mm);
+		__get_new_mmu_context(mm, cpu);
+		__load_mmu_context(mm, cpu);
 		local_irq_restore(flags);
+	} else {
+		mm->context.asid[cpu] = NO_CONTEXT;
+		mm->context.cpu = NR_CPUS;
 	}
-	else
-		mm->context = 0;
 }
 
 #define _ITLB_ENTRIES (ITLB_ARF_WAYS << XCHAL_ITLB_ARF_ENTRIES_LOG2)
@@ -82,13 +86,14 @@ void flush_tlb_mm(struct mm_struct *mm)
 # define _TLB_ENTRIES _DTLB_ENTRIES
 #endif
 
-void flush_tlb_range (struct vm_area_struct *vma,
-    		      unsigned long start, unsigned long end)
+void SMP_LOCAL(flush_tlb_range) (struct vm_area_struct *vma,
+				 unsigned long start, unsigned long end)
 {
+	int cpu = smp_processor_id();
 	struct mm_struct *mm = vma->vm_mm;
 	unsigned long flags;
 
-	if (mm->context == NO_CONTEXT)
+	if (mm->context.asid[cpu] == NO_CONTEXT)
 		return;
 
 #if 0
@@ -99,7 +104,7 @@ void flush_tlb_range (struct vm_area_struct *vma,
 
 	if (end-start + (PAGE_SIZE-1) <= _TLB_ENTRIES << PAGE_SHIFT) {
 		int oldpid = get_rasid_register();
-		set_rasid_register (ASID_INSERT(mm->context));
+		set_rasid_register (ASID_INSERT(mm->context.asid[cpu]));
 		start &= PAGE_MASK;
  		if (vma->vm_flags & VM_EXEC)
 			while(start < end) {
@@ -120,13 +125,14 @@ void flush_tlb_range (struct vm_area_struct *vma,
 	local_irq_restore(flags);
 }
 
-void flush_tlb_page (struct vm_area_struct *vma, unsigned long page)
+void SMP_LOCAL(flush_tlb_page) (struct vm_area_struct *vma, unsigned long page)
 {
+	int cpu = smp_processor_id();
 	struct mm_struct* mm = vma->vm_mm;
 	unsigned long flags;
 	int oldpid;
 
-	if(mm->context == NO_CONTEXT)
+	if(mm->context.asid[cpu] == NO_CONTEXT)
 		return;
 
 	local_save_flags(flags);

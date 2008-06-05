@@ -34,9 +34,17 @@
  *  - flush_tlb_range(mm, start, end) flushes a range of pages
  */
 
+#ifdef CONFIG_SMP
+extern void local_flush_tlb_all(void);
+extern void local_flush_tlb_mm(struct mm_struct*);
+extern void local_flush_tlb_page(struct vm_area_struct*, unsigned long);
+extern void local_flush_tlb_range(struct vm_area_struct*, unsigned long,
+				  unsigned long);
+#endif
+
 extern void flush_tlb_all(void);
 extern void flush_tlb_mm(struct mm_struct*);
-extern void flush_tlb_page(struct vm_area_struct*,unsigned long);
+extern void flush_tlb_page(struct vm_area_struct*, unsigned long);
 extern void flush_tlb_range(struct vm_area_struct*,unsigned long,unsigned long);
 
 #define flush_tlb_kernel_range(start,end) flush_tlb_all()

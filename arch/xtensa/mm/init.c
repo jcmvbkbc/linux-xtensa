@@ -30,6 +30,7 @@
 #include <asm/tlb.h>
 #include <asm/page.h>
 #include <asm/pgalloc.h>
+#include <asm/setup.h>
 
 
 DEFINE_PER_CPU(struct mmu_gather, mmu_gathers);
@@ -195,7 +196,7 @@ void __init init_mmu (void)
 	 */
 	set_itlbcfg_register (0);
 	set_dtlbcfg_register (0);
-	flush_tlb_all ();
+	local_flush_tlb_all ();
 
 	/* Set rasid register to a known value. */
 

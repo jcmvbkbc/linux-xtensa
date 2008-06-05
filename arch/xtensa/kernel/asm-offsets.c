@@ -12,17 +12,8 @@
  * Chris Zankel <chris@zankel.net>
  */
 
-#include <asm/processor.h>
-
-#include <linux/types.h>
-#include <linux/stddef.h>
-#include <linux/thread_info.h>
-#include <linux/ptrace.h>
-#include <linux/mm.h>
-
-#include <asm/ptrace.h>
-#include <asm/processor.h>
-#include <asm/uaccess.h>
+#include <linux/sched.h>
+#include <linux/page-flags.h>
 
 #define DEFINE(sym, val) asm volatile("\n->" #sym " %0 " #val : : "i" (val))
 
@@ -42,6 +33,7 @@ int main(void)
 	DEFINE(PT_SAR, offsetof (struct pt_regs, sar));
 	DEFINE(PT_ICOUNTLEVEL, offsetof (struct pt_regs, icountlevel));
 	DEFINE(PT_SYSCALL, offsetof (struct pt_regs, syscall));
+	DEFINE(PT_SCOMPARE1, offsetof (struct pt_regs, scompare1));
 	DEFINE(PT_AREG, offsetof (struct pt_regs, areg[0]));
 	DEFINE(PT_AREG0, offsetof (struct pt_regs, areg[0]));
 	DEFINE(PT_AREG1, offsetof (struct pt_regs, areg[1]));
@@ -97,7 +89,6 @@ int main(void)
 	/* struct mm_struct */
 	DEFINE(MM_USERS, offsetof(struct mm_struct, mm_users));
 	DEFINE(MM_PGD, offsetof (struct mm_struct, pgd));
-	DEFINE(MM_CONTEXT, offsetof (struct mm_struct, context));
 
 	/* struct page */
 	DEFINE(PAGE_FLAGS, offsetof(struct page, flags));

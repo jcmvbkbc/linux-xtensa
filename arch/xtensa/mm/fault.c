@@ -21,10 +21,14 @@
 #include <asm/system.h>
 #include <asm/pgalloc.h>
 
-unsigned long asid_cache = ASID_USER_FIRST;
 void bad_page_fault(struct pt_regs*, unsigned long, int);
 
+#ifndef CONFIG_SMP
+unsigned long asid_cache = ASID_USER_FIRST;
+#endif
+
 #undef DEBUG_PAGE_FAULT
+//#define DEBUG_PAGE_FAULT
 
 /*
  * This routine handles page faults.  It determines the address,
@@ -67,7 +71,7 @@ void do_page_fault(struct pt_regs *regs)
 		    exccause == EXCCAUSE_FETCH_CACHE_ATTRIBUTE) ? 1 : 0;
 
 #ifdef DEBUG_PAGE_FAULT
-	printk("[%s:%d:%08x:%d:%08x:%s%s]\n", current->comm, current->pid,
+	printk("[%d %s:%d:%08x:%d:%08x:%s%s]\n", smp_processor_id(), current->comm, current->pid,
 	       address, exccause, regs->pc, is_write? "w":"", is_exec? "x":"");
 #endif
 

@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <linux/stringify.h>
 #include <linux/notifier.h>
+#include <linux/smp.h>
 
 #include <asm/platform.h>
 #include <asm/bootparam.h>
@@ -104,7 +105,73 @@ static struct notifier_block iss_panic_block = {
 	0
 };
 
+
+#ifdef CONFIG_SMP
+static __init void smp_init_cpus(void)
+{
+	unsigned int i;
+	unsigned int ncpus = *(int*)0xf0000020;	 // FIXME: HACK!!!
+
+	for (i = 0; i < ncpus; i++) {
+		cpu_set(i, cpu_present_map);
+		cpu_set(i, cpu_possible_map);
+	}
+}
+
+__init int platform_boot_secondary(unsigned int cpu, struct task_struct *ts)
+{
+	*(volatile int*)0xf0000004 = 1;
+	//*(volatile int*)0xf0000004 = 0;
+	printk("sent interrupt\n");
+	return 0;
+}
+#endif
+
 void __init platform_setup(char **p_cmdline)
 {
 	atomic_notifier_chain_register(&panic_notifier_list, &iss_panic_block);
+
+#ifdef CONFIG_SMP
+	smp_init_cpus();
+#endif
 }
+
+int msg[NR_CPUS];
+
+void platform_send_ipi_message(cpumask_t callmask, int message)
+{
+	register long ra asm("a0");
+#if 1
+	if (cpu_isset(0, callmask)) {
+		msg[0] |= 1 << message;
+		*(volatile int*)0xf0000000 = 1;
+		asm volatile ("extw");
+//		*(volatile int*)0xf0000000 = 0;
+//		asm volatile ("extw");
+	} else {
+		msg[1] |= 1 << message;
+		*(volatile int*)0xf0000004 = 1;
+		asm volatile ("extw");
+//		*(volatile int*)0xf0000004 = 0;
+//		asm volatile ("extw");
+	}
+#endif
+	//printk("send message: %d %x\n", message, ra);
+}
+
+int platform_recv_ipi_message(void)
+{
+	unsigned int cpu = smp_processor_id();
+	int gotmsg = msg[cpu];
+	msg[cpu] = 0;
+
+	if (cpu == 0) {
+		*(volatile int*)0xf0000000 = 0;
+		asm volatile ("extw");
+	} else {
+		*(volatile int*)0xf0000004 = 0;
+		asm volatile ("extw");
+	}
+	return gotmsg;
+}
+

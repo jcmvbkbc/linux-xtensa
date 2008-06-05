@@ -55,7 +55,10 @@ static inline int irqs_disabled(void)
 #define wmb() mb()
 
 #ifdef CONFIG_SMP
-#error smp_* not defined
+// FIXME: do we need anything special?
+#define smp_mb()	barrier()
+#define smp_rmb()	barrier()
+#define smp_wmb()	barrier()
 #else
 #define smp_mb()	barrier()
 #define smp_rmb()	barrier()

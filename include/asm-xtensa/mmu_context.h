@@ -7,7 +7,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_MMU_CONTEXT_H
@@ -27,7 +27,13 @@
 # error "Linux must have an MMU!"
 #endif
 
+
+#ifdef CONFIG_SMP
+# define cpu_asid_cache(cpu)	(cpu_data[cpu].asid_cache)
+#else
 extern unsigned long asid_cache;
+# define cpu_asid_cache(cpu)	asid_cache
+#endif
 
 /*
  * NO_CONTEXT is the invalid ASID value that we don't ever assign to
@@ -59,20 +65,21 @@ static inline unsigned long get_rasid_register (void)
 }
 
 static inline void
-__get_new_mmu_context(struct mm_struct *mm)
+__get_new_mmu_context(struct mm_struct *mm, int cpu)
 {
 	extern void flush_tlb_all(void);
-	if (! (++asid_cache & ASID_MASK) ) {
+	if (! (++cpu_asid_cache(cpu) & ASID_MASK) ) {
 		flush_tlb_all(); /* start new asid cycle */
-		asid_cache += ASID_USER_FIRST;
+		cpu_asid_cache(cpu) += ASID_USER_FIRST;
 	}
-	mm->context = asid_cache;
+	mm->context.asid[cpu] = cpu_asid_cache(cpu);
+	mm->context.cpu = cpu;
 }
 
 static inline void
-__load_mmu_context(struct mm_struct *mm)
+__load_mmu_context(struct mm_struct *mm, int cpu)
 {
-	set_rasid_register(ASID_INSERT(mm->context));
+	set_rasid_register(ASID_INSERT(mm->context.asid[cpu]));
 	invalidate_page_directory();
 }
 
@@ -84,7 +91,11 @@ __load_mmu_context(struct mm_struct *mm)
 static inline int
 init_new_context(struct task_struct *tsk, struct mm_struct *mm)
 {
-	mm->context = NO_CONTEXT;
+	int cpu;
+
+	for_each_online_cpu(cpu)
+		mm->context.asid[cpu] = NO_CONTEXT;
+
 	return 0;
 }
 
@@ -95,24 +106,32 @@ init_new_context(struct task_struct *tsk, struct mm_struct *mm)
 static inline void
 activate_mm(struct mm_struct *prev, struct mm_struct *next)
 {
+	int cpu = smp_processor_id();
+
 	/* Unconditionally get a new ASID.  */
 
-	__get_new_mmu_context(next);
-	__load_mmu_context(next);
+	__get_new_mmu_context(next, cpu);
+	__load_mmu_context(next, cpu);
 }
 
 
 static inline void switch_mm(struct mm_struct *prev, struct mm_struct *next,
                              struct task_struct *tsk)
 {
-	unsigned long asid = asid_cache;
+	int cpu = smp_processor_id();
+	unsigned long asid = cpu_asid_cache(cpu);
 
-	/* Check if our ASID is of an older version and thus invalid */
+	/*
+	 * Check if our ASID is of an older version and thus invalid.
+	 * Also check for CPU migration. 
+	 */
 
-	if (next->context == NO_CONTEXT || ((next->context^asid) & ~ASID_MASK))
-		__get_new_mmu_context(next);
+	if (next->context.asid[cpu] == NO_CONTEXT 
+	    || ((next->context.asid[cpu] ^ asid) & ~ASID_MASK)
+	    || (next->context.cpu != cpu))
+		__get_new_mmu_context(next, cpu);
 
-	__load_mmu_context(next);
+	__load_mmu_context(next, cpu);
 }
 
 #define deactivate_mm(tsk, mm)	do { } while(0)
