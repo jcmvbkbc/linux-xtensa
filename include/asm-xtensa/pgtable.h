@@ -62,13 +62,16 @@
 
 /*
  * Virtual memory area. We keep a distance to other memory regions to be
- * on the safe side. We also use this area for cache aliasing.
+ * on the safe side. See also fixmap.h
  */
 
 #define VMALLOC_START		0xC0000000
-#define VMALLOC_END		0xC7FEFFFF
-#define TLBTEMP_BASE_1		0xC7FF0000
-#define TLBTEMP_BASE_2		0xC7FF8000
+#define VMALLOC_END		0xC7EFFFFF
+
+// FIXME: remove
+#define TLBTEMP_BASE_1         0xC7FF0000
+#define TLBTEMP_BASE_2         0xC7FF8000
+
 
 /*
  * Xtensa Linux config PTE layout (when present):
