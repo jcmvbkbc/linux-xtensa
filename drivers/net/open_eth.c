@@ -456,13 +456,18 @@ static unsigned int oeth_rx(struct net_device *dev, int budget)
 		/* Process the incoming frame. */
 		pkt_len = len_status >> 16;
 
+		skb = netdev_alloc_skb(dev, pkt_len + 2);
+		skb_reserve(skb, NET_IP_ALIGN);
+
+#if 0	// FIXME
 		skb = dev_alloc_skb(pkt_len);	/*netdev_alloc_skb in newer kernels. */
+#endif
 
 		if (likely(skb)) {
 			skb->dev = dev;
 			OEDRX((printk("RX in ETH buf\n")));
 			OEDRX((oeth_print_packet((u32 *) bdp->addr, pkt_len)));
-
+// FIXME: do we need an skb_put here? 
 			memcpy(skb_put(skb, pkt_len),
 			       (unsigned char *)bdp->addr, pkt_len);
 			OEDRX((printk("RX in memory\n")));
