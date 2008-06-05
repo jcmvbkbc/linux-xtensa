@@ -1,0 +1,374 @@
+/*
+ * arch/xtensa/kernel/smp.c
+ *
+ * Xtensa SMP support functions.
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
+ *
+ * Copyright (C) 2008 Tensilica Inc.
+ *
+ * Chris Zankel <chris@zankel.net>
+ */
+
+#include <linux/init.h>
+#include <linux/smp.h>
+#include <linux/module.h>
+#include <linux/delay.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/thread_info.h>
+
+#include <asm/tlbflush.h>
+#include <asm/platform.h>
+#include <asm/mmu_context.h>
+#include <asm/cacheflush.h>
+
+/* Per-processor data. */
+
+struct xtensa_cpuinfo cpu_data[NR_CPUS];
+
+/* Map of cores in the system and currently online. */
+
+cpumask_t cpu_possible_map;
+cpumask_t cpu_online_map;
+
+EXPORT_SYMBOL(cpu_possible_map);
+EXPORT_SYMBOL(cpu_online_map);
+
+/* IPI (Inter Process Interrupt) */
+
+#define USE_IPI	0
+
+static irqreturn_t ipi_interrupt(int irq, void *dev_id);
+static struct irqaction ipi_irqaction = {
+	.handler = 	ipi_interrupt,
+	.flags = 	IRQF_PERCPU | IRQF_DISABLED,
+	.name =		"ipi",
+	.mask = 	CPU_MASK_ALL,
+};
+
+/* ... */
+
+void __init smp_prepare_cpus(unsigned int max_cpus)
+{
+}
+
+void __init smp_init_cpus(void)
+{
+	unsigned i;
+	unsigned int ncpus = 2;
+
+	for (i = 0; i < ncpus; i++) {
+		cpu_set(i, cpu_present_map);
+		cpu_set(i, cpu_possible_map);
+	}
+}
+
+extern void secondary_time_init(void);
+extern void secondary_trap_init(void);
+
+void __devinit smp_prepare_boot_cpu(void)
+{
+	unsigned int cpu = smp_processor_id();
+	cpu_asid_cache(cpu) = ASID_USER_FIRST;
+
+	printk("smp prepare boot cpu\n");
+}
+
+void __init smp_cpus_done(unsigned int max_cpus)
+{
+	printk("smp_cpus_done\n");
+}
+
+extern void __init secondary_irq_init(void);
+extern void secondary_irq_enable(int);
+void secondary_start_kernel(void)
+{
+	struct mm_struct *mm = &init_mm;
+	unsigned int cpu = smp_processor_id();
+
+	printk("CPU%u: Booted secondary processor\n", cpu);
+
+	/* Init EXCSAVE1 */
+
+	secondary_trap_init();
+
+	/* All kernel threads share the same mm context. */
+
+	atomic_inc(&mm->mm_users);
+	atomic_inc(&mm->mm_count);
+	current->active_mm = mm;
+	cpu_set(cpu, mm->cpu_vm_mask);
+	enter_lazy_tlb(mm, current);
+
+	preempt_disable();
+
+	calibrate_delay();
+
+	secondary_irq_init();
+	secondary_time_init();
+	secondary_irq_enable(USE_IPI);
+
+	cpu_set(cpu, cpu_online_map);
+
+	cpu_idle();
+}
+
+void __init smp_init_irq(void)
+{
+	setup_irq(USE_IPI, &ipi_irqaction);
+}
+
+extern struct {
+	unsigned long stack;
+	void* start;
+} start_info;
+
+extern int __devinit wakeup_secondary_cpu(unsigned int, struct task_struct*);
+
+int __cpuinit __cpu_up(unsigned int cpu)
+{
+	struct task_struct *idle;
+	int ret;
+
+	idle = fork_idle(cpu);
+	if (IS_ERR(idle)) {
+		printk(KERN_ERR "CPU%u: fork() failed\n", cpu);
+		return PTR_ERR(idle);
+	}
+	cpu_asid_cache(cpu) = ASID_USER_FIRST;
+
+	start_info.stack = (unsigned long) idle->thread.sp;
+	start_info.start = secondary_start_kernel;
+printk("wakeup secondary cpu\n");
+	ret = wakeup_secondary_cpu(cpu, idle);
+
+	if (ret == 0) {
+		unsigned long timeout;
+
+		timeout = jiffies + HZ * 20;
+		while (time_before(jiffies, timeout)) {
+			if (cpu_online(cpu))
+				break;
+			
+			udelay(10);
+			barrier();
+		}
+
+		if (!cpu_online(cpu))
+			ret = -EIO;
+	}
+	return ret;
+}
+extern void send_ipi_message(cpumask_t, int);
+void smp_send_reschedule(int cpu)
+{
+	cpumask_t callmask = cpu_online_map;
+
+	cpu_clear(smp_processor_id(), callmask);
+
+	send_ipi_message(callmask, IPI_RESCHEDULE);
+}
+
+void smp_send_stop(void)
+{
+printk("smp_send_stop()\n");
+while(1);
+	// smp_call_function(stop_this_cpu, 0, 1, 0); ?? SH
+}
+
+struct smp_call_data {
+	void (*func) (void *info);
+	void *info;
+	long wait;
+	atomic_t pending;
+	atomic_t running;
+};
+
+
+//extern void send_ipi_message(cpumask_t, int);
+
+static DEFINE_SPINLOCK(smp_call_function_lock);
+static struct smp_call_data * volatile smp_call_function_data;
+
+int smp_call_function_on_cpu(void (*func)(void *info), void *info, 
+			      int retry, int wait, cpumask_t callmask)
+{
+	struct smp_call_data data;
+	long nrcpus;
+	unsigned long timeout;
+
+#ifdef DBG
+	register int ra asm("a0");
+printk("**********\nsmp_call_function %d -> %d%d %p(%p) r:%d w:%d\n", 
+smp_processor_id(), cpu_isset(0, cpu_online_map), cpu_isset(1, cpu_online_map),
+func, info, retry, wait);
+#endif
+
+	cpu_clear(smp_processor_id(), callmask);
+	nrcpus = cpus_weight(callmask);
+
+	if (nrcpus == 0)
+		return 0;
+
+	WARN_ON(irqs_disabled());
+
+	data.func = func;
+	data.info = info;
+	data.wait = wait;
+
+	atomic_set(&data.pending, nrcpus);
+	atomic_set(&data.running, wait ? nrcpus : 0);
+
+	spin_lock(&smp_call_function_lock);
+	smp_call_function_data = &data;
+
+	send_ipi_message(callmask, IPI_CALL_FUNC);
+
+	timeout = jiffies + HZ * 20;
+	while (atomic_read(&data.pending) != 0 && time_before(jiffies, timeout))
+		barrier();
+
+	if (atomic_read(&data.pending) != 0) {
+		printk("timeout\n");
+	}
+
+	smp_call_function_data = NULL;
+	spin_unlock(&smp_call_function_lock);
+
+	if (atomic_read(&data.pending) != 0)
+		return -ETIMEDOUT;
+
+	while (wait && atomic_read(&data.running))
+		barrier();
+
+	return 0;
+}
+
+
+int
+smp_call_function (void (*func) (void *info), void *info, int retry, int wait)
+{
+	return smp_call_function_on_cpu (func, info, retry, wait,
+					 cpu_online_map);
+}
+EXPORT_SYMBOL(smp_call_function);
+
+void ipi_call_function(void)
+{
+	struct smp_call_data *data;
+
+	/* Get data structure before we decrement the 'pending' counter. */
+
+	data = smp_call_function_data;
+	atomic_sub(1, &data->pending);
+
+	/* Execute function. */
+
+	data->func(data->info);
+
+	/* If caller is waiting on us, decrement running counter. */
+
+	if (data->wait)
+		atomic_sub(1, &data->running);
+}
+
+void ipi_reschedule(void)
+{
+	set_need_resched();
+}
+
+extern int recv_ipi_messages(void);
+irqreturn_t ipi_interrupt(int irq, void *dev_id)
+{
+	int msg;
+	int cpu = smp_processor_id();
+	
+	msg = recv_ipi_messages();
+#if 0
+	printk("---------\nipi_interrupt msg %x on %d!\n", msg, cpu);
+#endif
+
+	if (msg & (1 << IPI_RESCHEDULE)) {
+		ipi_reschedule();
+	} 
+	if (msg & (1 << IPI_CALL_FUNC)) {
+		ipi_call_function();
+	}
+
+	// send_ipi(cpu, SMP_MSG_RESCHEDULE)
+
+	return IRQ_HANDLED;
+}
+
+// FIXME move somewhere else...
+int setup_profiling_timer(unsigned int multiplier)
+{
+printk("setup_profiling_timer %d\n", multiplier);
+	return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+
+void ipi_flush_tlb_page(const void *arg[])
+{
+	local_flush_tlb_page((struct vm_area_struct *) arg[0], 
+			     (unsigned long) arg[1]);
+}
+
+void ipi_flush_tlb_range(const void *arg[])
+{
+	local_flush_tlb_range((struct vm_area_struct *) arg[0], 
+			      (unsigned long) arg[1], (unsigned long) arg[2]);
+}
+
+void flush_tlb_all(void)
+{
+	on_each_cpu((void(*)(void*))local_flush_tlb_all, NULL, 1, 1);
+}
+
+void flush_tlb_mm(struct mm_struct* mm)
+{
+	on_each_cpu((void(*)(void*))local_flush_tlb_mm, mm, 1, 1);
+}
+
+void flush_tlb_page(struct vm_area_struct* mm, unsigned long addr)
+{
+	unsigned long args[] = { (unsigned long )mm, addr};
+	on_each_cpu((void(*)(void*))ipi_flush_tlb_page, args, 1, 1);
+}
+
+void flush_tlb_range(struct vm_area_struct* mm, 
+		     unsigned long start, unsigned long end)
+{
+	unsigned long args[] = { (unsigned long)mm, start, end };
+	on_each_cpu((void(*)(void*))ipi_flush_tlb_range, args, 1, 1);
+}
+
+/* ------------------------------------------------------------------------- */
+
+void ipi_invalidate_dcache_range(const void *arg[])
+{
+	__invalidate_dcache_range((unsigned long)arg[0], (unsigned long) arg[1]);
+}
+
+void ipi_flush_invalidate_dcache_range(const void *arg[])
+{
+	__flush_invalidate_dcache_range((unsigned long)arg[0], (unsigned long) arg[1]);
+}
+
+void system_invalidate_dcache_range(unsigned long start, unsigned long size)
+{
+	unsigned long args[] = { start, size };
+	on_each_cpu((void(*)(void*))ipi_invalidate_dcache_range, args, 1, 1);
+}
+
+void system_flush_invalidate_dcache_range(unsigned long start, unsigned long size)
+{
+	unsigned long args[] = { start, size };
+	on_each_cpu((void(*)(void*))ipi_flush_invalidate_dcache_range, args, 1, 1);
+}
+
+
