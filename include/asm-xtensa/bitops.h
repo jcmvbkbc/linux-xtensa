@@ -19,19 +19,16 @@
 #error only <linux/bitops.h> can be included directly
 #endif
 
-#include <asm/processor.h>
+//#include <asm/processor.h>
 #include <asm/byteorder.h>
 #include <asm/system.h>
 
 #ifdef CONFIG_SMP
-# error SMP not supported on this architecture
+// FIXME  error SMP not supported on this architecture
 #endif
 
 #define smp_mb__before_clear_bit()	barrier()
 #define smp_mb__after_clear_bit()	barrier()
-
-#include <asm-generic/bitops/atomic.h>
-#include <asm-generic/bitops/non-atomic.h>
 
 #if XCHAL_HAVE_NSA
 
@@ -94,6 +91,102 @@ static inline int fls (unsigned int x)
 #endif
 
 #include <asm-generic/bitops/fls64.h>
+
+/*
+ * These functions are the basis of our bit ops.
+ *
+ * First, the atomic bitops. These use native endian.
+ */
+static inline void set_bit(unsigned int bit, volatile unsigned long *p)
+{
+	unsigned long flags;
+	unsigned long mask = 1UL << (bit & 31);
+
+	p += bit >> 5;
+
+	local_irq_save(flags);
+	*p |= mask;
+	local_irq_restore(flags);
+}
+
+static inline void clear_bit(unsigned int bit, volatile unsigned long *p)
+{
+	unsigned long flags;
+	unsigned long mask = 1UL << (bit & 31);
+
+	p += bit >> 5;
+
+	local_irq_save(flags);
+	*p &= ~mask;
+	local_irq_restore(flags);
+}
+
+static inline void change_bit(unsigned int bit, volatile unsigned long *p)
+{
+	unsigned long flags;
+	unsigned long mask = 1UL << (bit & 31);
+
+	p += bit >> 5;
+
+	local_irq_save(flags);
+	*p ^= mask;
+	local_irq_restore(flags);
+}
+
+static inline int
+test_and_set_bit(unsigned int bit, volatile unsigned long *p)
+{
+	unsigned long flags;
+	unsigned int res;
+	unsigned long mask = 1UL << (bit & 31);
+
+	p += bit >> 5;
+
+	local_irq_save(flags);
+	res = *p;
+	*p = res | mask;
+	local_irq_restore(flags);
+
+	return res & mask;
+}
+
+static inline int
+test_and_clear_bit(unsigned int bit, volatile unsigned long *p)
+{
+	unsigned long flags;
+	unsigned int res;
+	unsigned long mask = 1UL << (bit & 31);
+
+	p += bit >> 5;
+
+	local_irq_save(flags);
+	res = *p;
+	*p = res & ~mask;
+	local_irq_restore(flags);
+
+	return res & mask;
+}
+
+static inline int
+test_and_change_bit(unsigned int bit, volatile unsigned long *p)
+{
+	unsigned long flags;
+	unsigned int res;
+	unsigned long mask = 1UL << (bit & 31);
+
+	p += bit >> 5;
+
+	local_irq_save(flags);
+	res = *p;
+	*p = res ^ mask;
+	local_irq_restore(flags);
+
+	return res & mask;
+}
+
+#include <asm-generic/bitops/non-atomic.h>
+
+
 #include <asm-generic/bitops/find.h>
 #include <asm-generic/bitops/ext2-non-atomic.h>
 

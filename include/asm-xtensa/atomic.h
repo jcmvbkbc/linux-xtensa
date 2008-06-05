@@ -67,6 +67,21 @@ typedef struct { volatile int counter; } atomic_t;
  */
 static inline void atomic_add(int i, atomic_t * v)
 {
+#if XCHAL_HAVE_S32C1I
+	unsigned long tmp;
+	int result;
+
+	__asm__ __volatile__(
+"1:	l32i	%1, %3, 0		\n"
+"	wsr	%1, SCOMPARE1		\n"
+"	add	%0, %1, %2		\n"
+"	s32c1i	%0, %3, 0		\n"
+"	bne	%0, %1, 1b		\n"
+	: "=&a" (result), "=&a" (tmp)
+	: "a" (i), "a" (v)
+	: "memory"
+	);
+#else
     unsigned int vval;
 
     __asm__ __volatile__(
@@ -80,6 +95,7 @@ static inline void atomic_add(int i, atomic_t * v)
 	: "a" (i), "a" (v)
 	: "a15", "memory"
 	);
+#endif
 }
 
 /**
@@ -91,6 +107,21 @@ static inline void atomic_add(int i, atomic_t * v)
  */
 static inline void atomic_sub(int i, atomic_t *v)
 {
+#if XCHAL_HAVE_S32C1I
+	unsigned long tmp;
+	int result;
+
+	__asm__ __volatile__(
+"1:	l32i	%1, %3, 0		\n"
+"	wsr	%1, SCOMPARE1		\n"
+"	sub	%0, %1, %2		\n"
+"	s32c1i	%0, %3, 0		\n"
+"	bne	%0, %1, 1b		\n"
+	: "=&a" (result), "=&a" (tmp)
+	: "a" (i), "a" (v)
+	: "memory"
+	);
+#else
     unsigned int vval;
 
     __asm__ __volatile__(
@@ -104,6 +135,7 @@ static inline void atomic_sub(int i, atomic_t *v)
 	: "a" (i), "a" (v)
 	: "a15", "memory"
 	);
+#endif /* XCHAL_HAVE_S32C1I */
 }
 
 /*
@@ -112,6 +144,24 @@ static inline void atomic_sub(int i, atomic_t *v)
 
 static inline int atomic_add_return(int i, atomic_t * v)
 {
+#if XCHAL_HAVE_S32C1I
+	unsigned long tmp;
+	int result;
+
+	__asm__ __volatile__(
+"1:	l32i	%1, %3, 0		\n"
+"	wsr	%1, SCOMPARE1		\n"
+"	add	%0, %1, %2		\n"
+"	s32c1i	%0, %3, 0		\n"
+"	bne	%0, %1, 1b		\n"
+"	add	%0, %0, %2		\n"
+	: "=&a" (result), "=&a" (tmp)
+	: "a" (i), "a" (v)
+	: "memory"
+	);
+
+	return result;
+#else
      unsigned int vval;
 
     __asm__ __volatile__(
@@ -127,10 +177,29 @@ static inline int atomic_add_return(int i, atomic_t * v)
 	);
 
     return vval;
+#endif /* XCHAL_HAVE_S32C1I */
 }
 
 static inline int atomic_sub_return(int i, atomic_t * v)
 {
+#if XCHAL_HAVE_S32C1I
+	unsigned long tmp;
+	int result;
+
+	__asm__ __volatile__(
+"1:	l32i	%1, %3, 0		\n"
+"	wsr	%1, SCOMPARE1		\n"
+"	sub	%0, %1, %2		\n"
+"	s32c1i	%0, %3, 0		\n"
+"	bne	%0, %1, 1b		\n"
+"	sub	%0, %0, %2		\n"
+	: "=&a" (result), "=&a" (tmp)
+	: "a" (i), "a" (v)
+	: "memory"
+	);
+
+	return result;
+#else
     unsigned int vval;
 
     __asm__ __volatile__(
@@ -146,6 +215,7 @@ static inline int atomic_sub_return(int i, atomic_t * v)
 	);
 
     return vval;
+#endif /* XCHAL_HAVE_S32C1I */
 }
 
 /**
@@ -253,6 +323,21 @@ static __inline__ int atomic_add_unless(atomic_t *v, int a, int u)
 
 static inline void atomic_clear_mask(unsigned int mask, atomic_t *v)
 {
+#if XCHAL_HAVE_S32C1I
+	unsigned long tmp;
+	int result;
+
+	__asm__ __volatile__(
+"1:	l32i	%1, %3, 0		\n"
+"	wsr	%1, SCOMPARE1		\n"
+"	and	%0, %1, %2		\n"
+"	s32c1i	%0, %3, 0		\n"
+"	bne	%0, %1, 1b		\n"
+	: "=&a" (result), "=&a" (tmp)
+	: "Ia" (~mask), "a" (v)
+	: "memory"
+	);
+#else
     unsigned int all_f = -1;
     unsigned int vval;
 
@@ -268,10 +353,26 @@ static inline void atomic_clear_mask(unsigned int mask, atomic_t *v)
 	: "a" (v), "a" (all_f), "1" (mask)
 	: "a15", "memory"
 	);
+#endif /* XCHAL_HAVE_S32C1I */
 }
 
 static inline void atomic_set_mask(unsigned int mask, atomic_t *v)
 {
+#if XCHAL_HAVE_S32C1I
+	unsigned long tmp;
+	int result;
+
+	__asm__ __volatile__(
+"1:	l32i	%1, %3, 0		\n"
+"	wsr	%1, SCOMPARE1		\n"
+"	or	%0, %1, %2		\n"
+"	s32c1i	%0, %3, 0		\n"
+"	bne	%0, %1, 1b		\n"
+	: "=&a" (result), "=&a" (tmp)
+	: "a" (mask), "a" (v)
+	: "memory"
+	);
+#else
     unsigned int vval;
 
     __asm__ __volatile__(
@@ -285,6 +386,7 @@ static inline void atomic_set_mask(unsigned int mask, atomic_t *v)
 	: "a" (mask), "a" (v)
 	: "a15", "memory"
 	);
+#endif /* XCHAL_HAVE_S32C1I */
 }
 
 /* Atomic operations are already serializing */
