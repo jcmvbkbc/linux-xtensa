@@ -54,18 +54,16 @@ static int xtensa_irq_retrigger(unsigned int irq)
 static void set_er (unsigned long value, unsigned long addr)
 {
 	//printk("seter %x -> %x\n", value, addr);
-	asm volatile ("wer %0, %1" : : "a" (addr), "a" (value) : "memory");
+	asm volatile ("wer %0, %1" : : "a" (value), "a" (addr) : "memory");
 }
 
 static inline volatile unsigned long get_er (unsigned long addr)
 {
 	register unsigned long value;
-	asm volatile ("rer %1, %0" : "=a" (value) : "a" (addr) : "memory");
+	asm volatile ("rer %0, %1" : "=a" (value) : "a" (addr) : "memory");
 	return value;
 }
 	
-/* FIXME END */
-
 void write_er(unsigned long v, unsigned long a)
 {
 	set_er(v, a);

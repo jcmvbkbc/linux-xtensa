@@ -36,7 +36,7 @@ ENTRY(_SecondaryResetVector)
 
 	movi	a2, CCON
 	movi	a3, 1
-	wer	a2, a3
+	wer	a3, a2
 
 	movi	a3, _startup
 	jx	a3

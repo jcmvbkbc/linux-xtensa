@@ -197,7 +197,7 @@ _startup:
 	___invalidate_dcache_all a2 a3
 	movi	a2, 0x220
 	movi	a3, 1
-	wer	a2, a3
+	wer	a3, a2
 
 
 
