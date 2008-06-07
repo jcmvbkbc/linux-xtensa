@@ -65,8 +65,8 @@ $(archinc)/.configured: $(wildcard include/config/arch/*.h) include/config/auto.
 
 all: zImage
 
-Image zImage uImage: vmlinux
-	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
+zImage zImage.initrd: vmlinux
+	$(Q)$(MAKE) $(build)=$(boot) $@
 
 CLEAN_FILES	+= arch/xtensa/vmlinux.lds                      \
 		   $(archinc)/platform $(archinc)/variant	\
