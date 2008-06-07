@@ -1,10 +1,10 @@
 
-#include <asm/variant/core.h>
 #include <asm/bootparam.h>
 
 
-/* ResetVector */
-	.text
+/* ResetVector
+ */
+	.section        .ResetVector.text, "ax"
 	.global         _ResetVector
 _ResetVector:
 	_j reset
@@ -21,7 +21,7 @@ reset:
 	jx      a0
 
 	.align 4
-	.section .data, "aw"
+	.section .bootstrap.data, "aw"
 
 	.globl _bootparam
 _bootparam:
@@ -31,9 +31,3 @@ _bootparam:
 	.short	BP_TAG_LAST
 	.short	0
 	.long	0
-
-	.align 16
-	.section .image, "aw"
-	.globl _
-
-	.incbin "zImage"
