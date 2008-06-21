@@ -249,6 +249,106 @@ extern char _UserExceptionVector_text_end;
 extern char _DoubleExceptionVector_literal_start;
 extern char _DoubleExceptionVector_text_end;
 
+
+#if XCHAL_HAVE_S32C1I
+
+static volatile int __initdata rcw_word, rcw_probe_pc, rcw_exc;
+
+/* Basic atomic compare-and-swap, that records PC of S32C1I for probing.
+ *
+ * If *v == cmp, set *v = set.  Return previous *v.
+ */
+static inline int probed_compare_swap(volatile int * v, int cmp, int set)
+{
+	int tmp;
+
+	__asm__ __volatile__(
+"	movi	%1, 1f			\n"
+"	s32i	%1, %4, 0		\n"
+"	wsr	%2, SCOMPARE1		\n"
+"1:	s32c1i	%0, %3, 0		\n"
+	: "=a" (set), "=&a" (tmp)
+	: "a" (cmp), "a" (v), "a" (&rcw_probe_pc), "0" (set)
+	: "memory"
+	);
+	return set;
+}
+
+/* Handle probed exception */
+
+void __init
+do_probed_exception(struct pt_regs *regs, unsigned long exccause)
+{
+	extern void do_unhandled(struct pt_regs *regs, unsigned long exccause);
+	if (regs->pc == rcw_probe_pc) {		/* exception on s32c1i ? */
+		regs->pc += 3;			/* skip the s32c1i instruction */
+		rcw_exc = exccause;
+	} else
+		do_unhandled(regs, exccause);
+}
+
+/* Simple test of S32C1I (soc bringup assist) */
+
+void __init
+check_s32c1i (void)
+{
+	extern void* trap_set_handler(int cause, void *handler);
+	int n, cause1, cause2;
+	void *handbus, *handdata, *handaddr;	/* temporarily saved handlers */
+
+	rcw_probe_pc = 0;
+	handbus  = trap_set_handler(EXCCAUSE_LOAD_STORE_ERROR, do_probed_exception);
+	handdata = trap_set_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, do_probed_exception);
+	handaddr = trap_set_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, do_probed_exception);
+
+	/* First try an S32C1I that does not store: */
+	rcw_exc = 0;
+	rcw_word = 1;
+	n = probed_compare_swap(&rcw_word, 0, 2);
+	if ((cause1 = rcw_exc) != 0) {		/* took exception? */
+		if (n != 2 || rcw_word != 1)
+			panic("S32C1I exception error");	/* unclean exception */
+	} else if (rcw_word != 1 || n != 1)
+		panic("S32C1I compare error");
+
+	/* Then an S32C1I that stores: */
+	rcw_exc = 0;
+	rcw_word = 0x1234567;
+	n = probed_compare_swap(&rcw_word, 0x1234567, 0xabcde);
+	if ((cause2 = rcw_exc) != 0) {
+		if (n != 0xabcde || rcw_word != 0x1234567)
+			panic("S32C1I exception error (b)");	/* unclean exception */
+	} else if (rcw_word != 0xabcde || n != 0x1234567)
+		panic("S32C1I store error");
+
+	/* Verify consistency of exceptions: */
+	if (cause1 || cause2) {
+		printk(KERN_WARNING "S32C1I took exception %d, %d\n", cause1, cause2);
+		/* If emulation of S32C1I upon bus error gets implemented,
+		   we can get rid of this panic for single core (not SMP) */
+		panic("S32C1I exceptions not currently supported");
+	}
+	if (cause1 != cause2)
+		panic("inconsistent S32C1I exceptions");
+
+	trap_set_handler(EXCCAUSE_LOAD_STORE_ERROR, handbus);
+	trap_set_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, handdata);
+	trap_set_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, handaddr);
+}
+
+#else /* XCHAL_HAVE_S32C1I */
+
+/* This condition should not occur with a commercially deployed processor.
+   Display reminder for early engr test or demo chips / FPGA bitstreams */
+void
+check_s32c1i (void)
+{
+	printk(KERN_WARNING "Processor configuration lacks atomic compare-and-swap support!\n");
+}
+
+#endif /* XCHAL_HAVE_S32C1I */
+
+
 void __init setup_arch(char **cmdline_p)
 {
 	extern int mem_reserve(unsigned long, unsigned long, int);
@@ -257,6 +357,8 @@ void __init setup_arch(char **cmdline_p)
 	memcpy(boot_command_line, command_line, COMMAND_LINE_SIZE);
 	boot_command_line[COMMAND_LINE_SIZE-1] = '\0';
 	*cmdline_p = command_line;
+
+	check_s32c1i();
 
 	/* Reserve some memory regions */
 
