@@ -7,7 +7,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
@@ -123,14 +123,14 @@ _startup:
 	wsr	a0, CPENABLE
 #endif
 
-	/* Set PS.INTLEVEL=1, PS.WOE=0, kernel stack, PS.EXCM=0
+	/* Set PS.INTLEVEL=LOCKLEVEL, PS.WOE=0, kernel stack, PS.EXCM=0
 	 *
 	 * Note: PS.EXCM must be cleared before using any loop
 	 *	 instructions; otherwise, they are silently disabled, and
 	 * 	 at most one iteration of the loop is executed.
 	 */
 
-	movi	a1, 1
+	movi	a1, LOCKLEVEL
 	wsr	a1, PS
 	rsync
 
@@ -204,8 +204,8 @@ _startup:
 	movi	a1, init_thread_union
 	addi	a1, a1, KERNEL_STACK_SIZE
 
-	movi	a2, 0x00040001		# WOE=1, INTLEVEL=1, UM=0
-	wsr	a2, PS			# (enable reg-windows; progmode stack)
+	movi	a2, 0x00040000+LOCKLEVEL	# WOE=1, INTLEVEL=LOCKLEVEL, UM=0
+	wsr	a2, PS				# (enable reg-windows; progmode stack)
 	rsync
 
 	/* Set up EXCSAVE[DEBUGLEVEL] to point to the Debug Exception Handler.*/

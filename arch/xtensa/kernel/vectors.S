@@ -10,7 +10,7 @@
  * Public License.  See the file "COPYING" in the main directory of
  * this archive for more details.
  *
- * Copyright (C) 2005 Tensilica, Inc.
+ * Copyright (C) 2005 - 2008 Tensilica, Inc.
  *
  * Chris Zankel <chris@zankel.net>
  *
@@ -352,6 +352,98 @@ ENTRY(_DebugInterruptVector)
 
 
 
+
+/*
+ * Medium priority level interrupt vectors
+ *
+ * Each takes less than 28 (0x1c) bytes, no literals, by placing
+ * the extra 8 bytes that would otherwise be required in the window
+ * vectors area where there is space.  With relocatable vectors,
+ * all vectors are within ~ 4 kB range of each other, so we can
+ * simply jump (J) to another vector without having to use JX.
+ *
+ * TODO:  This is a quick implementation that is functional,
+ * but gives up prioritization of interrupts.
+ * Needs to be cleaned up to pass the interrupt level to the
+ * common_exception code to set the correct interrupt level.
+ */
+
+#if XCHAL_EXCM_LEVEL >= 2
+	.section .Level2InterruptVector.text, "ax"
+ENTRY(_Level2InterruptVector)
+	#  Simulate level-one interrupt ...
+	xsr	a0, EPC2
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS2
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException	# branch to user or kernel vector
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 3
+	.section .Level3InterruptVector.text, "ax"
+ENTRY(_Level3InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC3
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS3
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 4
+	.section .Level4InterruptVector.text, "ax"
+ENTRY(_Level4InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC4
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS4
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 5
+	.section .Level5InterruptVector.text, "ax"
+ENTRY(_Level5InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC5
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS5
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 6
+	.section .Level6InterruptVector.text, "ax"
+ENTRY(_Level6InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC6
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS6
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+
+
 /* Window overflow and underflow handlers.
  * The handlers must be 64 bytes apart, first starting with the underflow
  * handlers underflow-4 to underflow-12, then the overflow handlers
@@ -374,6 +466,22 @@ _WindowOverflow4:
 	s32e	a2, a5,  -8
 	s32e	a3, a5,  -4
 	rfwo
+
+
+#if XCHAL_EXCM_LEVEL >= 2
+	/*  Not a window vector - but a convenient location
+	 *  (where we know there's space) for continuation of
+	 *  medium priority interrupt dispatch code.
+	 *  On entry here, a0 contains PS, and EPC2 contains saved a0:
+	 */
+	.align 4
+_SimulateUserKernelVectorException:
+	bbsi.l	a0, PS_UM_BIT, 1f		# branch if user mode
+	rsr	a0, EPC2			# restore a0
+	j	_KernelExceptionVector		# simulate kernel vector exception
+1:	rsr	a0, EPC2			# restore a0
+	j	_UserExceptionVector		# simulate user vector exception
+#endif
 
 
 /* 4-Register Window Underflow Vector (Handler) */
