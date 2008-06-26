@@ -3,7 +3,7 @@
 # License.  See the file "COPYING" in the main directory of this archive
 # for more details.
 #
-# Copyright (C) 2001 - 2007  Tensilica Inc.
+# Copyright (C) 2001 - 2008  Tensilica Inc.
 #
 # This file is included by the global makefile so that you can add your own
 # architecture-specific flags and dependencies. Remember to do have actions
@@ -13,33 +13,12 @@
 # Core configuration.
 
 VARIANT := $(strip $(subst ", ,$(CONFIG_XTENSA_VARIANT_NAME)))
-
-ifeq ($(strip $(VARIANT)),)
-ifeq ($(CONFIG_XTENSA_VARIANT_CUSTOM),y)
-$(error Xtensa processor variant name cannot be empty.)
-endif
-#  We are being invoked without config info (e.g. during 'make menuconfig').
-#  However we need config info to know which Xtensa toolchain to invoke.
-#  Is a working CC important at this point?
-#  (The top-level Makefile may invoke CC via cc-option -- does its
-#   derivation persist?...)
-#  We don't yet know the VARIANT name (e.g. when invoking 'make menuconfig').
-#  In this case, just select any toolchain found on the PATH:
-somegcc := $(firstword $(wildcard $(addsuffix /xtensa_*-linux*-gcc,$(subst :, ,$(PATH)))))
-ifeq ($(somegcc),)
-$(error No Xtensa toolchain found on PATH.)
-else
-VARIANT := $(subst xtensa_,,$(word 1,$(subst -, ,$(notdir $(somegcc)))))
-# $(warning Picked variant .$(VARIANT).)
-endif
-endif
+export VARIANT
 
 fullarch := xtensa_$(VARIANT)
 UTS_MACHINE := $(fullarch)
-# $(warning Selected arch $(fullarch).)
 
 # Platform configuration
-
 platform-$(CONFIG_XTENSA_PLATFORM_XT2000)	:= xt2000
 platform-$(CONFIG_XTENSA_PLATFORM_ISS)		:= iss
 platform-$(CONFIG_XTENSA_PLATFORM_LX60)		:= lx60
@@ -51,7 +30,6 @@ export PLATFORM
 KBUILD_CFLAGS += -ffreestanding
 
 KBUILD_CFLAGS += -pipe -mlongcalls
-
 KBUILD_DEFCONFIG := iss_defconfig
 
 # ramdisk/initrd support
@@ -70,7 +48,7 @@ endif
 
 #
 # Extra flags that neededed for sparse (i.e. when compiling with C=1)
-ifeq ($CONFIG_XTENSA_CPU_LINUX_LE,y)
+ifeq ($(CONFIG_XTENSA_CPU_LINUX_LE),y)
 CHECKFLAGS      += -D__XTENSA_EL__=1
 else
 CHECKFLAGS      += -D__XTENSA_EB__=1
@@ -91,7 +69,20 @@ boot		:= arch/xtensa/boot
 
 archinc		:= include/asm-xtensa
 
-archprepare: $(archinc)/.platform
+archprepare: checkbin $(archinc)/.platform
+
+checkbin:
+ifneq ($(strip $(VARIANT)),)
+	@if test "$(call cc-option-yn,-mlongcalls)" = "n" ; then \
+		echo '*** Default compiler does not target an Xtensa core'; \
+		echo -n '*** Please put an appropriate Xtensa toolchain '; \
+		echo '($(VARIANT) variant) on your PATH'; \
+		false; \
+	fi
+else
+	@echo '*** Xtensa core variant name cannot be empty (check config)' ; \
+	false
+endif
 
 drivers-$(CONFIG_OPROFILE)	+= arch/xtensa/oprofile/
 
