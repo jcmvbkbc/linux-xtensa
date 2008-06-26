@@ -34,14 +34,14 @@
 
 /*  UART interrupt: */
 #ifdef CONFIG_SMP
-#define DUART16552_INTNUM	2
+#define DUART16552_INTNUM	3
 #else
 #define DUART16552_INTNUM	0
 #endif
 
 /*  Ethernet interrupt:  */
 #ifdef CONFIG_SMP
-#define OETH_IRQ                3
+#define OETH_IRQ                4
 #else
 #define OETH_IRQ                1
 #endif
