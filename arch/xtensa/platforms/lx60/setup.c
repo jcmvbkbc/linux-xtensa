@@ -26,13 +26,11 @@
 #include <linux/console.h>
 #include <linux/delay.h>
 #include <linux/stringify.h>
-/* #include <linux/platform_device.h> */
 
 
 #include <asm/processor.h>
 #include <asm/platform.h>
 #include <asm/bootparam.h>
-//#include <asm/hardware.h>
 #include <asm/platform/lcd.h>
 
 void platform_halt(void)
@@ -55,34 +53,8 @@ void platform_restart(void)
   *(volatile unsigned *)0xfd020010 = 0xdead;
 }
 
-/* SMP */
-
-#ifdef CONFIG_SMP
-static __init void smp_init_cpus(void)
-{
-	unsigned int i;
-	unsigned int ncpus = 1;
-
-	for (i = 0; i < ncpus; i++) {
-		cpu_set(i, cpu_present_map);
-		cpu_set(i, cpu_possible_map);
-	}
-}
-
-__init int platform_boot_secondary(unsigned int cpu, struct task_struct *ts)
-{
-	printk("start secondary\n");
-	return -1;
-}
-#endif
 void __init platform_setup(char** cmdline)
 {
-#ifdef CONFIG_SMP
-	smp_init_cpus();
-#endif
-       //lcd_init();
-	//lcd_disp_at_pos("Xtensa Linux!!                           You know you want it!", 0);
-
 }
 
 /* early initialization */
