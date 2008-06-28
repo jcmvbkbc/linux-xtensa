@@ -18,6 +18,7 @@
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <asm/cacheasm.h>
+#include <asm/mxpic.h>
 
 #include <linux/linkage.h>
 
@@ -195,7 +196,7 @@ _startup:
 // FIXME: CPU should come up that way
 
 	___invalidate_dcache_all a2 a3
-	movi	a2, 0x220
+	movi	a2, CCON
 	movi	a3, 1
 	wer	a3, a2
 
