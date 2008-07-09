@@ -375,7 +375,7 @@ static int
 c_show(struct seq_file *f, void *slot)
 {
 	/* high-level stuff */
-	seq_printf(f,"processor\t: %d\n"
+	seq_printf(f,"\nprocessor\t: %d\n"
 		     "vendor_id\t: Tensilica\n"
 		     "model\t\t: Xtensa " XCHAL_HW_VERSION_NAME "\n"
 		     "core ID\t\t: " XCHAL_CORE_ID "\n"
