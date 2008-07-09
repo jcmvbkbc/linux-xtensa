@@ -58,7 +58,7 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 void __init smp_init_cpus(void)
 {
 	unsigned i;
-	unsigned int ncpus = 2;
+	unsigned int ncpus = NR_CPUS;
 
 	for (i = 0; i < ncpus; i++) {
 		cpu_set(i, cpu_present_map);
@@ -142,7 +142,7 @@ int __cpuinit __cpu_up(unsigned int cpu)
 
 	start_info.stack = (unsigned long) idle->thread.sp;
 	start_info.start = secondary_start_kernel;
-printk("wakeup secondary cpu\n");
+printk("wakeup secondary cpu=%d\n", cpu);
 	ret = wakeup_secondary_cpu(cpu, idle);
 
 	if (ret == 0) {
@@ -174,6 +174,7 @@ void smp_send_reschedule(int cpu)
 
 void smp_send_stop(void)
 {
+/* FIXME: remove this infinite loop. */
 printk("smp_send_stop()\n");
 while(1);
 	// smp_call_function(stop_this_cpu, 0, 1, 0); ?? SH
@@ -207,12 +208,14 @@ smp_processor_id(), cpu_isset(0, cpu_online_map), cpu_isset(1, cpu_online_map),
 func, info, retry, wait);
 #endif
 
+	/* Exclude this CPU from the mask */
 	cpu_clear(smp_processor_id(), callmask);
 	nrcpus = cpus_weight(callmask);
 
 	if (nrcpus == 0)
 		return 0;
 
+	/* Can deadlock when called with interrupts disabled */
 	WARN_ON(irqs_disabled());
 
 	data.func = func;
