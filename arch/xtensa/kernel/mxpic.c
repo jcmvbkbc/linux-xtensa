@@ -57,7 +57,7 @@ static void set_er (unsigned long value, unsigned long addr)
 	asm volatile ("wer %0, %1" : : "a" (value), "a" (addr) : "memory");
 }
 
-static inline volatile unsigned long get_er (unsigned long addr)
+static inline unsigned long get_er (unsigned long addr)
 {
 	register unsigned long value;
 	asm volatile ("rer %0, %1" : "=a" (value) : "a" (addr) : "memory");
@@ -179,7 +179,7 @@ void __init secondary_irq_init(void)
 int __init wakeup_secondary_cpu(unsigned int cpu, struct task_struct *ts)
 {
 	set_er(get_er(MPSCORE) & ~ (1 << cpu), MPSCORE);
-	printk("cpu %d %x\n", cpu, get_er(0x200));
+	printk("cpu %d %lx\n", cpu, get_er(0x200));
 	return 0;
 }
 
@@ -192,7 +192,7 @@ void send_ipi_message(cpumask_t callmask, int msg_id)
 		if (index != smp_processor_id())
 			mask |= 1 << index;
 
-	//printk("send to %x message id %d\n", mask, msg_id);
+	//printk("send to %lx message id %d\n", mask, msg_id);
 
 	set_er(mask, MIPISET(msg_id));
 }
