@@ -9,7 +9,7 @@
  *
  * Copyright (C) 2001 - 2003 Tensilica Inc.
  *
- * Joe Taylor
+ * Joe Taylor <joe@tensilica.com>
  * Chris Zankel	<chris@zankel.net>
  * Marc Gauthier
  */
@@ -49,7 +49,7 @@ static inline void __flush_dtlb_all (void)
 }
 
 
-void SMP_LOCAL(flush_tlb_all) (void)
+void local_flush_tlb_all (void)
 {
 	__flush_itlb_all();
 	__flush_dtlb_all();
@@ -61,7 +61,7 @@ void SMP_LOCAL(flush_tlb_all) (void)
  * a new context will be assigned to it.
  */
 
-void SMP_LOCAL(flush_tlb_mm)(struct mm_struct *mm)
+void local_flush_tlb_mm (struct mm_struct *mm)
 {
 	int cpu = smp_processor_id();
 
@@ -86,7 +86,7 @@ void SMP_LOCAL(flush_tlb_mm)(struct mm_struct *mm)
 # define _TLB_ENTRIES _DTLB_ENTRIES
 #endif
 
-void SMP_LOCAL(flush_tlb_range) (struct vm_area_struct *vma,
+void local_flush_tlb_range (struct vm_area_struct *vma,
 				 unsigned long start, unsigned long end)
 {
 	int cpu = smp_processor_id();
@@ -125,7 +125,7 @@ void SMP_LOCAL(flush_tlb_range) (struct vm_area_struct *vma,
 	local_irq_restore(flags);
 }
 
-void SMP_LOCAL(flush_tlb_page) (struct vm_area_struct *vma, unsigned long page)
+void local_flush_tlb_page (struct vm_area_struct *vma, unsigned long page)
 {
 	int cpu = smp_processor_id();
 	struct mm_struct* mm = vma->vm_mm;

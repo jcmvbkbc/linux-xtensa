@@ -67,12 +67,13 @@ static inline unsigned long get_rasid_register (void)
 static inline void
 __get_new_mmu_context(struct mm_struct *mm, int cpu)
 {
-	extern void flush_tlb_all(void);
-	if (! (++cpu_asid_cache(cpu) & ASID_MASK) ) {
-		flush_tlb_all(); /* start new asid cycle */
-		cpu_asid_cache(cpu) += ASID_USER_FIRST;
+	unsigned long asid = cpu_asid_cache(cpu);
+	if (! (++asid & ASID_MASK) ) {
+		local_flush_tlb_all();  /* start new asid cycle */
+		asid = ASID_USER_FIRST;
 	}
-	mm->context.asid[cpu] = cpu_asid_cache(cpu);
+	cpu_asid_cache(cpu) = asid;
+	mm->context.asid[cpu] = asid;
 	mm->context.cpu = cpu;
 }
 

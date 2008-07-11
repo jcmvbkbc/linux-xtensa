@@ -11,10 +11,6 @@
 #ifndef _XTENSA_SMP_H
 #define _XTENSA_SMP_H
 
-//#ifndef CONFIG_SMP
-//# error "<asm-xtensa/smp.h> included in non-SMP build"
-//#endif
-
 #include <linux/cpumask.h>
 
 #define raw_smp_processor_id() (current_thread_info()->cpu)
@@ -33,12 +29,6 @@ struct xtensa_cpuinfo {
 extern struct xtensa_cpuinfo cpu_data[NR_CPUS];
 
 #define cpu_logical_map(cpu)	(cpu)
-
-#ifdef CONFIG_SMP
-# define SMP_LOCAL(func)	local_##func
-#else
-# define SMP_LOCAL(func)	func
-#endif
 
 enum ipi_msg_type {
 	IPI_RESCHEDULE = 0,
