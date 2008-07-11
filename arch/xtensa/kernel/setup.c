@@ -108,7 +108,7 @@ typedef struct tagtable {
 } tagtable_t;
 
 #define __tagtable(tag, fn) static tagtable_t __tagtable_##fn 		\
-	__attribute__((unused, __section__(".taglist"))) = { tag, fn }
+	__attribute__((used, __section__(".taglist"))) = { tag, fn }
 
 /* parse current tag */
 
