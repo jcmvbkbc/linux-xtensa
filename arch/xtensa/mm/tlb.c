@@ -120,7 +120,7 @@ void local_flush_tlb_range (struct vm_area_struct *vma,
 
 		set_rasid_register(oldpid);
 	} else {
-		flush_tlb_mm(mm);
+		local_flush_tlb_mm(mm);
 	}
 	local_irq_restore(flags);
 }
