@@ -129,8 +129,10 @@ static inline void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 
 	if (next->context.asid[cpu] == NO_CONTEXT 
 	    || ((next->context.asid[cpu] ^ asid) & ~ASID_MASK)
-	    || (next->context.cpu != cpu))
+	    || (next->context.cpu != cpu)) {
+		__invalidate_icache_all();
 		__get_new_mmu_context(next, cpu);
+	}
 
 	__load_mmu_context(next, cpu);
 }

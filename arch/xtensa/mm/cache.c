@@ -152,11 +152,13 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 {
 	unsigned long pfn = pte_pfn(pte);
 	struct page *page;
+	unsigned long paddr;
 
 	if (!pfn_valid(pfn))
 		return;
 
 	page = pfn_to_page(pfn);
+	paddr = (unsigned long) page_address(page);
 
 	/* Invalidate old entry in TLBs */
 
@@ -168,7 +170,6 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 	if (!PageReserved(page) && test_bit(PG_arch_1, &page->flags)) {
 
 		unsigned long vaddr = TLBTEMP_BASE_1 + (addr & DCACHE_ALIAS_MASK);
-		unsigned long paddr = (unsigned long) page_address(page);
 		unsigned long phys = page_to_phys(page);
 
 		__flush_invalidate_dcache_page(paddr);
@@ -181,12 +182,15 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 #else
 	if (!PageReserved(page) && !test_bit(PG_arch_1, &page->flags)
 	    && (vma->vm_flags & VM_EXEC) != 0) {
-	    	unsigned long paddr = (unsigned long) page_address(page);
 		__flush_dcache_page(paddr);
 		__invalidate_icache_page(paddr);
 		set_bit(PG_arch_1, &page->flags);
 	}
 #endif
+
+	if (vma->vm_flags & VM_EXEC) {
+		__invalidate_icache_page(paddr);
+	}
 }
 
 /*
