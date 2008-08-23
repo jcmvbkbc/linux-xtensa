@@ -72,6 +72,7 @@ extern void secondary_trap_init(void);
 void __devinit smp_prepare_boot_cpu(void)
 {
 	unsigned int cpu = smp_processor_id();
+	BUG_ON(cpu != 0);
 	cpu_asid_cache(cpu) = ASID_USER_FIRST;
 
 	printk("smp prepare boot cpu\n");
