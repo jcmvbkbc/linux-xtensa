@@ -24,6 +24,7 @@
 #include <asm/platform.h>
 #include <asm/mmu_context.h>
 #include <asm/cacheflush.h>
+#include <asm/mxregs.h>
 
 /* Per-processor data. */
 
@@ -49,7 +50,12 @@ static struct irqaction ipi_irqaction = {
 	.mask = 	CPU_MASK_ALL,
 };
 
-/* ... */
+static inline unsigned int get_core_count()
+{
+        /* Bits 18..21 of SYSCFGID contain the core count minus 1. */
+        unsigned int syscfgid = get_er(SYSCFGID);
+        return ((syscfgid >> 18) & 0xf) + 1;
+}
 
 void __init smp_prepare_cpus(unsigned int max_cpus)
 {
@@ -58,7 +64,9 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 void __init smp_init_cpus(void)
 {
 	unsigned i;
-	unsigned int ncpus = NR_CPUS;
+	unsigned int ncpus = get_core_count();
+
+	printk("Core count = %d\n", ncpus);
 
 	for (i = 0; i < ncpus; i++) {
 		cpu_set(i, cpu_present_map);

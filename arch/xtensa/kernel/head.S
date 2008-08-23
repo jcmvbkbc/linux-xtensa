@@ -18,7 +18,7 @@
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <asm/cacheasm.h>
-#include <asm/mxpic.h>
+#include <asm/mxregs.h>
 
 #include <linux/linkage.h>
 

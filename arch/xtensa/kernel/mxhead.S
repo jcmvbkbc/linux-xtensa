@@ -2,7 +2,7 @@
 #include <linux/linkage.h>
 
 #include <asm/regs.h>
-#include <asm/mxpic.h>
+#include <asm/mxregs.h>
 #include <asm/cacheasm.h>
 
 

@@ -1,5 +1,5 @@
 /*
- * linux/arch/xtensa/kernel/xtpic.c
+ * linux/arch/xtensa/kernel/mxpic.c
  *
  * Xtensa built-in interrupt controller.
  *
@@ -8,7 +8,6 @@
  *
  *
  * Chris Zankel <chris@zankel.net>
- * Kevin Chea
  *
  */
 
@@ -20,7 +19,7 @@
 
 #include <asm/uaccess.h>
 #include <asm/platform.h>
-#include <asm/mxpic.h>
+#include <asm/mxregs.h>
 
 
 
@@ -49,28 +48,6 @@ static int xtensa_irq_retrigger(unsigned int irq)
 {
 	set_sr (1 << irq, INTSET);
 	return 1;
-}
-
-static void set_er (unsigned long value, unsigned long addr)
-{
-	//printk("seter %x -> %x\n", value, addr);
-	asm volatile ("wer %0, %1" : : "a" (value), "a" (addr) : "memory");
-}
-
-static inline unsigned long get_er (unsigned long addr)
-{
-	register unsigned long value;
-	asm volatile ("rer %0, %1" : "=a" (value) : "a" (addr) : "memory");
-	return value;
-}
-	
-void write_er(unsigned long v, unsigned long a)
-{
-	set_er(v, a);
-}
-unsigned long read_er(unsigned long a)
-{
-	return get_er(a);
 }
 
 static void xtensa_mx_irq_mask(unsigned int irq)

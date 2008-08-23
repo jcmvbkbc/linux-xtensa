@@ -1,5 +1,15 @@
+/*
+ * include/asm-xtensa/mxregs.h
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
+ *
+ * Copyright (C) 2008 Tensilica Inc.
+ */
 
-/* FIXME move into include or some other file */
+#ifndef _XTENSA_MXREGS_H
+#define _XTENSA_MXREGS_H
 
 /*
  * RER/WER at, as	Read/write external register
@@ -20,7 +30,6 @@
  * 0200		0...0m..m	RunStall core 'n'
  * 0220		c		Cache coherency enabled
  */
-// FIXME move to header-file
 
 #define MIROUT(irq)	(0x000 + (irq))
 #define MIPICAUSE(cpu)	(0x100 + (cpu))
@@ -34,4 +43,21 @@
 #define MPSCORE		0x200
 #define CCON		0x220
 
+#ifndef __ASSEMBLY__
+
+static inline void set_er (unsigned long value, unsigned long addr)
+{
+        asm volatile ("wer %0, %1" : : "a" (value), "a" (addr) : "memory");
+}
+
+static inline unsigned long get_er (unsigned long addr)
+{
+        register unsigned long value;
+        asm volatile ("rer %0, %1" : "=a" (value) : "a" (addr) : "memory");
+        return value;
+}
+
+#endif
+
+#endif /* _XTENSA_MSREGS_H */
 
