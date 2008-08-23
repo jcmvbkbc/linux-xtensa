@@ -13,7 +13,7 @@
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Joe Taylor <joe@tensilica.com>
  */
-/* FIXME strip trailing-ws */
+
 #include <asm-generic/vmlinux.lds.h>
 
 #include <asm/variant/core.h>
