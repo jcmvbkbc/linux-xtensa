@@ -19,13 +19,8 @@
 #error only <linux/bitops.h> can be included directly
 #endif
 
-//#include <asm/processor.h>
 #include <asm/byteorder.h>
 #include <asm/system.h>
-
-#ifdef CONFIG_SMP
-// FIXME  error SMP not supported on this architecture
-#endif
 
 #define smp_mb__before_clear_bit()	barrier()
 #define smp_mb__after_clear_bit()	barrier()

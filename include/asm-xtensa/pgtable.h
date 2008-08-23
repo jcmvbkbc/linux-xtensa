@@ -68,7 +68,6 @@
 #define VMALLOC_START		0xC0000000
 #define VMALLOC_END		0xC7EFFFFF
 
-// FIXME: remove
 #define TLBTEMP_BASE_1         0xC7FF0000
 #define TLBTEMP_BASE_2         0xC7FF8000
 
