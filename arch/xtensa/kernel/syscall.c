@@ -9,7 +9,7 @@
  * Copyright (C) 2000 Silicon Graphics, Inc.
  * Copyright (C) 1995 - 2000 by Ralf Baechle
  *
- * Joe Taylor <joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor <joe@tensilica.com>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Chris Zankel <chris@zankel.net>
  * Kevin Chea

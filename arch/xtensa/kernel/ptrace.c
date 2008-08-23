@@ -5,7 +5,7 @@
  *
  * Copyright (C) 2001 - 2007  Tensilica Inc.
  *
- * Joe Taylor	<joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor	<joe@tensilica.com>
  * Chris Zankel <chris@zankel.net>
  * Scott Foehner<sfoehner@yahoo.com>,
  * Kevin Chea

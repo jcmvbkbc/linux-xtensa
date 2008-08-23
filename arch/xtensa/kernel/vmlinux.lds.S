@@ -11,7 +11,7 @@
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
- * Joe Taylor <joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor <joe@tensilica.com>
  */
 /* FIXME strip trailing-ws */
 #include <asm-generic/vmlinux.lds.h>

@@ -13,7 +13,7 @@
  *
  * Copyright (C) 2001 - 2005 Tensilica Inc.
  *
- * Joe Taylor	<joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor	<joe@tensilica.com>
  * Chris Zankel	<chris@zankel.net>
  * Marc Gauthier<marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Kevin Chea

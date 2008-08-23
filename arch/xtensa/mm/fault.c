@@ -9,7 +9,7 @@
  * Copyright (C) 2001 - 2005 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
- * Joe Taylor	<joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor	<joe@tensilica.com>
  */
 
 #include <linux/mm.h>

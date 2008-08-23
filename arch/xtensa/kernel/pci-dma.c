@@ -13,7 +13,7 @@
  * Based on version for i386.
  *
  * Chris Zankel <chris@zankel.net>
- * Joe Taylor <joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor <joe@tensilica.com>
  */
 
 #include <linux/types.h>
