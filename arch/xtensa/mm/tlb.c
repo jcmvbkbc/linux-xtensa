@@ -67,10 +67,9 @@ void local_flush_tlb_mm (struct mm_struct *mm)
 
 	if (mm == current->active_mm) {
 		int flags;
-		// FIXME: enought here?? use spinlock!
 		local_save_flags(flags);
-		__get_new_mmu_context(mm, cpu);
-		__load_mmu_context(mm, cpu);
+		mm->context.asid[cpu] = NO_CONTEXT;
+		activate_context(mm, cpu);
 		local_irq_restore(flags);
 	} else {
 		mm->context.asid[cpu] = NO_CONTEXT;
