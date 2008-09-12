@@ -26,6 +26,12 @@
 #include <asm/cacheflush.h>
 #include <asm/mxregs.h>
 
+#ifdef CONFIG_SMP
+# if XCHAL_HAVE_S32C1I == 0
+#  error "The S32C1I option is required for SMP."
+# endif
+#endif
+
 /* Per-processor data. */
 
 struct xtensa_cpuinfo cpu_data[NR_CPUS];
