@@ -23,9 +23,7 @@
 
 void bad_page_fault(struct pt_regs*, unsigned long, int);
 
-#ifndef CONFIG_SMP
-unsigned long asid_cache = ASID_USER_FIRST;
-#endif
+DEFINE_PER_CPU(unsigned long, asid_cache) = ASID_USER_FIRST;
 
 #undef DEBUG_PAGE_FAULT
 //#define DEBUG_PAGE_FAULT

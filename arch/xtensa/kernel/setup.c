@@ -118,7 +118,7 @@ typedef struct tagtable {
 static int __init parse_tag_mem(const bp_tag_t *tag)
 {
 	bp_memory_t *mi = (bp_memory_t*)(tag->data);
-	int i;
+	int i = 0;
 
 	if (mi->type != BP_MEMORY_TYPE_SYSMEM)
 		return -1;

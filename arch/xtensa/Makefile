@@ -50,7 +50,7 @@ libs-y		+= arch/xtensa/lib/ $(LIBGCC)
 boot		:= arch/xtensa/boot
 archinc		:= include/asm-xtensa
 
-archprepare: _checkbin_$(archinc)/.configured
+archprepare: checkbin $(archinc)/.configured
 
 checkbin:
 ifneq ($(strip $(VARIANT)),)

@@ -20,6 +20,7 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 #include <asm-generic/mm_hooks.h>
+#include <asm-generic/percpu.h>
 
 #define XCHAL_MMU_ASID_BITS	8
 
@@ -27,12 +28,8 @@
 # error "Linux must have an MMU!"
 #endif
 
-
-#ifdef CONFIG_SMP
-# define cpu_asid_cache(cpu)	(cpu_data[(cpu)].asid_cache)
-#else
-# define cpu_asid_cache(cpu)	asid_cache
-#endif
+extern DEFINE_PER_CPU(unsigned long, asid_cache);
+# define cpu_asid_cache(cpu)	per_cpu(asid_cache, cpu)
 
 /*
  * NO_CONTEXT is the invalid ASID value that we don't ever assign to

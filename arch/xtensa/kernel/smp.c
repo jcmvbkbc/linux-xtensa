@@ -34,7 +34,7 @@
 
 /* Per-processor data. */
 
-struct xtensa_cpuinfo cpu_data[NR_CPUS];
+DEFINE_PER_CPU(unsigned long, asid_cache);
 
 /* Map of cores in the system and currently online. */
 

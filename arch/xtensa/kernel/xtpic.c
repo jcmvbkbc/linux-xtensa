@@ -68,8 +68,9 @@ void __init init_IRQ(void)
 		if (index == 0)
 			set_irq_chip_and_handler(index, &xtensa_irq_chip,
 						 handle_percpu_irq);
+		else
 #endif
-		else if (mask & XCHAL_INTTYPE_MASK_SOFTWARE)
+		if (mask & XCHAL_INTTYPE_MASK_SOFTWARE)
 			set_irq_chip_and_handler(index, &xtensa_irq_chip,
 						 handle_simple_irq);
 

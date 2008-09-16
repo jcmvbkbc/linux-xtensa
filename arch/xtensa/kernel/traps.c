@@ -290,14 +290,18 @@ do_debug(struct pt_regs *regs)
 }
 
 
-/* Set exception C handler - for temporary use when probing exceptions */
+/* Set exception C handler - for temporary use when probing exceptions on cpu[0] */
 
-void* __init
+void *__init
 trap_set_handler(int cause, void *handler)
 {
-	unsigned long *entry = &exc_table[EXC_TABLE_DEFAULT/4 + cause];
-	void *previous = (void*) *entry;
-	*entry = (unsigned long) handler;
+	int idx = EXC_TABLE_DEFAULT/4 + cause;
+	unsigned int cpu = 0;
+	void *previous;
+	
+	previous =  (void *) &per_cpu(exc_table, cpu)[idx];
+	per_cpu(exc_table, cpu)[idx] = (unsigned long) handler;
+
 	return previous;
 }
 
