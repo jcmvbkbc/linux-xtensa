@@ -168,8 +168,9 @@ __die_if_kernel(const char *str, struct pt_regs *regs, long err)
 
 void do_unhandled(struct pt_regs *regs, unsigned long exccause)
 {
-	__die_if_kernel("Caught unhandled exception - should not happen",
-	    		regs, SIGKILL);
+	char buf[100];
+	sprintf(buf,"Caught unhandled exception - exccause=%d", (int)exccause);
+	__die_if_kernel(buf, regs, SIGKILL);
 
 	/* If in user mode, send SIGILL signal to current process */
 	printk("Caught unhandled exception in '%s' "
@@ -286,6 +287,18 @@ do_debug(struct pt_regs *regs)
 	/* If in user mode, send SIGTRAP signal to current process */
 
 	force_sig(SIGTRAP, current);
+}
+
+
+/* Set exception C handler - for temporary use when probing exceptions */
+
+void* __init
+trap_set_handler(int cause, void *handler)
+{
+	unsigned long *entry = &exc_table[EXC_TABLE_DEFAULT/4 + cause];
+	void *previous = (void*) *entry;
+	*entry = (unsigned long) handler;
+	return previous;
 }
 
 

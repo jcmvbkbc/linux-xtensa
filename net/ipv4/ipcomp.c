@@ -74,6 +74,7 @@ out:
 
 static int ipcomp_input(struct xfrm_state *x, struct sk_buff *skb)
 {
+	int nexthdr;
 	int err = -ENOMEM;
 	struct ip_comp_hdr *ipch;
 
@@ -84,13 +85,15 @@ static int ipcomp_input(struct xfrm_state *x, struct sk_buff *skb)
 
 	/* Remove ipcomp header and decompress original payload */
 	ipch = (void *)skb->data;
+	nexthdr = ipch->nexthdr;
+
 	skb->transport_header = skb->network_header + sizeof(*ipch);
 	__skb_pull(skb, sizeof(*ipch));
 	err = ipcomp_decompress(x, skb);
 	if (err)
 		goto out;
 
-	err = ipch->nexthdr;
+	err = nexthdr;
 
 out:
 	return err;
@@ -105,8 +108,11 @@ static int ipcomp_compress(struct xfrm_state *x, struct sk_buff *skb)
 	const int cpu = get_cpu();
 	u8 *scratch = *per_cpu_ptr(ipcomp_scratches, cpu);
 	struct crypto_comp *tfm = *per_cpu_ptr(ipcd->tfms, cpu);
-	int err = crypto_comp_compress(tfm, start, plen, scratch, &dlen);
+	int err;
 
+	local_bh_disable();
+	err = crypto_comp_compress(tfm, start, plen, scratch, &dlen);
+	local_bh_enable();
 	if (err)
 		goto out;
 

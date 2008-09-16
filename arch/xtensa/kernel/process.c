@@ -52,48 +52,48 @@ EXPORT_SYMBOL(pm_power_off);
 
 #if XTENSA_HAVE_COPROCESSORS
 
-void coprocessor_release_all(struct thread_info *ti)
+/* 
+ * coprocessor_release_all() - release coprocessors for the specified thread.
+ *
+ * Note that this function doesn't flush the contents of the coprocessors
+ * to the thread_info area.
+ *
+ * This function must be called with preemption disabled!
+ *
+ * The caller must ensure to clear cpenable for the threak ti!
+ */
+
+void coprocessor_release_all(struct thread_info *ti, unsigned long cpenable)
 {
-	unsigned long cpenable;
 	int i;
-
-	/* Make sure we don't switch tasks during this operation. */
-
-	preempt_disable();
 
 	/* Walk through all cp owners and release it for the requested one. */
 
-	cpenable = ti->cpenable;
-
-	for (i = 0; i < XCHAL_CP_MAX; i++) {
-		if (coprocessor_owner[i] == ti) {
+	for (i = 0; i < XCHAL_CP_MAX; i++)
+		if (coprocessor_owner[i] == ti)
 			coprocessor_owner[i] = 0;
-			cpenable &= ~(1 << i);
-		}
-	}
-
-	ti->cpenable = cpenable;
-	coprocessor_clear_cpenable();
-
-	preempt_enable();
 }
 
-void coprocessor_flush_all(struct thread_info *ti)
+/*
+ * coprocessor_flush_all() - flush all coprocessors for the specified thread.
+ *
+ * This function must be called with preemption disabled!
+ */
+
+void coprocessor_flush_all(struct thread_info *ti, unsigned long cpenable)
 {
-	unsigned long cpenable;
 	int i;
 
-	preempt_disable();
-
-	cpenable = ti->cpenable;
+	/*
+	 * For all bits set in cpenable, check the owner
+	 * and flush it, if it matches.
+	 */
 
 	for (i = 0; i < XCHAL_CP_MAX; i++) {
 		if ((cpenable & 1) != 0 && coprocessor_owner[i] == ti)
 			coprocessor_flush(ti, i);
 		cpenable >>= 1;
 	}
-
-	preempt_enable();
 }
 
 #endif
@@ -123,7 +123,14 @@ void cpu_idle(void)
 void exit_thread(void)
 {
 #if XTENSA_HAVE_COPROCESSORS
-	coprocessor_release_all(current_thread_info());
+	preempt_disable();
+
+	coprocessor_release_all(current_thread_info(),
+				coprocessor_get_cpenable());
+	current_thread_info()->cpenable = 0;
+	coprocessor_clear_cpenable();
+
+	preempt_enable();
 #endif
 }
 
@@ -135,8 +142,15 @@ void flush_thread(void)
 {
 #if XTENSA_HAVE_COPROCESSORS
 	struct thread_info *ti = current_thread_info();
-	coprocessor_flush_all(ti);
-	coprocessor_release_all(ti);
+
+	preempt_disable();
+
+	coprocessor_flush_all(ti, ti->cpenable);
+	coprocessor_release_all(ti, ti->cpenable);
+	ti->cpenable = 0;
+	coprocessor_clear_cpenable();
+
+	preempt_enable();
 #endif
 }
 
@@ -146,7 +160,13 @@ void flush_thread(void)
 void prepare_to_copy(struct task_struct *tsk)
 {
 #if XTENSA_HAVE_COPROCESSORS
-	coprocessor_flush_all(task_thread_info(tsk));
+	struct thread_info *ti = task_thread_info(tsk);
+
+	preempt_disable();
+
+	coprocessor_flush_all(ti, ti->cpenable);
+
+	preempt_enable();
 #endif
 }
 
@@ -175,7 +195,6 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
                 struct task_struct * p, struct pt_regs * regs)
 {
 	struct pt_regs *childregs;
-	struct thread_info *ti;
 	unsigned long tos;
 	int user_mode = user_mode(regs);
 
@@ -214,8 +233,7 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	}
 
 #if (XTENSA_HAVE_COPROCESSORS || XTENSA_HAVE_IO_PORTS)
-	ti = task_thread_info(p);
-	ti->cpenable = 0;
+	task_thread_info(p)->cpenable = 0;
 #endif
 
 	return 0;

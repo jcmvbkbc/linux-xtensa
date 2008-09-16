@@ -179,6 +179,16 @@ ENTRY(coprocessor_load)
 
 ENTRY(coprocessor_flush)
 	entry	a1, 32
+
+	/* Set corresponding CPENABLE bit -> (sar:cp-index, a3: 1<<cp-index)*/
+	ssl	a3			# SAR: 32 - coprocessor_number
+	movi	a4, 1
+	rsr	a15, CPENABLE
+	sll	a4, a4
+	or	a4, a15, a4
+	wsr	a4, CPENABLE
+	rsync
+
 	s32i	a0, a1, 0
 	movi	a0, .Lsave_cp_regs_jump_table
 	addx8	a3, a3, a0
@@ -189,6 +199,7 @@ ENTRY(coprocessor_flush)
 	add	a0, a0, a3
 	callx0	a0
 1:	l32i	a0, a1, 0
+	wsr	a15, CPENABLE		# restore CPENABLE
 	retw
 
 ENTRY(coprocessor_restore)

@@ -7,7 +7,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2004-2007 by Tensilica Inc.
+ * Copyright (C) 2004 - 2008 by Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  *
@@ -346,9 +346,9 @@ common_exception:
 
 	rsr	a3, PS
 	addi	a0, a0, -4
-	movi	a2, 1
-	extui	a3, a3, 0, 1		# a3 = PS.INTLEVEL[0]
-	moveqz	a3, a2, a0		# a3 = 1 iff interrupt exception
+	movi	a2, XCHAL_EXCM_LEVEL
+	extui	a3, a3, 0, 4		# a3 = PS.INTLEVEL
+	moveqz	a3, a2, a0		# a3 = EXCM_LEVEL iff interrupt exception
 	movi	a2, 1 << PS_WOE_BIT
 	or	a3, a3, a2
 	rsr	a0, EXCCAUSE
@@ -390,7 +390,7 @@ common_exception:
 	callx4	a4
 
 	/* Jump here for exception exit */
-
+	.global common_exception_return
 common_exception_return:
 
 	/* Jump if we are returning from kernel exceptions. */
@@ -740,7 +740,7 @@ ENTRY(unrecoverable_exception)
 	wsr	a1, WINDOWBASE
 	rsync
 
-	movi	a1, (1 << PS_WOE_BIT) | 1
+	movi	a1, (1 << PS_WOE_BIT) | LOCKLEVEL
 	wsr	a1, PS
 	rsync
 
@@ -1461,7 +1461,7 @@ ENTRY(_spill_registers)
 	rsr	a3, EXCSAVE_1
 	l32i	a1, a3, EXC_TABLE_KSTK
 
-	movi	a4, (1 << PS_WOE_BIT) | 1
+	movi	a4, (1 << PS_WOE_BIT) | LOCKLEVEL
 	wsr	a4, PS
 	rsync
 

@@ -9,5 +9,5 @@
 #
 # Note 2! The CFLAGS definitions are in the main makefile...
 
-obj-y			= io.o console.o setup.o network.o
+obj-y			= io.o console.o setup.o network.o simdisk.o
 
