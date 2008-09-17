@@ -34,7 +34,7 @@
 
 /* Per-processor data. */
 
-DEFINE_PER_CPU(unsigned long, asid_cache);
+extern DEFINE_PER_CPU(unsigned long, asid_cache);
 
 /* Map of cores in the system and currently online. */
 
@@ -56,7 +56,7 @@ static struct irqaction ipi_irqaction = {
 	.mask = 	CPU_MASK_ALL,
 };
 
-static inline unsigned int get_core_count()
+static inline unsigned int get_core_count(void)
 {
         /* Bits 18..21 of SYSCFGID contain the core count minus 1. */
         unsigned int syscfgid = get_er(SYSCFGID);
@@ -302,7 +302,7 @@ extern int recv_ipi_messages(void);
 irqreturn_t ipi_interrupt(int irq, void *dev_id)
 {
 	int msg;
-	int cpu = smp_processor_id();
+	// int cpu = smp_processor_id();
 	
 	msg = recv_ipi_messages();
 #if 0
