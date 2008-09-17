@@ -19,6 +19,8 @@
 //#define cpu_data (&boot_cpu_data)
 //#define current_cpu_data boot_cpu_data
 
+
+#if 0
 struct xtensa_cpuinfo {
 	unsigned long asid_cache;
 //	unsigned long	*pgd_cache;
@@ -27,6 +29,7 @@ struct xtensa_cpuinfo {
 };
 //extern struct xtensa_cpuinfo boot_cpu_data;
 extern struct xtensa_cpuinfo cpu_data[NR_CPUS];
+#endif
 
 #define cpu_logical_map(cpu)	(cpu)
 
