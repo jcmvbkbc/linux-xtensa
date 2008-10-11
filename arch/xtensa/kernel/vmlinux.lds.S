@@ -127,7 +127,7 @@ SECTIONS
   _edata = .;
 
   /* The initial task */
-  . = ALIGN(8192);
+  . = ALIGN(CONFIG_STACK_SIZE);
   .data.init_task : { *(.data.init_task) }
 
   /* Initialization code and data: */

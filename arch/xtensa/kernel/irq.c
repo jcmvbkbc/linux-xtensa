@@ -4,7 +4,7 @@
  * Xtensa built-in interrupt controller and some generic functions copied
  * from i386.
  *
- * Copyright (C) 2002 - 2006 Tensilica, Inc.
+ * Copyright (C) 2002 - 2008 Tensilica, Inc.
  * Copyright (C) 1992, 1998 Linus Torvalds, Ingo Molnar
  *
  *
@@ -68,7 +68,7 @@ asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
 		__asm__ __volatile__ ("mov %0, a1\n" : "=a" (sp));
 		sp &= THREAD_SIZE - 1;
 
-		if (unlikely(sp < (sizeof(thread_info) + 1024)))
+		if (unlikely(sp < (sizeof(struct thread_info) + 1024)))
 			printk("Stack overflow in do_IRQ: %ld\n",
 			       sp - sizeof(struct thread_info));
 	}

@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_THREAD_INFO_H
@@ -106,20 +106,21 @@ struct thread_info {
 static inline struct thread_info *current_thread_info(void)
 {
 	struct thread_info *ti;
-	 __asm__("extui %0,a1,0,13\n\t"
+	 __asm__("extui %0,a1,0,"__stringify(CONFIG_STACK_SHIFT)"\n\t"
 	         "xor %0, a1, %0" : "=&r" (ti) : );
 	return ti;
 }
 
 /* thread information allocation */
-#define alloc_thread_info(tsk) ((struct thread_info *) __get_free_pages(GFP_KERNEL,1))
-#define free_thread_info(ti) free_pages((unsigned long) (ti), 1)
+#define STACK_PAGE_ORDER (CONFIG_STACK_SHIFT - PAGE_SHIFT)
+#define alloc_thread_info(tsk) ((struct thread_info *) __get_free_pages(GFP_KERNEL, STACK_PAGE_ORDER))
+#define free_thread_info(ti) free_pages((unsigned long) (ti), STACK_PAGE_ORDER)
 
 #else /* !__ASSEMBLY__ */
 
 /* how to get the thread information struct from ASM */
 #define GET_THREAD_INFO(reg,sp) \
-	extui reg, sp, 0, 13; \
+	extui reg, sp, 0, CONFIG_STACK_SHIFT; \
 	xor   reg, sp, reg
 #endif
 
@@ -159,7 +160,7 @@ static inline struct thread_info *current_thread_info(void)
  */
 #define TS_USEDFPU		0x0001	/* FPU was used by this task this quantum (SMP) */
 
-#define THREAD_SIZE 8192	//(2*PAGE_SIZE)
+#define THREAD_SIZE 		(CONFIG_STACK_SIZE)	/* 4KSTACKS || 8KSTACKS || 16KSTACKS */
 
 #endif	/* __KERNEL__ */
 #endif	/* _XTENSA_THREAD_INFO */

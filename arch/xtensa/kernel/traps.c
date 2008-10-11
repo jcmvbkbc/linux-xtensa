@@ -223,13 +223,16 @@ void do_interrupt (struct pt_regs *regs)
 void
 do_illegal_instruction(struct pt_regs *regs)
 {
+	struct task_struct *tsk = current;
+
 	__die_if_kernel("Illegal instruction in kernel", regs, SIGKILL);
 
 	/* If in user mode, send SIGILL signal to current process. */
 
-	printk("Illegal Instruction in '%s' (pid = %d, pc = %#010lx)\n",
-	    current->comm, task_pid_nr(current), regs->pc);
-	force_sig(SIGILL, current);
+	printk("%s: Illegal Instruction in tsk:%p->comm:'%s' (pid = %d, pc = %#010lx)\n",
+	    __func__, tsk, tsk->comm, task_pid_nr(tsk), regs->pc);
+
+	force_sig(SIGILL, tsk);
 }
 
 
@@ -245,22 +248,23 @@ do_illegal_instruction(struct pt_regs *regs)
 void
 do_unaligned_user (struct pt_regs *regs)
 {
+	struct task_struct *tsk = current;
 	siginfo_t info;
 
 	__die_if_kernel("Unhandled unaligned exception in kernel",
 	    		regs, SIGKILL);
 
-	current->thread.bad_vaddr = regs->excvaddr;
-	current->thread.error_code = -3;
-	printk("Unaligned memory access to %08lx in '%s' "
-	       "(pid = %d, pc = %#010lx)\n",
-	       regs->excvaddr, current->comm, task_pid_nr(current), regs->pc);
+	tsk->thread.bad_vaddr = regs->excvaddr;
+	tsk->thread.error_code = -3;
+	printk("%s: Unaligned memory access to %08lx in tsk:%p->comm:'%s' "
+	       "(pid = %d, pc = %#010lx)\n", __func__,
+	       regs->excvaddr, tsk, tsk->comm, task_pid_nr(tsk), regs->pc);
+
 	info.si_signo = SIGBUS;
 	info.si_errno = 0;
 	info.si_code = BUS_ADRALN;
 	info.si_addr = (void *) regs->excvaddr;
-	force_sig_info(SIGSEGV, &info, current);
-
+	force_sig_info(SIGSEGV, &info, tsk);
 }
 #endif
 #endif

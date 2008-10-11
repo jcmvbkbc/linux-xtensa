@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001-2006 Tensilica Inc.
+ * Copyright (C) 2001-2008 Tensilica Inc.
  *
  * Chris Zankel	<chris@zankel.net>
  * Joe Taylor
@@ -36,6 +36,17 @@
 
 //#define printd(x...) printk(x)
 #define printd(x...) do { } while(0)
+
+/*
+ * Workaround for our current implementation of the 
+ * Lazy TLB algorithm. Prevents TLB from getting out
+ * of sync with memory based PTEs.
+ */
+#ifdef CONFIG_IGNORE_MM_CONTEXT_ASID
+int config_ignore_mm_context_asid = 1;
+#else
+int config_ignore_mm_context_asid = 0;
+#endif
 
 /* 
  * Note:
@@ -147,6 +158,12 @@ void flush_cache_page(struct vm_area_struct* vma, unsigned long address,
 
 #endif
 
+#ifdef CONFIG_IGNORE_PAGE_ARCH_1_BIT
+int config_ignore_PG_arch_1 = 1;
+#else
+int config_ignore_PG_arch_1 = 0;
+#endif
+
 void
 update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 {
@@ -167,7 +184,7 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 
 #if (DCACHE_WAY_SIZE > PAGE_SIZE) && XCHAL_DCACHE_IS_WRITEBACK
 
-	if (!PageReserved(page) && test_bit(PG_arch_1, &page->flags)) {
+	if (!PageReserved(page) && (config_ignore_PG_arch_1 || test_bit(PG_arch_1, &page->flags))) {
 
 		unsigned long vaddr = TLBTEMP_BASE_1 + (addr & DCACHE_ALIAS_MASK);
 		unsigned long phys = page_to_phys(page);
@@ -180,7 +197,7 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 		clear_bit(PG_arch_1, &page->flags);
 	}
 #else
-	if (!PageReserved(page) && !test_bit(PG_arch_1, &page->flags)
+	if (!PageReserved(page) && (config_ignore_PG_arch_1 || !test_bit(PG_arch_1, &page->flags))
 	    && (vma->vm_flags & VM_EXEC) != 0) {
 		__flush_dcache_page(paddr);
 		__invalidate_icache_page(paddr);

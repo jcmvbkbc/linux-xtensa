@@ -65,9 +65,13 @@ static inline void
 get_new_mmu_context(struct mm_struct *mm, unsigned int cpu)
 {
 	unsigned long asid = cpu_asid_cache(cpu);
-	if (! (++asid & ASID_MASK) ) {
-		local_flush_tlb_all();  /* start new asid cycle */
-		asid = ASID_USER_FIRST;
+	if ((++asid & ASID_MASK) == 0) {
+		/*
+		 * Start new asid cycle; continue counting with next 
+		 * incarnation bits; skipping over 0, 1, 2, 3.
+		 */
+		local_flush_tlb_all(); 
+		asid += ASID_USER_FIRST;
 	}
 	cpu_asid_cache(cpu) = asid;
 	mm->context.asid[cpu] = asid;
@@ -77,13 +81,20 @@ get_new_mmu_context(struct mm_struct *mm, unsigned int cpu)
 static inline void
 get_mmu_context(struct mm_struct *mm, unsigned int cpu)
 {
+	extern int config_ignore_mm_context_asid;
+
 	/*
 	 * Check if our ASID is of an older version and thus invalid.
 	 */
 
 	if (mm) {
 		unsigned long asid = mm->context.asid[cpu];
-		if ((asid == NO_CONTEXT) ||
+		/*
+		 * FIXME: Using configuable work around to disable
+		 *        Lazy TLB Coherancy algorithm. If enabled,
+		 *        it forces a TLB flush on each context switch.
+		 */
+		if (config_ignore_mm_context_asid || (asid == NO_CONTEXT) ||
 		    ((asid ^ cpu_asid_cache(cpu)) & ~ASID_MASK)) {
 			get_new_mmu_context(mm, cpu);
 		}

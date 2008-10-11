@@ -5,39 +5,39 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_PTRACE_H
 #define _XTENSA_PTRACE_H
 
 /*
- * Kernel stack
+ * Kernel stack:
  *
- * 		+-----------------------+  -------- STACK_SIZE
- * 		|     register file     |  |
- * 		+-----------------------+  |
- * 		|    struct pt_regs     |  |
- * 		+-----------------------+  | ------ PT_REGS_OFFSET
- * double 	:  16 bytes spill area  :  |  ^
- * excetion 	:- - - - - - - - - - - -:  |  |
- * frame	:    struct pt_regs     :  |  |
- * 		:- - - - - - - - - - - -:  |  |
- * 		|                       |  |  |
- * 		|     memory stack      |  |  |
- * 		|                       |  |  |
- * 		~                       ~  ~  ~
- * 		~                       ~  ~  ~
- * 		|                       |  |  |
- * 		|                       |  |  |
- * 		+-----------------------+  |  | --- STACK_BIAS
- * 		|  struct task_struct   |  |  |  ^
- *  current --> +-----------------------+  |  |  |
- * 		|  struct thread_info   |  |  |  |
- *		+-----------------------+ --------
+ *                 +-----------------------+  -------- STACK_SIZE
+ *                 |     register file     |  |
+ *                 +-----------------------+  |
+ *                 |    struct pt_regs     |  |
+ *                 +-----------------------+  | ------ PT_REGS_OFFSET
+ * Double          :  16 bytes spill area  :  |  ^
+ * Exception       :- - - - - - - - - - - -:  |  |
+ * Frame           :    struct pt_regs     :  |  |
+ *                 :- - - - - - - - - - - -:  |  |
+ *                 |                       |  |  |
+ *                 |     memory stack      |  |  |
+ *                 |     ~(4k|8k|16k)      |  |  |
+ *                 ~                       ~  ~  ~
+ *                 ~                       ~  ~  ~
+ *                 |                       |  |  |
+ *                 |                       |  |  |
+ *                 +-----------------------+  |  | --- STACK_BIAS
+ *                 |  struct task_struct ? |  |  |  ^
+ *  current -->    +-----------------------+  |  |  |
+ *                 |  struct thread_info   |  |  |  |
+ *                 +-----------------------+ --------
  */
 
-#define KERNEL_STACK_SIZE (2 * PAGE_SIZE)
+#define KERNEL_STACK_SIZE (CONFIG_STACK_SIZE)
 
 /*  Offsets for exception_handlers[] (3 x 64-entries x 4-byte tables). */
 

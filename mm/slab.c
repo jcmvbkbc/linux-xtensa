@@ -317,15 +317,30 @@ static void free_block(struct kmem_cache *cachep, void **objpp, int len,
 static int enable_cpucache(struct kmem_cache *cachep);
 static void cache_reap(struct work_struct *unused);
 
+#ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
+/*
+ * Likely compiling -O0 for use with a kernel debugger.
+ */
+ void __bad_size(int size) 
+{
+	printk(KERN_ERR "%s: size:%d is Bogus!\n", __func__, size);
+}
+#define __ALWAYS_INLINE
+#define __BUILTIN_CONSTANT_P(size) 	(1)
+#else
+#define __ALWAYS_INLINE __always_inline
+#define __BUILTIN_CONSTANT_P(size) __builtin_constant_p(size)
+#endif
+
 /*
  * This function must be completely optimized away if a constant is passed to
  * it.  Mostly the same as what is in linux/slab.h except it returns an index.
  */
-static __always_inline int index_of(const size_t size)
+static __ALWAYS_INLINE int index_of(const size_t size)
 {
-	extern void __bad_size(void);
+	extern void __bad_size(int);
 
-	if (__builtin_constant_p(size)) {
+	if (__BUILTIN_CONSTANT_P(size)) {
 		int i = 0;
 
 #define CACHE(x) \
@@ -335,9 +350,9 @@ static __always_inline int index_of(const size_t size)
 		i++;
 #include "linux/kmalloc_sizes.h"
 #undef CACHE
-		__bad_size();
+		__bad_size(size);
 	} else
-		__bad_size();
+		__bad_size(size);
 	return 0;
 }
 

@@ -1,7 +1,180 @@
+# xtensa debug configuration
+#
+# For a description of the syntax of this configuration file,
+# See Documentation/kbuild/kconfig-language.txt.
+
 menu "Kernel hacking"
 
 source "lib/Kconfig.debug"
 
-endmenu
+config CC_OPTIMIZE_FOR_DEBUGGING
+	bool "Kernel Code Optimized for Debugging"
+	depends on !CC_OPTIMIZE_FOR_SIZE && EXPERIMENTAL
+	select OPTIMIZE_INLINING
+	default n
+	help
+	  If you say Y here the kernel will be compiled without optimization. 
+	  This will increase the size of the kernel stack due to static inline 
+	  function now being placed there; so 16KSTACKS are LIKELY REQUIRED. 
 
+	  This option greatly simplifies debugging as all functions and variables 
+	  on the stack are correct and visible to gdb based kernel debugging tools. 
+	  Impact on performance is relatively minor and the vast majority of bugs 
+	  are not hidden by enabling this option.
+
+	  This is experimental code. Recommended for debugging and browsing the 
+	  kernel code and data structures with a gdb based debugger.
+
+	  If in doubt, say "N".
+
+config CC_DEBUGGING_CFLAGS
+	prompt "Additional CFLAGS to use when Optimized for Debugging"
+	string 
+	depends on CC_OPTIMIZE_FOR_DEBUGGING
+	default "-O0"
+	help
+	  These are the CFLAGS passed to GCC when OPTIMIZE FOR DEBUGGING.
+	  -O0 results in a better debugging environment where as -O1 generates 
+	  code closer to the target optimized environment.  GCC options -O0 and
+	  -fno-inline put most inline functions on the stack and visible with
+	   gdb backtrace command.
+
+	  Suggestions:
+	        -g -O0  
+		-g -O1 -fno-inline
+
+choice
+	prompt "Kernel Stack Size"
+	default 8KSTACKS if !CC_OPTIMIZE_FOR_DEBUGGING
+	default 16KSTACKS if CC_OPTIMIZE_FOR_DEBUGGING
+	help
+	  Recommend selecting the EXPERIMENTAL option of compiling the
+	  kernel with 16K stacks if debugging the kernel and disabling
+	  optimization by selecting CC_OPTIMIZE_FOR_DEBUGGING for easy
+	  debugging with a gdb based debugger.
+
+config 4KSTACKS
+	bool "Use 4Kb for kernel stacks; DOESN'T WORK YET"
+	depends on EXPERIMENTAL
+	help
+	  If you say Y here the kernel will use a 4K stack size for the
+	  kernel stack attached to each process/thread. This facilitates
+	  running more threads on a system and also reduces the pressure
+	  on the VM subsystem for higher order allocations. This option
+	  will EVENTUALLY also use IRQ stacks to compensate for the reduced 
+	  stack space.
+
+	  This is experimental code; it likely doesn't even work yet.
+
+	  If in doubt, say "N".
+
+config 8KSTACKS
+	bool "Use Standard 8K for kernel stacks"
+	help
+	  If you say Y here the kernel will use a 8Kb stack size for the
+	  kernel stack attached to each process/thread. This is the 
+	  default stack size for Linux processes. Recent tests with
+	  non-optimized kernels seem to indicate that this stack size is
+	  too small when compiling with -O0. 
+
+	  Not recommened when Compiling the kernel to be optimized for Debugging.
+
+config 16KSTACKS
+	bool "Use 16K for kernel stacks, Best if Optimized for Debugging"
+	depends on EXPERIMENTAL || DEBUG_KERNEL
+	help
+	  If you say Y here the kernel will use a 16Kb stack size for the
+	  kernel stack attached to each process/thread. This is required
+	  when compiling the kernel -O0.
+
+	  This is experimental code.
+
+	  Highly recommended when compiling the kernel with CC_OPTIMIZE_FOR_DEBUGGING.
+
+	  If in doubt, say "N".
+endchoice
+
+config DEBUG_STACKOVERFLOW
+	bool "Check for stack overflows"
+	depends on DEBUG_KERNEL
+	default y if  CC_OPTIMIZE_FOR_DEBUGGING
+	default n if !CC_OPTIMIZE_FOR_DEBUGGING
+	help
+	  This option will cause messages to be printed if free stack space
+	  drops below a certain limit.
+
+config IGNORE_MM_CONTEXT_ASID
+	bool "Ignore MM Context ASID"
+	default y
+	help
+	  We are experiencing problems with the MMU TLB being out of sync with the memory
+	  based Page Table Entries (PTEs). Looks like Lazy TLB Consistency code isn't
+	  working. Selecting this option causes the kernel to flush the TLB's on every
+	  context switch. 
+
+	  If in doubt, say "Y".
+
+config IGNORE_PAGE_ARCH_1_BIT
+	bool "Ignore Page Structure PG_arch_1 Bit"
+	default y if  CONFIG_SMP
+	default n if !CONFIG_SMP
+	help
+	  With SMP we can't share the PG_arch_1 bit between processors. Likely
+	  best to ignore this bit and do the required TLB and Cache flushes when
+	  the MMU code updates a TLB entry and calls update_mmu_cache(). Impact on
+	  performance is likely significant and is being investigated; also with 
+	  the use of the config option.
+
+	  If in doubt, say "Y".
+
+
+config OPTIMIZE_INLINING
+	bool "Allow gcc to uninline functions marked 'inline'; needed for -fno_inline to work"
+	default y
+	help
+	  This option determines if the kernel forces gcc to inline the functions
+	  developers have marked 'inline'. Doing so takes away freedom from gcc to
+	  do what it thinks is best, which is desirable for the gcc 3.x series of
+	  compilers. The gcc 4.x series have a rewritten inlining algorithm and
+	  disabling this option will generate a smaller kernel there. Hopefully
+	  this algorithm is so good that allowing gcc4 to make the decision can
+	  become the default in the future, until then this option is there to
+	  test gcc for this and to facilitate debugging with some optimization
+	  enabled using gdb based debuggers.
+
+	  Forcing inlining overrides the -fno_inline option which is helpfull
+	  while debuging with some optimization is desirable. Not recomended
+	  while debugging with gdb; half of the stack frames are missing and
+	  you can't step over the inlined functions.
+
+	  If unsure, say Y.
+
+#
+# Will Set default for menu in linux/lib/Kconfig.debug.
+# Need to fix code like spill_registers() use of ar7 in 
+# include/asm-xtensa/system.h before enableing this.
+#
+config FRAME_POINTER
+	bool 
+	depends on DEBUG_KERNEL
+	default n if  CC_OPTIMIZE_FOR_DEBUGGING
+	default n if !CC_OPTIMIZE_FOR_DEBUGGING
+
+#
+# Config Variables derived from Stack Size selected above.
+# No menus are provied so as to force them to stay in sync with
+# the STACK SIZE selected above.
+#
+config STACK_SIZE
+	int
+	default "4096" if 4KSTACKS
+	default "8192" if 8KSTACKS
+	default "16384" if 16KSTACKS
+
+config STACK_SHIFT
+	int
+	default "12" if 4KSTACKS
+	default "13" if 8KSTACKS
+	default "14" if 16KSTACKS
+endmenu
 

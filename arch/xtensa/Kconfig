@@ -1,11 +1,9 @@
+# xtensa configuration
+#
 # For a description of the syntax of this configuration file,
 # see Documentation/kbuild/kconfig-language.txt.
 
-mainmenu "Linux/Xtensa Kernel Configuration"
-
-config FRAME_POINTER
-	bool
-	default n
+mainmenu "Linux/Xtensa Kernel Configuration for Xtensa"
 
 config ZONE_DMA
 	bool
@@ -268,6 +266,10 @@ config SIMDISK1_FILENAME
 	storage.
 
 config ARCH_SUPPORTS_OPROFILE
+	bool
+	default y
+
+config ARCH_SUPPORTS_OPTIMIZED_INLINING
 	bool
 	default y
 

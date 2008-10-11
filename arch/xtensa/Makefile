@@ -23,6 +23,20 @@ KBUILD_CFLAGS += -ffreestanding
 KBUILD_CFLAGS += -pipe -mlongcalls
 KBUILD_DEFCONFIG := iss_defconfig
 
+#
+# This would be better in the common kernel Makefile,
+# as it can prevent the compiler being passed -O2/-Os
+# followed by -O0. Likely best to leave it here until
+# Jason gets a CFLAGS change for the kgdb option that
+# we can share.
+#
+# Using a small shell script from Amit's kgdb patch to
+# remove the double quotes from the CC_DEBUGGING_CFLAGS.
+# 
+ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
+KBUILD_CFLAGS   += $(shell echo $(CONFIG_CC_DEBUGGING_CFLAGS) | sed -e 's/"//g')
+endif
+
 # Test for cross compiling. Allow xtensa-*-* and xtensa_<variant>-*-*
 
 ifneq ($(SUBARCH),$(ARCH))

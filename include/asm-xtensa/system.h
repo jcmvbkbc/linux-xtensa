@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_SYSTEM_H
@@ -110,7 +110,17 @@ __cmpxchg(volatile void *ptr, unsigned long old, unsigned long new, int size)
 {
 	switch (size) {
 	case 4:  return __cmpxchg_u32(ptr, old, new);
+#ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
+	default:
+	{
+		/* Likely compiling -O0 for easy debugging with gdb */
+		extern void panic(const char *fmt, ...);
+
+		panic("__xchg(): Called with bad pointer in Kernel Optimized for Debugging");
+	}
+#else
 	default: __cmpxchg_called_with_bad_pointer();
+#endif
 		 return old;
 	}
 }
@@ -166,7 +176,16 @@ __xchg(unsigned long x, volatile void * ptr, int size)
 		case 4:
 			return xchg_u32(ptr, x);
 	}
+#ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
+	{
+		/* Likely compiling -O0 for easy debugging with gdb */
+		extern void panic(const char *fmt, ...);
+
+		panic("__xchg(): Called with bad pointer in DEBUG_KERNEL");
+	}
+#else
 	__xchg_called_with_bad_pointer();
+#endif
 	return x;
 }
 
