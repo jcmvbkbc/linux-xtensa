@@ -96,6 +96,13 @@ typedef elf_greg_t elf_gregset_t[ELF_NGREG];
 typedef unsigned int elf_fpreg_t;
 typedef elf_fpreg_t elf_fpregset_t[ELF_NFPREG];
 
+/*
+ * Declare pt_regs here to prevent gcc warnings about defining it for the
+ * first time within parameter lists (below).
+ */
+
+struct pt_regs;
+
 #define ELF_CORE_COPY_REGS(_eregs, _pregs) 				\
 	xtensa_elf_core_copy_regs ((xtensa_gregset_t*)&(_eregs), _pregs);
 
