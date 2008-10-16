@@ -208,6 +208,12 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 	if (vma->vm_flags & VM_EXEC) {
 		__invalidate_icache_page(paddr);
 	}
+
+/* FIXME: this function likely calls __invalidate_icache_page() twice
+ * on the same address if the core is not cache aliasing.  There is an
+ * optimization opportunity here.
+ */
+
 }
 
 /*
