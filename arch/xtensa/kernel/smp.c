@@ -99,7 +99,7 @@ void __init smp_cpus_done(unsigned int max_cpus)
 
 extern void __init secondary_irq_init(void);
 extern void secondary_irq_enable(int);
-void secondary_start_kernel(void)
+void __init secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
 	unsigned int cpu = smp_processor_id();

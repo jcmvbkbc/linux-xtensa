@@ -244,8 +244,7 @@ should_never_return:
  * DATA section
  */
 
-	/* .section ".init.data" */
-	.data
+	.section ".data.init.refok"
 	.align	4
 ENTRY(start_info)
 	.long	init_thread_union + KERNEL_STACK_SIZE

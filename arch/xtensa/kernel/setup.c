@@ -115,7 +115,7 @@ typedef struct tagtable {
 
 /* parse current tag */
 
-static int __init parse_tag_mem(const bp_tag_t *tag)
+static int __init_refok parse_tag_mem(const bp_tag_t *tag)
 {
 	bp_memory_t *mi = (bp_memory_t*)(tag->data);
 	int i = 0;
@@ -144,7 +144,7 @@ __tagtable(BP_TAG_MEMORY, parse_tag_mem);
 
 #ifdef CONFIG_BLK_DEV_INITRD
 
-static int __init parse_tag_initrd(const bp_tag_t* tag)
+static int __init_refok parse_tag_initrd(const bp_tag_t* tag)
 {
 	bp_memory_bank_t* mi;
 	mi = (bp_memory_bank_t*)(tag->data);
@@ -158,7 +158,7 @@ __tagtable(BP_TAG_INITRD, parse_tag_initrd);
 
 #endif /* CONFIG_BLK_DEV_INITRD */
 
-static int __init parse_tag_cmdline(const bp_tag_t* tag)
+static int __init_refok parse_tag_cmdline(const bp_tag_t* tag)
 {
 return 0;
 	strncpy(command_line, (char*)(tag->data), COMMAND_LINE_SIZE);
@@ -204,7 +204,7 @@ static int __init parse_bootparam(const bp_tag_t* tag)
  * Initialize architecture. (Early stage)
  */
 
-void __init init_arch(bp_tag_t *bp_start)
+void __init_refok init_arch(bp_tag_t *bp_start)
 {
 
 #if 0
