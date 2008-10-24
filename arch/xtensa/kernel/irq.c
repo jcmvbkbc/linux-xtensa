@@ -22,6 +22,8 @@
 #include <asm/uaccess.h>
 #include <asm/platform.h>
 
+/* FIXME: We never increment irq_err_count. */
+
 atomic_t irq_err_count;
 
 /*
