@@ -5,11 +5,28 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_SPINLOCK_H
 #define _XTENSA_SPINLOCK_H
+
+/*
+ * spinlock
+ *
+ * There is at most one owner of a spinlock.  There are not different
+ * types of spinlock owners like there are for rwlocks (see below).
+ *
+ * When trying to obtain a spinlock, the function "spins" forever, or busy-
+ * waits, until the lock is obtained.  When spinning, presumably some other
+ * owner will soon give up the spinlock making it available to others.  Use
+ * the trylock functions to avoid spinning forever.
+ *
+ * possible values:
+ *
+ *    0		nobody owns the spinlock
+ *    1		somebody owns the spinlock
+ */
 
 #define __raw_spin_is_locked(x)	((x)->slock != 0)
 #define __raw_spin_unlock_wait(lock) \
@@ -29,6 +46,8 @@ static inline void __raw_spin_lock(raw_spinlock_t *lock)
 "	bnez	%0, 1b		\n"
 	: "=&a" (tmp) : "a" (&lock->slock) : "memory");
 }
+
+/* Returns 1 if the lock is obtained, 0 otherwise. */
 
 static inline int __raw_spin_trylock(raw_spinlock_t *lock)
 {
@@ -54,9 +73,24 @@ static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 	: "=&a" (tmp) : "a" (&lock->slock) : "memory");
 }
 
-// FIXME from ARM:
-/* write_can_lock - would write_trylock() succeed? */
-#define __raw_write_can_lock(x)		((x)->lock == 0x80000000)
+/*
+ * rwlock
+ *
+ * Read-write locks are really a more flexible spinlock.  They allow
+ * multiple readers but only one writer.  Write ownership is exclusive
+ * (i.e., all other readers and writers are blocked from ownership while
+ * there is a write owner).  These rwlocks are unfair to writers.  Writers
+ * can be starved for an indefinite time by readers.
+ *
+ * possible values:
+ *
+ *   0		nobody owns the rwlock
+ *  >0		one or more readers own the rwlock
+ *		  (the positive value is the actual number of readers)
+ *  0x80000000	one writer owns the rwlock, no other writers, no readers
+ */
+
+#define __raw_write_can_lock(x)  ((x)->lock == 0)
 
 static inline void __raw_write_lock(raw_rwlock_t *rw)
 {
@@ -71,6 +105,8 @@ static inline void __raw_write_lock(raw_rwlock_t *rw)
 "	bnez	%0, 1b		\n"
 	: "=&a" (tmp) : "a" (&rw->lock) : "memory");
 }
+
+/* Returns 1 if the lock is obtained, 0 otherwise. */
 
 static inline int __raw_write_trylock(raw_rwlock_t *rw)
 {
@@ -104,30 +140,42 @@ static inline void __raw_read_lock(raw_rwlock_t *rw)
 
 	asm volatile(
 "1:	l32i	%1, %2, 0	\n"
-"	addi	%0, %1, 1	\n"
-"	bltz	%0, 1b		\n"
+"	bltz	%1, 1b		\n"
 "	wsr	%1, SCOMPARE1	\n"
+"	addi	%0, %1, 1	\n"
 "	s32c1i	%0, %2, 0	\n"
 "	bne	%0, %1, 1b	\n"
 	: "=&a" (result), "=&a" (tmp) : "a" (&rw->lock) : "memory");
 }
 
+/* Returns 1 if the lock is obtained, 0 otherwise. */
+
 static inline int __raw_read_trylock(raw_rwlock_t *rw)
 {
-	unsigned long result;
-	unsigned long tmp;
+	/* Init 'result' to an invalid lock value: -1.  This is important
+	 * for a correct return value in the case where the bltz branches.
+	 * Also, 'result' must be a signed type for a correct return
+	 * value.  See possible rwlock values above.
+	 */
+
+	int result = -1;
+	int tmp;
 
 	asm volatile(
 "	l32i	%1, %2, 0	\n"
-"	addi	%0, %1, 1	\n"
-"	bltz	%0, 1f		\n"
+"	bltz	%1, 1f		\n"
 "	wsr	%1, SCOMPARE1	\n"
+"	addi	%0, %1, 1	\n"
 "	s32c1i	%0, %2, 0	\n"
-"	sub	%0, %0, %1	\n"
 "1:				\n"
 	: "=&a" (result), "=&a" (tmp) : "a" (&rw->lock) : "memory");
 
-	return result == 0;
+	/* If result >= 0, the reader is allowed to obtain the lock.
+	 * If result == tmp, the s32c1i succeeded, and the reader now
+	 * owns the lock.
+	 */ 
+
+	return (result >= 0) && (result == tmp);
 }
 
 static inline void __raw_read_unlock(raw_rwlock_t *rw)
