@@ -208,9 +208,205 @@ _user_exception:
 
 	/* We are back to the original stack pointer (a1) */
 
-2:	/* Now, jump to the common exception handler. */
+2:
 
-	j	common_exception
+/*
+ * Save the remaining special registers, switch to kernel mode, and jump
+ * to the second-level exception handler.
+ */
+
+	/* Save some registers, disable loops and clear the syscall flag. */
+
+	rsr	a2, DEBUGCAUSE
+	rsr	a3, EPC_1
+	s32i	a2, a1, PT_DEBUGCAUSE
+	s32i	a3, a1, PT_PC
+
+	movi	a2, -1
+	rsr	a3, EXCVADDR
+	s32i	a2, a1, PT_SYSCALL
+	movi	a2, 0
+	s32i	a3, a1, PT_EXCVADDR
+	xsr	a2, LCOUNT
+	s32i	a2, a1, PT_LCOUNT
+
+	/* It is now save to restore the EXC_TABLE_FIXUP variable. */
+
+	rsr	a0, EXCCAUSE
+	movi	a3, 0
+	rsr	a2, EXCSAVE_1
+	s32i	a0, a1, PT_EXCCAUSE
+	s32i	a3, a2, EXC_TABLE_FIXUP
+
+	/* All unrecoverable states are saved on stack, now, and a1 is valid,
+	 * so we can allow exceptions and interrupts (*) again.
+	 * Set PS(EXCM = 0, UM = 0, RING = 0, OWB = 0, WOE = 1, INTLEVEL = X)
+	 *
+	 * (*) We only allow interrupts if PS.INTLEVEL was not set to 1 before
+	 *     (interrupts disabled) and if this exception is not an interrupt.
+	 */
+
+	rsr	a3, PS
+	addi	a0, a0, -4
+	movi	a2, XCHAL_EXCM_LEVEL
+	extui	a3, a3, 0, 4		# a3 = PS.INTLEVEL
+	moveqz	a3, a2, a0		# a3 = EXCM_LEVEL iff interrupt exception
+	movi	a2, 1 << PS_WOE_BIT
+	or	a3, a3, a2
+	rsr	a0, EXCCAUSE
+	xsr	a3, PS
+
+	s32i	a3, a1, PT_PS		# save ps
+
+	/* Save LBEG, LEND */
+
+	rsr	a2, LBEG
+	rsr	a3, LEND
+	s32i	a2, a1, PT_LBEG
+	s32i	a3, a1, PT_LEND
+
+	/* Save SCOMPARE1 */
+
+#if XCHAL_HAVE_S32C1I
+	rsr	a2, SCOMPARE1
+	s32i	a2, a1, PT_SCOMPARE1
+#endif
+
+	/* Save optional registers. */
+
+	save_xtregs_opt a1 a2 a4 a5 a6 a7 PT_XTREGS_OPT
+	
+	/* Go to second-level dispatcher. Set up parameters to pass to the
+	 * exception handler and call the exception handler.
+	 */
+
+	//movi	a4, exc_table
+	rsr	a4, EXCSAVE_1
+	mov	a6, a1			# pass stack frame
+	mov	a7, a0			# pass EXCCAUSE
+	addx4	a4, a0, a4
+	l32i	a4, a4, EXC_TABLE_DEFAULT		# load handler
+
+	/* Call the second-level handler */
+
+	callx4	a4
+
+.Luser_exception_return:
+	/* Specific to a user exception exit:
+	 * We need to check some flags for signal handling and rescheduling,
+	 * and have to restore WB and WS, extra states, and all registers
+	 * in the register file that were in use in the user task.
+	 * Note that we don't disable interrupts here. 
+	 */
+
+	GET_THREAD_INFO(a2,a1)
+	l32i	a4, a2, TI_FLAGS
+
+	_bbsi.l	a4, TIF_NEED_RESCHED, 3f
+	_bbci.l	a4, TIF_SIGPENDING, 4f
+
+	/* Call do_signal() */
+
+	movi	a4, do_signal	# int do_signal(struct pt_regs*, sigset_t*)
+	mov	a6, a1
+	movi	a7, 0
+	callx4	a4
+	j	common_exception_return
+
+3:	/* Reschedule */
+
+	movi	a4, schedule	# void schedule (void)
+	callx4	a4
+
+	/* We may have context-switched.  Re-check PS and jump accordingly. */
+
+	/* Jump here for exception exit */
+	.global common_exception_return
+common_exception_return:
+
+	l32i	a3, a1, PT_PS
+	_bbsi.l	a3, PS_UM_BIT, .Luser_exception_return
+	j	.Lkernel_exception_return
+
+
+	/* Proceed with user exception return. */
+
+4:	l32i	a3, a1, PT_PS
+
+	/* Restore optional registers. */
+
+	load_xtregs_opt a1 a2 a4 a5 a6 a7 PT_XTREGS_OPT
+
+	/* Restore SCOMPARE1 */
+
+#if XCHAL_HAVE_S32C1I
+	l32i	a2, a1, PT_SCOMPARE1
+	wsr	a2, SCOMPARE1
+#endif
+
+	wsr	a3, PS		/* disable interrupts */
+
+user_exception_exit:
+
+	/* Restore the state of the task and return from the exception. */
+
+	/* Switch to the user thread WINDOWBASE. Save SP temporarily in DEPC */
+
+	l32i	a2, a1, PT_WINDOWBASE
+	l32i	a3, a1, PT_WINDOWSTART
+	wsr	a1, DEPC		# use DEPC as temp storage
+	wsr	a3, WINDOWSTART		# restore WINDOWSTART
+	ssr	a2			# preserve user's WB in the SAR
+	wsr	a2, WINDOWBASE		# switch to user's saved WB
+	rsync
+	rsr	a1, DEPC		# restore stack pointer
+	l32i	a2, a1, PT_WMASK	# register frames saved (in bits 4...9)
+	rotw	-1			# we restore a4..a7
+	_bltui	a6, 16, 1f		# only have to restore current window?
+
+	/* The working registers are a0 and a3.  We are restoring to
+	 * a4..a7.  Be careful not to destroy what we have just restored.
+	 * Note: wmask has the format YYYYM:
+	 *       Y: number of registers saved in groups of 4
+	 *       M: 4 bit mask of first 16 registers
+	 */
+
+	mov	a2, a6
+	mov	a3, a5
+
+2:	rotw	-1			# a0..a3 become a4..a7
+	addi	a3, a7, -4*4		# next iteration
+	addi	a2, a6, -16		# decrementing Y in WMASK
+	l32i	a4, a3, PT_AREG_END + 0
+	l32i	a5, a3, PT_AREG_END + 4
+	l32i	a6, a3, PT_AREG_END + 8
+	l32i	a7, a3, PT_AREG_END + 12
+	_bgeui	a2, 16, 2b
+
+	/* Clear unrestored registers (don't leak anything to user-land */
+
+1:	rsr	a0, WINDOWBASE
+	rsr	a3, SAR
+	sub	a3, a0, a3
+	beqz	a3, 2f
+	extui	a3, a3, 0, WBBITS
+
+1:	rotw	-1
+	addi	a3, a7, -1
+	movi	a4, 0
+	movi	a5, 0
+	movi	a6, 0
+	movi	a7, 0
+	bgei	a3, 1, 1b
+
+	/* We are back were we were when we started.
+	 * Note: a2 still contains WMASK (if we've returned to the original
+	 *	 frame where we had loaded a2), or at least the lower 4 bits
+	 *	 (if we have restored WSBITS-1 frames).
+	 */
+
+2:	j	common_exception_exit
+
 
 
 /*
@@ -303,15 +499,9 @@ _kernel_exception:
 #endif
 
 /*
- * This is the common exception handler.
- * We get here from the user exception handler or simply by falling through
- * from the kernel exception handler.
  * Save the remaining special registers, switch to kernel mode, and jump
  * to the second-level exception handler.
- *
  */
-
-common_exception:
 
 	/* Save some registers, disable loops and clear the syscall flag. */
 
@@ -389,43 +579,11 @@ common_exception:
 
 	callx4	a4
 
-	/* Jump here for exception exit */
-	.global common_exception_return
-common_exception_return:
+.Lkernel_exception_return:
 
-	/* Jump if we are returning from kernel exceptions. */
+	l32i	a3, a1, PT_PS
 
-1:	l32i	a3, a1, PT_PS
-	_bbci.l	a3, PS_UM_BIT, 4f
-
-	/* Specific to a user exception exit:
-	 * We need to check some flags for signal handling and rescheduling,
-	 * and have to restore WB and WS, extra states, and all registers
-	 * in the register file that were in use in the user task.
-	 * Note that we don't disable interrupts here. 
-	 */
-
-	GET_THREAD_INFO(a2,a1)
-	l32i	a4, a2, TI_FLAGS
-
-	_bbsi.l	a4, TIF_NEED_RESCHED, 3f
-	_bbci.l	a4, TIF_SIGPENDING, 4f
-
-	/* Call do_signal() */
-
-	movi	a4, do_signal	# int do_signal(struct pt_regs*, sigset_t*)
-	mov	a6, a1
-	movi	a7, 0
-	callx4	a4
-	j	1b
-
-3:	/* Reschedule */
-
-	movi	a4, schedule	# void schedule (void)
-	callx4	a4
-	j	1b
-
-4:	/* Restore optional registers. */
+	/* Restore optional registers. */
 
 	load_xtregs_opt a1 a2 a4 a5 a6 a7 PT_XTREGS_OPT
 
@@ -438,68 +596,6 @@ common_exception_return:
 
 	wsr	a3, PS		/* disable interrupts */
 
-	_bbci.l	a3, PS_UM_BIT, kernel_exception_exit
-
-user_exception_exit:
-
-	/* Restore the state of the task and return from the exception. */
-
-	/* Switch to the user thread WINDOWBASE. Save SP temporarily in DEPC */
-
-	l32i	a2, a1, PT_WINDOWBASE
-	l32i	a3, a1, PT_WINDOWSTART
-	wsr	a1, DEPC		# use DEPC as temp storage
-	wsr	a3, WINDOWSTART		# restore WINDOWSTART
-	ssr	a2			# preserve user's WB in the SAR
-	wsr	a2, WINDOWBASE		# switch to user's saved WB
-	rsync
-	rsr	a1, DEPC		# restore stack pointer
-	l32i	a2, a1, PT_WMASK	# register frames saved (in bits 4...9)
-	rotw	-1			# we restore a4..a7
-	_bltui	a6, 16, 1f		# only have to restore current window?
-
-	/* The working registers are a0 and a3.  We are restoring to
-	 * a4..a7.  Be careful not to destroy what we have just restored.
-	 * Note: wmask has the format YYYYM:
-	 *       Y: number of registers saved in groups of 4
-	 *       M: 4 bit mask of first 16 registers
-	 */
-
-	mov	a2, a6
-	mov	a3, a5
-
-2:	rotw	-1			# a0..a3 become a4..a7
-	addi	a3, a7, -4*4		# next iteration
-	addi	a2, a6, -16		# decrementing Y in WMASK
-	l32i	a4, a3, PT_AREG_END + 0
-	l32i	a5, a3, PT_AREG_END + 4
-	l32i	a6, a3, PT_AREG_END + 8
-	l32i	a7, a3, PT_AREG_END + 12
-	_bgeui	a2, 16, 2b
-
-	/* Clear unrestored registers (don't leak anything to user-land */
-
-1:	rsr	a0, WINDOWBASE
-	rsr	a3, SAR
-	sub	a3, a0, a3
-	beqz	a3, 2f
-	extui	a3, a3, 0, WBBITS
-
-1:	rotw	-1
-	addi	a3, a7, -1
-	movi	a4, 0
-	movi	a5, 0
-	movi	a6, 0
-	movi	a7, 0
-	bgei	a3, 1, 1b
-
-	/* We are back were we were when we started.
-	 * Note: a2 still contains WMASK (if we've returned to the original
-	 *	 frame where we had loaded a2), or at least the lower 4 bits
-	 *	 (if we have restored WSBITS-1 frames).
-	 */
-
-2:	j	common_exception_exit
 
 	/* This is the kernel exception exit.
 	 * We avoided to do a MOVSP when we entered the exception, but we
@@ -1960,6 +2056,8 @@ ENTRY(ret_from_fork)
 	movi	a4, do_syscall_trace_leave
 	mov	a6, a1
 	callx4	a4
+
+	/* Jump to user or kernel exception return sequence as appropriate. */
 
 	j	common_exception_return
 
