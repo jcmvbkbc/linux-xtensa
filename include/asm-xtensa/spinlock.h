@@ -152,30 +152,20 @@ static inline void __raw_read_lock(raw_rwlock_t *rw)
 
 static inline int __raw_read_trylock(raw_rwlock_t *rw)
 {
-	/* Init 'result' to an invalid lock value: -1.  This is important
-	 * for a correct return value in the case where the bltz branches.
-	 * Also, 'result' must be a signed type for a correct return
-	 * value.  See possible rwlock values above.
-	 */
+        unsigned long result;
+        unsigned long tmp;
 
-	int result = -1;
-	int tmp;
+        asm volatile(
+"       l32i    %1, %2, 0       \n"
+"       addi    %0, %1, 1       \n"
+"       bltz    %0, 1f          \n"
+"       wsr     %1, SCOMPARE1   \n"
+"       s32c1i  %0, %2, 0       \n"
+"       sub     %0, %0, %1      \n"
+"1:                             \n"
+        : "=&a" (result), "=&a" (tmp) : "a" (&rw->lock) : "memory");
 
-	asm volatile(
-"	l32i	%1, %2, 0	\n"
-"	bltz	%1, 1f		\n"
-"	wsr	%1, SCOMPARE1	\n"
-"	addi	%0, %1, 1	\n"
-"	s32c1i	%0, %2, 0	\n"
-"1:				\n"
-	: "=&a" (result), "=&a" (tmp) : "a" (&rw->lock) : "memory");
-
-	/* If result >= 0, the reader is allowed to obtain the lock.
-	 * If result == tmp, the s32c1i succeeded, and the reader now
-	 * owns the lock.
-	 */ 
-
-	return (result >= 0) && (result == tmp);
+        return result == 0;
 }
 
 static inline void __raw_read_unlock(raw_rwlock_t *rw)
