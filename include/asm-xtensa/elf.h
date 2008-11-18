@@ -92,9 +92,10 @@ typedef struct {
 typedef elf_greg_t elf_gregset_t[ELF_NGREG];
 
 #define ELF_NFPREG	18
-
 typedef unsigned int elf_fpreg_t;
 typedef elf_fpreg_t elf_fpregset_t[ELF_NFPREG];
+
+struct pt_regs;
 
 #define ELF_CORE_COPY_REGS(_eregs, _pregs) 				\
 	xtensa_elf_core_copy_regs ((xtensa_gregset_t*)&(_eregs), _pregs);
@@ -173,6 +174,7 @@ extern void xtensa_elf_core_copy_regs (xtensa_gregset_t *, struct pt_regs *);
        _r->areg[8]=0;  _r->areg[9]=0;    _r->areg[10]=0; _r->areg[11]=0; \
        _r->areg[12]=0; _r->areg[13]=0;   _r->areg[14]=0; _r->areg[15]=0; \
   } while (0)
+
 
 typedef struct {
 	xtregs_opt_t	opt;

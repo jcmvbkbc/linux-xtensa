@@ -51,6 +51,46 @@
 #define XCHAL_TOTAL_SA_SIZE		0	/* with 16-byte align padding */
 #define XCHAL_TOTAL_SA_ALIGN		1	/* actual minimum alignment */
 
+/*
+ * Detailed contents of save areas.
+ * NOTE:  caller must define the XCHAL_SA_REG macro (not defined here)
+ * before expanding the XCHAL_xxx_SA_LIST() macros.
+ *
+ * XCHAL_SA_REG(s,ccused,abikind,kind,opt,name,galign,align,asize,
+ *		dbnum,base,regnum,bitsz,gapsz,reset,x...)
+ *
+ *	s = passed from XCHAL_*_LIST(s), eg. to select how to expand
+ *	ccused = set if used by compiler without special options or code
+ *	abikind = 0 (caller-saved), 1 (callee-saved), or 2 (thread-global)
+ *	kind = 0 (special reg), 1 (TIE user reg), or 2 (TIE regfile reg)
+ *	opt = 0 (custom TIE extension or coprocessor), or 1 (optional reg)
+ *	name = lowercase reg name (no quotes)
+ *	galign = group byte alignment (power of 2) (galign >= align)
+ *	align = register byte alignment (power of 2)
+ *	asize = allocated size in bytes (asize*8 == bitsz + gapsz + padsz)
+ *	  (not including any pad bytes required to galign this or next reg)
+ *	dbnum = unique target number f/debug (see <xtensa-libdb-macros.h>)
+ *	base = reg shortname w/o index (or sr=special, ur=TIE user reg)
+ *	regnum = reg index in regfile, or special/TIE-user reg number
+ *	bitsz = number of significant bits (regfile width, or ur/sr mask bits)
+ *	gapsz = intervening bits, if bitsz bits not stored contiguously
+ *	(padsz = pad bits at end [TIE regfile] or at msbits [ur,sr] of asize)
+ *	reset = register reset value (or 0 if undefined at reset)
+ *	x = reserved for future use (0 until then)
+ *
+ *  To filter out certain registers, e.g. to expand only the non-global
+ *  registers used by the compiler, you can do something like this:
+ *
+ *  #define XCHAL_SA_REG(s,ccused,p...)	SELCC##ccused(p)
+ *  #define SELCC0(p...)
+ *  #define SELCC1(abikind,p...)	SELAK##abikind(p)
+ *  #define SELAK0(p...)		REG(p)
+ *  #define SELAK1(p...)		REG(p)
+ *  #define SELAK2(p...)
+ *  #define REG(kind,tie,name,galn,aln,asz,csz,dbnum,base,rnum,bsz,rst,x...) \
+ *		...what you want to expand...
+ */
+
 #define XCHAL_NCP_SA_NUM	0
 #define XCHAL_NCP_SA_LIST(s)
 #define XCHAL_CP0_SA_NUM	0

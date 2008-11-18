@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_TIMEX_H
@@ -19,17 +19,17 @@
 #define _INTLEVEL(x)	XCHAL_INT ## x ## _LEVEL
 #define INTLEVEL(x)	_INTLEVEL(x)
 
-#if INTLEVEL(XCHAL_TIMER0_INTERRUPT) == 1
+#if INTLEVEL(XCHAL_TIMER0_INTERRUPT) <= XCHAL_EXCM_LEVEL
 # define LINUX_TIMER     0
 # define LINUX_TIMER_INT XCHAL_TIMER0_INTERRUPT
-#elif INTLEVEL(XCHAL_TIMER1_INTERRUPT) == 1
+#elif INTLEVEL(XCHAL_TIMER1_INTERRUPT) <= XCHAL_EXCM_LEVEL
 # define LINUX_TIMER     1
 # define LINUX_TIMER_INT XCHAL_TIMER1_INTERRUPT
-#elif INTLEVEL(XCHAL_TIMER2_INTERRUPT) == 1
+#elif INTLEVEL(XCHAL_TIMER2_INTERRUPT) <= XCHAL_EXCM_LEVEL
 # define LINUX_TIMER     2
 # define LINUX_TIMER_INT XCHAL_TIMER2_INTERRUPT
 #else
-# error "Bad timer number for Linux configurations!"
+# error "No Xtensa timer at or below EXCM level on this core; need at least one!"
 #endif
 
 #define LINUX_TIMER_MASK        (1L << LINUX_TIMER_INT)
@@ -39,12 +39,12 @@
 
 #ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
 extern unsigned long ccount_per_jiffy;
-extern unsigned long ccount_nsec;
+extern unsigned long ccount_per_nsec;
 #define CCOUNT_PER_JIFFY ccount_per_jiffy
-#define NSEC_PER_CCOUNT  ccount_nsec
+#define NSEC_PER_CCOUNT  nsec_per_ccount
 #else
-#define CCOUNT_PER_JIFFY (CONFIG_XTENSA_CPU_CLOCK*(1000000UL/HZ))
-#define NSEC_PER_CCOUNT (1000UL / CONFIG_XTENSA_CPU_CLOCK)
+#define CCOUNT_PER_JIFFY (CONFIG_XTENSA_CPU_CLOCK*(1000UL/HZ))
+#define NSEC_PER_CCOUNT (1000000UL / CONFIG_XTENSA_CPU_CLOCK)
 #endif
 
 

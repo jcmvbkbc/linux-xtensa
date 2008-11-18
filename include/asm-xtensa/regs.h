@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Tensilica, Inc.  All Rights Reserved.
+ * Copyright (c) 2008 Tensilica, Inc.  All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2.1 of the GNU Lesser General Public
@@ -39,14 +39,21 @@
 #define WINDOWBASE	72
 #define WINDOWSTART	73
 #define PTEVADDR	83
+#define MMID		89
 #define RASID		90
 #define ITLBCFG		91
 #define DTLBCFG		92
 #define IBREAKENABLE	96
 #define DDR		104
 #define IBREAKA		128
+#define IBREAKA_0	128
+#define IBREAKA_1	129
 #define DBREAKA		144
+#define DBREAKA_0	144
+#define DBREAKA_1	145
 #define DBREAKC		160
+#define DBREAKC_0	160
+#define DBREAKC_1	161
 #define EPC		176
 #define EPC_1		177
 #define DEPC		192
@@ -54,6 +61,9 @@
 #define EPS_1		193
 #define EXCSAVE		208
 #define EXCSAVE_1	209
+#define EXCSAVE_2	210
+#define EXCSAVE_3	211
+#define EXCSAVE_4	212
 #define INTERRUPT	226
 #define INTENABLE	228
 #define PS		230
@@ -66,7 +76,12 @@
 #define ICOUNTLEVEL	237
 #define EXCVADDR	238
 #define CCOMPARE	240
+#define CCOMPARE_0      240
+#define CCOMPARE_1      241
+#define CCOMPARE_2      242
 #define MISC		244
+#define MISC_REG_0      244
+#define MISC_REG_1      245
 
 /*  Special names for read-only and write-only interrupt registers.  */
 
@@ -89,6 +104,10 @@
 #define EXCCAUSE_SPECULATION			7
 #define EXCCAUSE_PRIVILEGED			8
 #define EXCCAUSE_UNALIGNED			9
+#define EXCCAUSE_INSTR_DATA_ERROR		12
+#define EXCCAUSE_LOAD_STORE_DATA_ERROR		13
+#define EXCCAUSE_INSTR_ADDR_ERROR		14
+#define EXCCAUSE_LOAD_STORE_ADDR_ERROR		15
 #define EXCCAUSE_ITLB_MISS			16
 #define EXCCAUSE_ITLB_MULTIHIT			17
 #define EXCCAUSE_ITLB_PRIVILEGE			18

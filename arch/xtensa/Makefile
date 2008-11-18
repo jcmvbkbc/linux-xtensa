@@ -3,58 +3,56 @@
 # License.  See the file "COPYING" in the main directory of this archive
 # for more details.
 #
-# Copyright (C) 2001 - 2005  Tensilica Inc.
+# Copyright (C) 2001 - 2008  Tensilica Inc.
 #
 # This file is included by the global makefile so that you can add your own
 # architecture-specific flags and dependencies. Remember to do have actions
 # for "archclean" and "archdep" for cleaning up and making dependencies for
 # this architecture
 
-# Core configuration.
-# (Use VAR=<xtensa_config> to use another default compiler.)
+# Core and platform configurations
 
-variant-$(CONFIG_XTENSA_VARIANT_FSF)		:= fsf
-variant-$(CONFIG_XTENSA_VARIANT_LINUX_CUSTOM)	:= custom
+VARIANT		:= $(strip $(subst ",,$(CONFIG_XTENSA_VARIANT_NAME)))#")))
+PLATFORM	:= $(strip $(subst ",,$(CONFIG_XTENSA_PLATFORM_NAME)))#")))
 
-VARIANT = $(variant-y)
-export VARIANT
-
-# Platform configuration
-
-platform-$(CONFIG_XTENSA_PLATFORM_XT2000)	:= xt2000
-platform-$(CONFIG_XTENSA_PLATFORM_ISS)		:= iss
-
-PLATFORM = $(platform-y)
-export PLATFORM
+UTS_MACHINE	:= xtensa_$(VARIANT)
 
 # temporarily until string.h is fixed
 KBUILD_CFLAGS += -ffreestanding
 
 KBUILD_CFLAGS += -pipe -mlongcalls
-
 KBUILD_DEFCONFIG := iss_defconfig
 
-# ramdisk/initrd support
-# You need a compressed ramdisk image, named ramdisk.gz in
-# arch/xtensa/boot/ramdisk
+#
+# This would be better in the common kernel Makefile,
+# as it can prevent the compiler being passed -O2/-Os
+# followed by -O0. Likely best to leave it here until
+# Jason gets a CFLAGS change for the kgdb option that
+# we can share.
+#
+# Using a small shell script from Amit's kgdb patch to
+# remove the double quotes from the CC_DEBUGGING_CFLAGS.
+# 
+ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
+KBUILD_CFLAGS   += $(shell echo $(CONFIG_CC_DEBUGGING_CFLAGS) | sed -e 's/"//g')
+endif
 
-core-$(CONFIG_EMBEDDED_RAMDISK)	+= arch/xtensa/boot/ramdisk/
+# Test for cross compiling. Allow xtensa-*-* and xtensa_<variant>-*-*
 
-# Test for cross compiling
-
-ifneq ($(VARIANT),)
-  COMPILE_ARCH = $(shell uname -m)
-
-  ifneq ($(COMPILE_ARCH), xtensa)
-    ifndef CROSS_COMPILE
-      CROSS_COMPILE = xtensa_$(VARIANT)-
-    endif
+ifneq ($(SUBARCH),$(ARCH))
+  ifeq ($(CROSS_COMPILE),)
+    CROSS_COMPILE := $(call cc-cross-prefix, \
+    		       xtensa-linux-uclibc-  xtensa_$(VARIANT)-linux-uclibc- \
+    		       xtensa-linux-gnu-     xtensa_$(VARIANT)-linux-gnu-)
   endif
 endif
 
-#
+# We need to have a 'variant' configured, so exclude this line for 
+# make config/clean/etc.
 
+ifneq ($(strip $(VARIANT)),)
 LIBGCC := $(shell $(CC) $(KBUILD_CFLAGS) -print-libgcc-file-name)
+endif
 
 head-y		:= arch/xtensa/kernel/head.o
 core-y		+= arch/xtensa/kernel/ arch/xtensa/mm/
@@ -64,15 +62,28 @@ endif
 libs-y		+= arch/xtensa/lib/ $(LIBGCC)
 
 boot		:= arch/xtensa/boot
-
 archinc		:= include/asm-xtensa
 
-archprepare: $(archinc)/.platform
+archprepare: checkbin $(archinc)/.configured
 
-# Update processor variant and platform symlinks if something which affects
-# them changed.
+checkbin:
+ifneq ($(strip $(VARIANT)),)
+	@if test "$(call cc-option-yn,-mlongcalls)" = "n" ; then \
+		echo '*** Default compiler does not target an Xtensa core'; \
+		echo -n '*** Please put an appropriate Xtensa toolchain '; \
+		echo '($(VARIANT) variant) on your PATH'; \
+		false; \
+	fi
+else
+	@echo '*** Xtensa core variant name cannot be empty (check config)' ; \
+	false
+endif
 
-$(archinc)/.platform: $(wildcard include/config/arch/*.h) include/config/auto.conf
+drivers-$(CONFIG_OPROFILE)	+= arch/xtensa/oprofile/
+
+# Update processor variant and platform symlinks if something which affects them changed.
+
+$(archinc)/.configured: $(wildcard include/config/arch/*.h) include/config/auto.conf
 	@echo '  SYMLINK $(archinc)/variant -> $(archinc)/variant-$(VARIANT)'
 	$(Q)mkdir -p $(archinc)
 	$(Q)ln -fsn $(srctree)/$(archinc)/variant-$(VARIANT) $(archinc)/variant
@@ -80,19 +91,17 @@ $(archinc)/.platform: $(wildcard include/config/arch/*.h) include/config/auto.co
 	$(Q)ln -fsn $(srctree)/$(archinc)/platform-$(PLATFORM) $(archinc)/platform
 	@touch $@
 
-
 all: zImage
-
-bzImage : zImage
 
 zImage zImage.initrd: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $@
 
 CLEAN_FILES	+= arch/xtensa/vmlinux.lds                      \
 		   $(archinc)/platform $(archinc)/variant	\
-		   $(archinc)/.platform
+		   $(archinc)/.configured
 
 define archhelp
-  @echo '* zImage      - Compressed kernel image (arch/xtensa/boot/images/zImage.*)'
+  @echo '* zImage      - Compressed kernel image'
+  @echo '* uImage      - Compressed kernel image for U-Boot'
 endef
 

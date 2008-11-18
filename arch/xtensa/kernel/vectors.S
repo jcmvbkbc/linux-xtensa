@@ -10,7 +10,7 @@
  * Public License.  See the file "COPYING" in the main directory of
  * this archive for more details.
  *
- * Copyright (C) 2005 Tensilica, Inc.
+ * Copyright (C) 2005 - 2008 Tensilica, Inc.
  *
  * Chris Zankel <chris@zankel.net>
  *
@@ -28,9 +28,9 @@
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original value in depc
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  * The value for PT_DEPC saved to stack also functions as a boolean to
  * indicate that the exception is either a double or a regular exception:
@@ -52,6 +52,7 @@
 #include <asm/page.h>
 #include <asm/thread_info.h>
 #include <asm/processor.h>
+#include <asm/cacheasm.h>
 
 #define WINDOW_VECTORS_SIZE   0x180
 
@@ -79,6 +80,7 @@ ENTRY(_UserExceptionVector)
 	s32i	a0, a2, PT_DEPC		# mark it as a regular exception
 	addx4	a0, a0, a3		# find entry in table
 	l32i	a0, a0, EXC_TABLE_FAST_USER	# load handler
+	xsr	a3, EXCSAVE_1		# restore a3 and dispatch table
 	jx	a0
 
 /*
@@ -103,6 +105,7 @@ ENTRY(_KernelExceptionVector)
 	s32i	a0, a2, PT_DEPC		# mark it as a regular exception
 	addx4	a0, a0, a3		# find entry in table
 	l32i	a0, a0, EXC_TABLE_FAST_KERNEL	# load handler address
+	xsr	a3, EXCSAVE_1		# restore a3 and excsave1
 	jx	a0
 
 
@@ -205,36 +208,35 @@ ENTRY(_KernelExceptionVector)
 
 ENTRY(_DoubleExceptionVector)
 
-	/* Deliberately destroy excsave (don't assume it's value was valid). */
+	/* Get a register we can work with. */
 
-	wsr	a3, EXCSAVE_1		# save a3
+	xsr	a3, EXCSAVE_1
+	s32i	a2, a3, EXC_TABLE_DOUBLE_SAVE
 
 	/* Check for kernel double exception (usually fatal). */
 
-	rsr	a3, PS
-	_bbci.l	a3, PS_UM_BIT, .Lksp
+	rsr	a2, PS
+	_bbci.l	a2, PS_UM_BIT, .Lksp
 
 	/* Check if we are currently handling a window exception. */
 	/* Note: We don't need to indicate that we enter a critical section. */
 
 	xsr	a0, DEPC		# get DEPC, save a0
 
-	movi	a3, XCHAL_WINDOW_VECTORS_VADDR
-	_bltu	a0, a3, .Lfixup
-	addi	a3, a3, WINDOW_VECTORS_SIZE
-	_bgeu	a0, a3, .Lfixup
+	movi	a2, XCHAL_WINDOW_VECTORS_VADDR
+	_bltu	a0, a2, .Lfixup
+	addi	a2, a2, WINDOW_VECTORS_SIZE
+	_bgeu	a0, a2, .Lfixup
 
 	/* Window overflow/underflow exception. Get stack pointer. */
 
-	mov	a3, a2
-	movi	a2, exc_table
-	l32i	a2, a2, EXC_TABLE_KSTK
+	l32i	a2, a3, EXC_TABLE_KSTK
 
 	/* Check for overflow/underflow exception, jump if overflow. */
 
 	_bbci.l	a0, 6, .Lovfl
 
-	/* a0: depc, a1: a1, a2: kstk, a3: a2, depc: a0, excsave: a3  */
+	/* a0: depc, a1: a1, a2: kstk, a3: exc_table, depc: a0, excsave1: a3 */
 
 	/* Restart window underflow exception.
 	 * We return to the instruction in user space that caused the window
@@ -245,6 +247,7 @@ ENTRY(_DoubleExceptionVector)
 	 * Note: We can trash the current window frame (a0...a3) and depc!
 	 */
 
+	xsr	a3, EXCSAVE_1		# restore EXCSAVE_1 and a3
 	wsr	a2, DEPC		# save stack pointer temporarily
 	rsr	a0, PS
 	extui	a0, a0, PS_OWB_SHIFT, 4
@@ -255,22 +258,17 @@ ENTRY(_DoubleExceptionVector)
 
 	xsr	a2, DEPC		# save a2 and get stack pointer
 	s32i	a0, a2, PT_AREG0
-
-	wsr	a3, EXCSAVE_1		# save a3
-	movi	a3, exc_table
-
+	xsr	a3, EXCSAVE_1		# save a3, retrive exc_table[cpu]
 	rsr	a0, EXCCAUSE
 	s32i	a0, a2, PT_DEPC		# mark it as a regular exception
 	addx4	a0, a0, a3
+	xsr	a3, EXCSAVE_1
 	l32i	a0, a0, EXC_TABLE_FAST_USER
 	jx	a0
 
 .Lfixup:/* Check for a fixup handler or if we were in a critical section. */
 
-	/* a0: depc, a1: a1, a2: a2, a3: trashed, depc: a0, excsave1: a3 */
-
-	movi	a3, exc_table
-	s32i	a2, a3, EXC_TABLE_DOUBLE_SAVE	# temporary variable
+	/* a0: depc, a1: a1, a2: kstk, a3: exc_table, depc: a0, excsave1: a3 */
 
 	/* Enter critical section. */
 
@@ -285,22 +283,30 @@ ENTRY(_DoubleExceptionVector)
 
 .Ldflt:	/* Get stack pointer. */
 
-	l32i	a3, a3, EXC_TABLE_DOUBLE_SAVE
-	addi	a2, a3, -PT_USER_SIZE
+	/* a0: depc, a1: a1, a2: kstk, a3: exc_table, depc: a0, excsave1: a3 */
+
+	l32i	a2, a3, EXC_TABLE_DOUBLE_SAVE
+	addi	a2, a2, -PT_USER_SIZE
 
 .Lovfl:	/* Jump to default handlers. */
 
-	/* a0: depc, a1: a1, a2: kstk, a3: a2, depc: a0, excsave: a3 */
+	/*OLD a0: depc, a1: a1, a2: kstk, a3: a2, depc: a0, excsave: a3 */
+	/* a0: depc, a1: a1, a2: kstk, a3: exc_table, depc: a0, excsave1: a3 */
 
-	xsr	a3, DEPC
+
+	//xsr	a3, DEPC
 	s32i	a0, a2, PT_DEPC
-	s32i	a3, a2, PT_AREG0
+	l32i	a0, a3, EXC_TABLE_DOUBLE_SAVE	
+	xsr	a0, DEPC
+	s32i	a0, a2, PT_AREG0
 
-	/* a0: avail, a1: a1, a2: kstk, a3: avail, depc: a2, excsave: a3 */
+	/* a0: avail, a1: a1, a2: kstk, a3: exc_table, depc: a2, excsave: a3 */
 
-	movi	a3, exc_table
+	// movi	a3, exc_table
+
 	rsr	a0, EXCCAUSE
 	addx4	a0, a0, a3
+	xsr	a3, EXCSAVE_1
 	l32i	a0, a0, EXC_TABLE_FAST_USER
 	jx	a0
 
@@ -311,8 +317,10 @@ ENTRY(_DoubleExceptionVector)
 
 	.extern fast_second_level_miss_double_kernel
 
-.Lksp:	/* a0: a0, a1: a1, a2: a2, a3: trashed, depc: depc, excsave: a3 */
-
+.Lksp:	/* OLDa0: a0, a1: a1, a2: a2, a3: trashed, depc: depc, excsave: a3 */
+	/* a0: depc, a1: a1, a2: kstk, a3: exc_table, depc: a0, excsave1: a3 */
+	j .Lksp
+// FIXME: -----------
 	rsr	a3, EXCCAUSE
 	beqi	a3, EXCCAUSE_ITLB_MISS, 1f
 	addi	a3, a3, -EXCCAUSE_DTLB_MISS
@@ -325,6 +333,7 @@ ENTRY(_DoubleExceptionVector)
 	.extern unrecoverable_exception
 
 .Lunrecoverable_fixup:
+1: j 1b
 	l32i	a2, a3, EXC_TABLE_DOUBLE_SAVE
 	xsr	a0, DEPC
 
@@ -352,6 +361,97 @@ ENTRY(_DebugInterruptVector)
 
 
 
+/*
+ * Medium priority level interrupt vectors
+ *
+ * Each takes less than 28 (0x1c) bytes, no literals, by placing
+ * the extra 8 bytes that would otherwise be required in the window
+ * vectors area where there is space.  With relocatable vectors,
+ * all vectors are within ~ 4 kB range of each other, so we can
+ * simply jump (J) to another vector without having to use JX.
+ *
+ * TODO:  This is a quick implementation that is functional,
+ * but gives up prioritization of interrupts.
+ * Needs to be cleaned up to pass the interrupt level to the
+ * common_exception code to set the correct interrupt level.
+ */
+
+#if XCHAL_EXCM_LEVEL >= 2
+	.section .Level2InterruptVector.text, "ax"
+ENTRY(_Level2InterruptVector)
+	#  Simulate level-one interrupt ...
+	xsr	a0, EPC2
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS2
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException	# branch to user or kernel vector
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 3
+	.section .Level3InterruptVector.text, "ax"
+ENTRY(_Level3InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC3
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS3
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 4
+	.section .Level4InterruptVector.text, "ax"
+ENTRY(_Level4InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC4
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS4
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 5
+	.section .Level5InterruptVector.text, "ax"
+ENTRY(_Level5InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC5
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS5
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+#if XCHAL_EXCM_LEVEL >= 6
+	.section .Level6InterruptVector.text, "ax"
+ENTRY(_Level6InterruptVector)
+	#  Simulate level-one interrupt ...
+	wsr	a0, EPC2
+	rsr	a0, EPC6
+	wsr	a0, EPC1
+	movi	a0, 4				# LEVEL1_INTERRUPT cause
+	wsr	a0, EXCCAUSE
+	rsr	a0, EPS6
+	addi	a0, a0, (1 << PS_EXCM_BIT)	# set PS.EXCM
+	wsr	a0, PS				# leave PS.INTLEVEL intact
+	j	_SimulateUserKernelVectorException
+#endif
+
+
+
 /* Window overflow and underflow handlers.
  * The handlers must be 64 bytes apart, first starting with the underflow
  * handlers underflow-4 to underflow-12, then the overflow handlers
@@ -361,7 +461,7 @@ ENTRY(_DebugInterruptVector)
  *	 we try to access any page that would cause a page fault early.
  */
 
-	.section		.WindowVectors.text, "ax"
+	.section .WindowVectors.text, "ax"
 
 
 /* 4-Register Window Overflow Vector (Handler) */
@@ -374,6 +474,22 @@ _WindowOverflow4:
 	s32e	a2, a5,  -8
 	s32e	a3, a5,  -4
 	rfwo
+
+
+#if XCHAL_EXCM_LEVEL >= 2
+	/*  Not a window vector - but a convenient location
+	 *  (where we know there's space) for continuation of
+	 *  medium priority interrupt dispatch code.
+	 *  On entry here, a0 contains PS, and EPC2 contains saved a0:
+	 */
+	.align 4
+_SimulateUserKernelVectorException:
+	bbsi.l	a0, PS_UM_BIT, 1f		# branch if user mode
+	rsr	a0, EPC2			# restore a0
+	j	_KernelExceptionVector		# simulate kernel vector exception
+1:	rsr	a0, EPC2			# restore a0
+	j	_UserExceptionVector		# simulate user vector exception
+#endif
 
 
 /* 4-Register Window Underflow Vector (Handler) */

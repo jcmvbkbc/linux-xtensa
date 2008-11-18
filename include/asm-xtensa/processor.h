@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_PROCESSOR_H
@@ -61,7 +61,7 @@
 /* LOCKLEVEL defines the interrupt level that masks all
  * general-purpose interrupts.
  */
-#define LOCKLEVEL 1
+#define LOCKLEVEL		XCHAL_EXCM_LEVEL
 
 /* WSBITS and WBBITS are the width of the WINDOWSTART and WINDOWBASE
  * registers
@@ -188,6 +188,79 @@ extern unsigned long get_wchan(struct task_struct *p);
 
 #define set_sr(x,sr) ({unsigned int v=(unsigned int)x; WSR(v,sr);})
 #define get_sr(sr) ({unsigned int v; RSR(v,sr); v; })
+
+/*
+ * Derived from i386 native_get_debugreg().
+ * REMIND:
+ *    Consider using boreal/p4root/Xtensa/OS/xmon/debug-vector-mon.S
+ *		_xmon_set_special_register() 
+ *
+ * for a generic solution that handles any special register.
+ */
+static inline unsigned long get_debugreg(int sr)
+{
+        unsigned long val = 0;
+
+        switch (sr) {
+        case IBREAKA_0:
+                val = get_sr(IBREAKA_0);
+                break;
+        case IBREAKA_1:
+                val = get_sr(IBREAKA_1);
+                break;
+        case DBREAKA_0:
+                val = get_sr(DBREAKA_0);
+                break;
+        case DBREAKA_1:
+                val = get_sr(DBREAKA_1);
+                break;
+        case DBREAKC_0:
+                val = get_sr(DBREAKC_0);
+                break;
+        case DBREAKC_1:
+                val = get_sr(DBREAKC_1);
+                break;
+        default:
+                for(;;);
+        }
+        return val;
+}
+
+/*
+ * Derived from i386 native_set_debugreg().
+ * REMIND:
+ *    Consider using boreal/p4root/Xtensa/OS/xmon/debug-vector-mon.S
+ *		_xmon_get_special_register() 
+ *
+ * for a generic solution that handles any special register.
+ *
+ * Order of args keep the same as for get_sr().
+ */
+static inline void set_debugreg(unsigned long value, int sr)
+{
+        switch (sr) {
+        case IBREAKA_0:
+                set_sr(value, IBREAKA_0);
+                break;
+        case IBREAKA_1:
+                set_sr(value, IBREAKA_1);
+                break;
+        case DBREAKA_0:
+                set_sr(value, DBREAKA_0);
+                break;
+        case DBREAKA_1:
+                set_sr(value, DBREAKA_1);
+                break;
+        case DBREAKC_0:
+                set_sr(value, DBREAKC_0);
+                break;
+        case DBREAKC_1:
+                set_sr(value, DBREAKC_1);
+                break;
+        default:
+                for(;;);
+        }
+}
 
 #endif	/* __ASSEMBLY__ */
 #endif	/* _XTENSA_PROCESSOR_H */

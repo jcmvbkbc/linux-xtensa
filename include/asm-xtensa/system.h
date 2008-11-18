@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_SYSTEM_H
@@ -55,7 +55,10 @@ static inline int irqs_disabled(void)
 #define wmb() mb()
 
 #ifdef CONFIG_SMP
-#error smp_* not defined
+// FIXME: do we need anything special?
+#define smp_mb()	barrier()
+#define smp_rmb()	barrier()
+#define smp_wmb()	barrier()
 #else
 #define smp_mb()	barrier()
 #define smp_rmb()	barrier()
@@ -79,12 +82,31 @@ do {						\
 } while(0)
 
 /*
- * cmpxchg
+ * Atomic compare and exchange.  Compare OLD with MEM, if identical,
+ * store NEW in MEM.  Return the initial value in MEM.  Success is
+ * indicated by comparing RETURN with OLD.
  */
 
+#define __HAVE_ARCH_CMPXCHG     1
+
 static inline unsigned long
-__cmpxchg_u32(volatile int *p, int old, int new)
+cmpxchg_u32(volatile int *p, int old, int new)
 {
+#if XCHAL_HAVE_S32C1I
+        __asm__ __volatile__(
+"       l32i    %0, %1, 0       \n"
+"       bne     %0, %2, 2f      \n"
+"       wsr     %0, SCOMPARE1   \n"
+"       mov     %0, %3          \n"
+"       s32c1i  %0, %1, 0       \n"
+"2:                             \n"
+        : "=&a" (old)
+        : "a" (p), "a" (old), "a" (new)
+        : "memory"
+        );
+
+        return old;
+#else
   __asm__ __volatile__("rsil    a15, "__stringify(LOCKLEVEL)"\n\t"
 		       "l32i    %0, %1, 0              \n\t"
 		       "bne	%0, %2, 1f             \n\t"
@@ -96,17 +118,29 @@ __cmpxchg_u32(volatile int *p, int old, int new)
 		       : "a" (p), "a" (old), "r" (new)
 		       : "a15", "memory");
   return old;
+#endif
 }
-/* This function doesn't exist, so you'll get a linker error
- * if something tries to do an invalid cmpxchg(). */
 
-extern void __cmpxchg_called_with_bad_pointer(void);
+#ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
+static __inline__ void __cmpxchg_called_with_bad_pointer(void)
+{
+	extern void panic(const char *fmt, ...);
+
+	panic(__func__);
+} 
+#else
+/* 
+ * This function doesn't exist in highly optimized kernels, so you'll 
+ * get a linker error if something tries to do an invalid cmpxchg(). 
+ */
+extern void __cmpxchg_called_with_bad_pointer1(void);
+#endif
 
 static __inline__ unsigned long
 __cmpxchg(volatile void *ptr, unsigned long old, unsigned long new, int size)
 {
 	switch (size) {
-	case 4:  return __cmpxchg_u32(ptr, old, new);
+	case 4:  return cmpxchg_u32(ptr, old, new);
 	default: __cmpxchg_called_with_bad_pointer();
 		 return old;
 	}
@@ -119,30 +153,8 @@ __cmpxchg(volatile void *ptr, unsigned long old, unsigned long new, int size)
 	   			        (unsigned long)_n_, sizeof (*(ptr))); \
 	})
 
-#include <asm-generic/cmpxchg-local.h>
 
-static inline unsigned long __cmpxchg_local(volatile void *ptr,
-				      unsigned long old,
-				      unsigned long new, int size)
-{
-	switch (size) {
-	case 4:
-		return __cmpxchg_u32(ptr, old, new);
-	default:
-		return __cmpxchg_local_generic(ptr, old, new, size);
-	}
 
-	return old;
-}
-
-/*
- * cmpxchg_local and cmpxchg64_local are atomic wrt current CPU. Always make
- * them available.
- */
-#define cmpxchg_local(ptr, o, n)				  	       \
-	((__typeof__(*(ptr)))__cmpxchg_local_generic((ptr), (unsigned long)(o),\
-			(unsigned long)(n), sizeof(*(ptr))))
-#define cmpxchg64_local(ptr, o, n) __cmpxchg64_local_generic((ptr), (o), (n))
 
 /*
  * xchg_u32
@@ -154,8 +166,26 @@ static inline unsigned long __cmpxchg_local(volatile void *ptr,
  * where no register reference will cause an overflow.
  */
 
-static inline unsigned long xchg_u32(volatile int * m, unsigned long val)
+static inline unsigned long
+xchg_u32(volatile int *p, unsigned long val)
 {
+#if XCHAL_HAVE_S32C1I
+        unsigned long tmp, result;
+        __asm__ __volatile__(
+"1:     l32i    %0, %2, 0               \n"
+"       beq     %0, %3, 2f              \n"
+"       wsr     %0, SCOMPARE1           \n"
+"       mov     %1, %0                  \n"
+"       mov     %0, %3                  \n"
+"       s32c1i  %0, %2, 0               \n"
+"       bne     %0, %1, 1b              \n"
+"2:                                     \n"
+        : "=&a" (result), "=&a" (tmp)
+        : "a" (p), "a" (val)
+        : "memory"
+        );
+        return result;
+#else
   unsigned long tmp;
   __asm__ __volatile__("rsil    a15, "__stringify(LOCKLEVEL)"\n\t"
 		       "l32i    %0, %1, 0              \n\t"
@@ -166,17 +196,25 @@ static inline unsigned long xchg_u32(volatile int * m, unsigned long val)
 		       : "a" (m), "a" (val)
 		       : "a15", "memory");
   return tmp;
+#endif
 }
 
-#define xchg(ptr,x) ((__typeof__(*(ptr)))__xchg((unsigned long)(x),(ptr),sizeof(*(ptr))))
 
+#ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
+static __inline__ void __xchg_called_with_bad_pointer(void)
+{
+	extern void panic(const char *fmt, ...);
+
+	panic(__func__);
+}
+#else
 /*
  * This only works if the compiler isn't horribly bad at optimizing.
  * gcc-2.5.8 reportedly can't handle this, but I define that one to
  * be dead anyway.
  */
-
-extern void __xchg_called_with_bad_pointer(void);
+extern void __xchg_called_with_bad_pointer1(void);
+#endif
 
 static __inline__ unsigned long
 __xchg(unsigned long x, volatile void * ptr, int size)
@@ -189,6 +227,8 @@ __xchg(unsigned long x, volatile void * ptr, int size)
 	return x;
 }
 
+#define xchg(ptr,x) ((__typeof__(*(ptr)))__xchg((unsigned long)(x),(ptr),sizeof(*(ptr))))
+
 extern void set_except_vector(int n, void *addr);
 
 static inline void spill_registers(void)
@@ -196,7 +236,7 @@ static inline void spill_registers(void)
 	unsigned int a0, ps;
 
 	__asm__ __volatile__ (
-		"movi	a14," __stringify (PS_EXCM_BIT) " | 1\n\t"
+		"movi	a14," __stringify (PS_EXCM_BIT) " | " __stringify(LOCKLEVEL) "\n\t"
 		"mov	a12, a0\n\t"
 		"rsr	a13," __stringify(SAR) "\n\t"
 		"xsr	a14," __stringify(PS) "\n\t"

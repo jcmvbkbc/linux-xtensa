@@ -1,12 +1,12 @@
-// TODO some minor issues
+
 /*
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2007  Tensilica Inc.
+ * Copyright (C) 2001 - 2008  Tensilica Inc.
  *
- * Joe Taylor	<joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor	<joe@tensilica.com>
  * Chris Zankel <chris@zankel.net>
  * Scott Foehner<sfoehner@yahoo.com>,
  * Kevin Chea
@@ -43,9 +43,9 @@ int ptrace_getregs(struct task_struct *child, void __user *uregs)
 {
 	struct pt_regs *regs = task_pt_regs(child);
 	xtensa_gregset_t __user *gregset = uregs;
-	unsigned long wm = regs->wmask;
+	/* unsigned long wm = regs->wmask; */
 	unsigned long wb = regs->windowbase;
-	int live, i;
+	int /* live, */ i;
 
 	if (!access_ok(VERIFY_WRITE, uregs, sizeof(xtensa_gregset_t)))
 		return -EIO;
@@ -58,12 +58,16 @@ int ptrace_getregs(struct task_struct *child, void __user *uregs)
 	__put_user(regs->windowstart, &gregset->windowstart);
 	__put_user(regs->windowbase, &gregset->windowbase);
 
+	for (i = 0; i < XCHAL_NUM_AREGS; i++)
+		__put_user(regs->areg[i],gregset->a+((wb*4+i)%XCHAL_NUM_AREGS));
+#if 0
 	live = (wm & 2) ? 4 : (wm & 4) ? 8 : (wm & 8) ? 12 : 16;
 
 	for (i = 0; i < live; i++)
 		__put_user(regs->areg[i],gregset->a+((wb*4+i)%XCHAL_NUM_AREGS));
 	for (i = XCHAL_NUM_AREGS - (wm >> 4) * 4; i < XCHAL_NUM_AREGS; i++)
 		__put_user(regs->areg[i],gregset->a+((wb*4+i)%XCHAL_NUM_AREGS));
+#endif
 
 	return 0;
 }
@@ -74,7 +78,7 @@ int ptrace_setregs(struct task_struct *child, void __user *uregs)
 	xtensa_gregset_t *gregset = uregs;
 	const unsigned long ps_mask = PS_CALLINC_MASK | PS_OWB_MASK;
 	unsigned long ps;
-	unsigned long wb;
+	unsigned long wb, ws;
 
 	if (!access_ok(VERIFY_WRITE, uregs, sizeof(xtensa_gregset_t)))
 		return -EIO;
@@ -84,7 +88,7 @@ int ptrace_setregs(struct task_struct *child, void __user *uregs)
 	__get_user(regs->lbeg, &gregset->lbeg);
 	__get_user(regs->lend, &gregset->lend);
 	__get_user(regs->lcount, &gregset->lcount);
-	__get_user(regs->windowstart, &gregset->windowstart);
+	__get_user(ws, &gregset->windowstart);
 	__get_user(wb, &gregset->windowbase);
 
 	regs->ps = (regs->ps & ~ps_mask) | (ps & ps_mask) | (1 << PS_EXCM_BIT);
@@ -92,7 +96,17 @@ int ptrace_setregs(struct task_struct *child, void __user *uregs)
 	if (wb >= XCHAL_NUM_AREGS / 4)
 		return -EFAULT;
 
-	regs->windowbase = wb;
+	if (wb != regs->windowbase || ws != regs->windowstart) {
+		unsigned long rotws, wmask;
+
+		rotws = (((ws | (ws << WSBITS)) >> wb) & ((1 << WSBITS) - 1)) & ~1;
+		wmask = ((rotws ? WSBITS + 1 - ffs(rotws) : 0) << 4) | (rotws & 0xF) | 1;
+		/*printk("** Changed wb %lu->%lu, ws 0x%lx->0x%lx, wmask 0x%lx->0x%lx (rotws=0x%x)\n",
+			regs->windowbase, wb, regs->windowstart, ws, regs->wmask, wmask, rotws);*/
+		regs->windowbase = wb;
+		regs->windowstart = ws;
+		regs->wmask = wmask;
+	}
 
 	if (wb != 0 &&  __copy_from_user(regs->areg + XCHAL_NUM_AREGS - wb * 4,
 					 gregset->a, wb * 16))
@@ -117,7 +131,9 @@ int ptrace_getxregs(struct task_struct *child, void __user *uregs)
 
 #if XTENSA_HAVE_COPROCESSORS
 	/* Flush all coprocessor registers to memory. */
-	coprocessor_flush_all(ti);
+	preempt_disable();
+	coprocessor_flush_all(ti, ti->cpenable);
+	preempt_enable();
 	ret |= __copy_to_user(&xtregs->cp0, &ti->xtregs_cp,
 			      sizeof(xtregs_coprocessor_t));
 #endif
@@ -138,14 +154,18 @@ int ptrace_setxregs(struct task_struct *child, void __user *uregs)
 
 #if XTENSA_HAVE_COPROCESSORS
 	/* Flush all coprocessors before we overwrite them. */
-	coprocessor_flush_all(ti);
-	coprocessor_release_all(ti);
+	preempt_disable();
+	coprocessor_flush_all(ti, ti->cpenable);
+	coprocessor_release_all(ti, ti->cpenable);
+	ti->cpenable = 0;
+	preempt_enable();
 
 	ret |= __copy_from_user(&ti->xtregs_cp, &xtregs->cp0, 
 				sizeof(xtregs_coprocessor_t));
 #endif
 	ret |= __copy_from_user(&regs->xtregs_opt, &xtregs->opt,
 				sizeof(xtregs->opt));
+				
 	ret |= __copy_from_user(&ti->xtregs_user, &xtregs->user,
 				sizeof(xtregs->user));
 

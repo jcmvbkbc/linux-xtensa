@@ -9,7 +9,7 @@
  *
  * Copyright (C) 2001 - 2005 Tensilica Inc.
  *
- * Joe Taylor <joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor <joe@tensilica.com>
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Kevin Chea
@@ -46,15 +46,24 @@
 
 extern void ret_from_fork(void);
 
-struct task_struct *current_set[NR_CPUS] = {&init_task, };
-
 void (*pm_power_off)(void) = NULL;
 EXPORT_SYMBOL(pm_power_off);
 
 
 #if XTENSA_HAVE_COPROCESSORS
 
-void coprocessor_release_all(struct thread_info *ti)
+/* 
+ * coprocessor_release_all() - release coprocessors for the specified thread.
+ *
+ * Note that this function doesn't flush the contents of the coprocessors
+ * to the thread_info area.
+ *
+ * This function must be called with preemption disabled!
+ *
+ * The caller must ensure to clear cpenable for the threak ti!
+ */
+
+void coprocessor_release_all(struct thread_info *ti, unsigned long cpenable)
 {
 	unsigned long cpenable;
 	int i;
@@ -65,22 +74,22 @@ void coprocessor_release_all(struct thread_info *ti)
 
 	/* Walk through all cp owners and release it for the requested one. */
 
-	cpenable = ti->cpenable;
-
+	for (i = 0; i < XCHAL_CP_MAX; i++)
+		if (coprocessor_owner[i] == ti)
 	for (i = 0; i < XCHAL_CP_MAX; i++) {
 		if (coprocessor_owner[i] == ti) {
 			coprocessor_owner[i] = 0;
 			cpenable &= ~(1 << i);
 		}
-	}
-
-	ti->cpenable = cpenable;
-	coprocessor_clear_cpenable();
-
-	preempt_enable();
 }
 
-void coprocessor_flush_all(struct thread_info *ti)
+/*
+ * coprocessor_flush_all() - flush all coprocessors for the specified thread.
+ *
+ * This function must be called with preemption disabled!
+ */
+
+void coprocessor_flush_all(struct thread_info *ti, unsigned long cpenable)
 {
 	unsigned long cpenable;
 	int i;
@@ -88,6 +97,11 @@ void coprocessor_flush_all(struct thread_info *ti)
 	preempt_disable();
 
 	cpenable = ti->cpenable;
+	
+	/*
+	 * For all bits set in cpenable, check the owner
+	 * and flush it, if it matches.
+	 */
 
 	for (i = 0; i < XCHAL_CP_MAX; i++) {
 		if ((cpenable & 1) != 0 && coprocessor_owner[i] == ti)
@@ -125,7 +139,14 @@ void cpu_idle(void)
 void exit_thread(void)
 {
 #if XTENSA_HAVE_COPROCESSORS
-	coprocessor_release_all(current_thread_info());
+	preempt_disable();
+
+	coprocessor_release_all(current_thread_info(),
+				coprocessor_get_cpenable());
+	current_thread_info()->cpenable = 0;
+	coprocessor_clear_cpenable();
+
+	preempt_enable();
 #endif
 }
 
@@ -137,8 +158,15 @@ void flush_thread(void)
 {
 #if XTENSA_HAVE_COPROCESSORS
 	struct thread_info *ti = current_thread_info();
-	coprocessor_flush_all(ti);
-	coprocessor_release_all(ti);
+
+	preempt_disable();
+
+	coprocessor_flush_all(ti, ti->cpenable);
+	coprocessor_release_all(ti, ti->cpenable);
+	ti->cpenable = 0;
+	coprocessor_clear_cpenable();
+
+	preempt_enable();
 #endif
 }
 
@@ -148,7 +176,13 @@ void flush_thread(void)
 void prepare_to_copy(struct task_struct *tsk)
 {
 #if XTENSA_HAVE_COPROCESSORS
-	coprocessor_flush_all(task_thread_info(tsk));
+	struct thread_info *ti = task_thread_info(tsk);
+
+	preempt_disable();
+
+	coprocessor_flush_all(ti, ti->cpenable);
+
+	preempt_enable();
 #endif
 }
 
@@ -330,6 +364,8 @@ long xtensa_execve(char __user *name, char __user * __user *argv,
 	error = PTR_ERR(filename);
 	if (IS_ERR(filename))
 		goto out;
+		
+	// REMIND: release coprocessor?
 	error = do_execve(filename, argv, envp, regs);
 	if (error == 0) {
 		task_lock(current);

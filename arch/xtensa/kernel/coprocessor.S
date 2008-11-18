@@ -8,7 +8,9 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2003 - 2007 Tensilica Inc.
+ * Copyright (C) 2003 - 2008 Tensilica Inc.
+ *
+ * Marc Gauthier <marc@tensilica.com> <marc@alumni.uwaterloo.ca>
  */
 
 
@@ -68,7 +70,6 @@ ENTRY(fast_io_protect)
 		.long 0;						\
 	.endif;								\
 	.long THREAD_XTREGS_CP##x
-
 
 #define LOAD_CP_REGS(x)							\
 	.align 4;							\
@@ -179,6 +180,16 @@ ENTRY(coprocessor_load)
 
 ENTRY(coprocessor_flush)
 	entry	a1, 32
+
+	/* Set corresponding CPENABLE bit -> (sar:cp-index, a3: 1<<cp-index)*/
+	ssl	a3			# SAR: 32 - coprocessor_number
+	movi	a4, 1
+	rsr	a15, CPENABLE
+	sll	a4, a4
+	or	a4, a15, a4
+	wsr	a4, CPENABLE
+	rsync
+
 	s32i	a0, a1, 0
 	movi	a0, .Lsave_cp_regs_jump_table
 	addx8	a3, a3, a0
@@ -189,6 +200,7 @@ ENTRY(coprocessor_flush)
 	add	a0, a0, a3
 	callx0	a0
 1:	l32i	a0, a1, 0
+	wsr	a15, CPENABLE		# restore CPENABLE
 	retw
 
 ENTRY(coprocessor_restore)
@@ -224,11 +236,8 @@ ENTRY(fast_coprocessor_double)
 	movi	a0, unrecoverable_exception
 	callx0	a0
 
-
 ENTRY(fast_coprocessor)
-
 	/* Save remaining registers a1-a3 and SAR */
-
 	xsr	a3, EXCSAVE_1
 	s32i	a3, a2, PT_AREG3
 	rsr	a3, SAR
@@ -241,7 +250,6 @@ ENTRY(fast_coprocessor)
 	/*
 	 * The hal macros require up to 4 temporary registers. We use a3..a6.
 	 */
-
 	s32i	a4, a1, PT_AREG4
 	s32i	a5, a1, PT_AREG5
 	s32i	a6, a1, PT_AREG6

@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2003 - 2007 Tensilica Inc.
+ * Copyright (C) 2003 - 2008 Tensilica Inc.
  */
 
 
@@ -162,13 +162,19 @@ extern void coprocessor_load(void*, int);
 extern void coprocessor_flush(struct thread_info*, int);
 extern void coprocessor_restore(struct thread_info*, int);
 
-extern void coprocessor_release_all(struct thread_info*);
-extern void coprocessor_flush_all(struct thread_info*);
+extern void coprocessor_release_all(struct thread_info*, unsigned long);
+extern void coprocessor_flush_all(struct thread_info*, unsigned long);
 
 static inline void coprocessor_clear_cpenable(void)
 {
 	unsigned long i = 0;
 	WSR_CPENABLE(i);
+}
+static inline unsigned long coprocessor_get_cpenable(void)
+{
+	unsigned long cpenable;
+	RSR_CPENABLE(cpenable);
+	return cpenable;
 }
 
 #endif	/* XTENSA_HAVE_COPROCESSORS */

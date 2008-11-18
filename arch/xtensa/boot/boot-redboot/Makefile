@@ -24,7 +24,7 @@ LIBGCC := $(shell $(CC) $(KBUILD_CFLAGS) -print-libgcc-file-name)
 zImage: vmlinux $(OBJS) $(LIBS)
 	$(OBJCOPY) --strip-all -R .comment -R .note.gnu.build-id -O binary \
 		vmlinux vmlinux.tmp
-	gzip -vf9 vmlinux.tmp
+	gzip $(GZIP_FLAGS) -vf9 vmlinux.tmp > vmlinux.tmp.gz
 	$(OBJCOPY) $(OBJCOPY_ARGS) -R .comment \
 		--add-section image=vmlinux.tmp.gz \
 		--set-section-flags image=contents,alloc,load,load,data \

@@ -86,6 +86,15 @@ extern int platform_get_rtc_time(time_t*);
  */
 extern int platform_set_rtc_time(time_t);
 
+/*
+ * platform_send_ipi_message sends a request to other processors
+ */
+extern void platform_send_ipi_message(cpumask_t, int);
+extern int platform_recv_ipi_message(void);
+
+extern __init int platform_boot_secondary(unsigned int, struct task_struct *);
+
+
 
 #endif	/* _XTENSA_PLATFORM_H */
 

@@ -11,7 +11,11 @@
 #ifndef _XTENSA_MMU_H
 #define _XTENSA_MMU_H
 
-/* Default "unsigned long" context */
-typedef unsigned long mm_context_t;
+// typedef unsigned long mm_context_t[NR_CPUS];
+
+typedef struct {
+	unsigned long asid[NR_CPUS];
+	unsigned int cpu;
+} mm_context_t;
 
 #endif	/* _XTENSA_MMU_H */

@@ -7,11 +7,11 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
- * Joe Taylor <joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor <joe@tensilica.com>
  */
 
 #include <asm-generic/vmlinux.lds.h>
@@ -127,7 +127,7 @@ SECTIONS
   _edata = .;
 
   /* The initial task */
-  . = ALIGN(8192);
+  . = ALIGN(CONFIG_STACK_SIZE);
   .data.init_task : { *(.data.init_task) }
 
   /* Initialization code and data: */
@@ -155,6 +155,26 @@ SECTIONS
 
     RELOCATE_ENTRY(_WindowVectors_text,
 		   .WindowVectors.text);
+#if XCHAL_EXCM_LEVEL >= 2
+    RELOCATE_ENTRY(_Level2InterruptVector_text,
+		   .Level2InterruptVector.text);
+#endif
+#if XCHAL_EXCM_LEVEL >= 3
+    RELOCATE_ENTRY(_Level3InterruptVector_text,
+		   .Level3InterruptVector.text);
+#endif
+#if XCHAL_EXCM_LEVEL >= 4
+    RELOCATE_ENTRY(_Level4InterruptVector_text,
+		   .Level4InterruptVector.text);
+#endif
+#if XCHAL_EXCM_LEVEL >= 5
+    RELOCATE_ENTRY(_Level5InterruptVector_text,
+		   .Level5InterruptVector.text);
+#endif
+#if XCHAL_EXCM_LEVEL >= 6
+    RELOCATE_ENTRY(_Level6InterruptVector_text,
+		   .Level6InterruptVector.text);
+#endif
     RELOCATE_ENTRY(_KernelExceptionVector_text,
 		   .KernelExceptionVector.text);
     RELOCATE_ENTRY(_UserExceptionVector_text,
@@ -165,7 +185,13 @@ SECTIONS
 		   .DoubleExceptionVector.text);
     RELOCATE_ENTRY(_DebugInterruptVector_text,
 		   .DebugInterruptVector.text);
-  
+#ifdef CONFIG_SMP
+    RELOCATE_ENTRY(_SecondaryResetVector_literal,
+    		   .SecondaryResetVector.literal);
+    RELOCATE_ENTRY(_SecondaryResetVector_text,
+    		   .SecondaryResetVector.text);
+#endif
+
     __boot_reloc_table_end = ABSOLUTE(.) ;
   }
 
@@ -197,6 +223,20 @@ SECTIONS
 
   PERCPU(4096)
 
+  . = ALIGN(1 << 12);
+
+  __init_end = .;
+
+  . = ALIGN(8192);
+
+  /* BSS section */
+  _bss_start = .;
+  .bss : { *(.bss.page_aligned) *(.bss) }
+  _bss_end = .;
+
+  _end = .;
+
+
 
   /* We need this dummy segment here */
 
@@ -219,11 +259,53 @@ SECTIONS
 		  XCHAL_DEBUG_VECTOR_VADDR,
 		  4,
 		  .DebugInterruptVector.literal)
+#undef LAST
+#define LAST	.DebugInterruptVector.text
+#if XCHAL_EXCM_LEVEL >= 2
+  SECTION_VECTOR (_Level2InterruptVector_text,
+		  .Level2InterruptVector.text,
+		  XCHAL_INTLEVEL2_VECTOR_VADDR,
+		  SIZEOF(LAST), LAST)
+# undef LAST
+# define LAST	.Level2InterruptVector.text
+#endif
+#if XCHAL_EXCM_LEVEL >= 3
+  SECTION_VECTOR (_Level3InterruptVector_text,
+		  .Level3InterruptVector.text,
+		  XCHAL_INTLEVEL3_VECTOR_VADDR,
+		  SIZEOF(LAST), LAST)
+# undef LAST
+# define LAST	.Level3InterruptVector.text
+#endif
+#if XCHAL_EXCM_LEVEL >= 4
+  SECTION_VECTOR (_Level4InterruptVector_text,
+		  .Level4InterruptVector.text,
+		  XCHAL_INTLEVEL4_VECTOR_VADDR,
+		  SIZEOF(LAST), LAST)
+# undef LAST
+# define LAST	.Level4InterruptVector.text
+#endif
+#if XCHAL_EXCM_LEVEL >= 5
+  SECTION_VECTOR (_Level5InterruptVector_text,
+		  .Level5InterruptVector.text,
+		  XCHAL_INTLEVEL5_VECTOR_VADDR,
+		  SIZEOF(LAST), LAST)
+# undef LAST
+# define LAST	.Level5InterruptVector.text
+#endif
+#if XCHAL_EXCM_LEVEL >= 6
+  SECTION_VECTOR (_Level6InterruptVector_text,
+		  .Level6InterruptVector.text,
+		  XCHAL_INTLEVEL6_VECTOR_VADDR,
+		  SIZEOF(LAST), LAST)
+# undef LAST
+# define LAST	.Level6InterruptVector.text
+#endif
   SECTION_VECTOR (_KernelExceptionVector_literal,
 		  .KernelExceptionVector.literal,
 		  XCHAL_KERNEL_VECTOR_VADDR - 4,
-		  SIZEOF(.DebugInterruptVector.text),
-		  .DebugInterruptVector.text)
+		  SIZEOF(LAST), LAST)
+#undef LAST
   SECTION_VECTOR (_KernelExceptionVector_text,
 		  .KernelExceptionVector.text,
 		  XCHAL_KERNEL_VECTOR_VADDR,
@@ -249,20 +331,23 @@ SECTIONS
 		  XCHAL_DOUBLEEXC_VECTOR_VADDR,
 		  32,
 		  .DoubleExceptionVector.literal)
+  . = LOADADDR(.DoubleExceptionVector.text)+SIZEOF(.DoubleExceptionVector.text);
 
-  . = (LOADADDR( .DoubleExceptionVector.text ) + SIZEOF( .DoubleExceptionVector.text ) + 3) & ~ 3;
-  . = ALIGN(1 << 12);
+#ifdef CONFIG_SMP
 
-  __init_end = .;
+  SECTION_VECTOR (_SecondaryResetVector_literal,
+		  .SecondaryResetVector.literal,
+		  XCHAL_RESET_VECTOR1_VADDR - 4,
+		  SIZEOF(.DoubleExceptionVector.text),
+		  .DoubleExceptionVector.text)
+  SECTION_VECTOR (_SecondaryResetVector_text,
+		  .SecondaryResetVector.text,
+		  XCHAL_RESET_VECTOR1_VADDR,
+		  4,
+		  .SecondaryResetVector.literal)
+  . = LOADADDR(.SecondaryResetVector.text)+SIZEOF(.SecondaryResetVector.text);
 
-  . = ALIGN(8192);
-
-  /* BSS section */
-  _bss_start = .;
-  .bss : { *(.bss.page_aligned) *(.bss) }
-  _bss_end = .;
-
-  _end = .;
+#endif
 
   /* only used by the boot loader  */
 

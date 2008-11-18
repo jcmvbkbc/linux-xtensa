@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_THREAD_INFO_H
@@ -106,16 +106,31 @@ struct thread_info {
 static inline struct thread_info *current_thread_info(void)
 {
 	struct thread_info *ti;
-	 __asm__("extui %0,a1,0,13\n\t"
+	 __asm__("extui %0,a1,0,"__stringify(CONFIG_STACK_SHIFT)"\n\t"
 	         "xor %0, a1, %0" : "=&r" (ti) : );
 	return ti;
 }
 
+/* 
+ * Thread information allocation:
+ *   Like x86 we likely want a arch specific allocator
+ *   to take care of coprocessor state hung the thread
+ *   [i386 thread.xstate and our thread.xtregs_cp].
+ *
+ *   Consider changing alloc and free macros to functions
+ *   and move to process.c like arch i386.
+ */
+#define __HAVE_ARCH_THREAD_INFO_ALLOCATOR
+#define THREAD_SIZE       (CONFIG_STACK_SIZE)                   /* 4KSTACKS || 8KSTACKS || 16KSTACKS */
+#define THREAD_SIZE_ORDER (CONFIG_STACK_SHIFT - PAGE_SHIFT)     /* LOG2(THREAD_SIZE/PAGE_SIZE) */
+
+#define alloc_thread_info(tsk) ((struct thread_info *) __get_free_pages(GFP_KERNEL, THREAD_SIZE_ORDER))
+#define free_thread_info(ti) free_pages((unsigned long) (ti), THREAD_SIZE_ORDER)
 #else /* !__ASSEMBLY__ */
 
 /* how to get the thread information struct from ASM */
 #define GET_THREAD_INFO(reg,sp) \
-	extui reg, sp, 0, 13; \
+	extui reg, sp, 0, CONFIG_STACK_SHIFT; \
 	xor   reg, sp, reg
 #endif
 
@@ -155,8 +170,6 @@ static inline struct thread_info *current_thread_info(void)
  */
 #define TS_USEDFPU		0x0001	/* FPU was used by this task this quantum (SMP) */
 
-#define THREAD_SIZE 8192	//(2*PAGE_SIZE)
-#define THREAD_SIZE_ORDER 1
 
 #endif	/* __KERNEL__ */
 #endif	/* _XTENSA_THREAD_INFO */

@@ -49,14 +49,15 @@ unsigned long long sched_clock(void)
 static irqreturn_t timer_interrupt(int irq, void *dev_id);
 static struct irqaction timer_irqaction = {
 	.handler =	timer_interrupt,
-	.flags =	IRQF_DISABLED,
+	.flags =	IRQF_PERCPU | IRQF_DISABLED,
 	.name =		"timer",
+	.mask = 	CPU_MASK_ALL,
 };
 
 void __init time_init(void)
 {
 	time_t sec_o, sec_n = 0;
-
+printk("time_init()\n");
 	/* The platform must provide a function to calibrate the processor
 	 * speed for the CALIBRATE.
 	 */
@@ -83,9 +84,19 @@ void __init time_init(void)
 
 	/* Initialize the linux timer interrupt. */
 
-	setup_irq(LINUX_TIMER_INT, &timer_irqaction);
 	set_linux_timer(get_ccount() + CCOUNT_PER_JIFFY);
+	setup_irq(LINUX_TIMER_INT, &timer_irqaction);
 }
+
+#ifdef CONFIG_SMP
+extern void secondary_irq_enable(int);
+void __init secondary_time_init(void)
+{
+printk("secondary_time_init()\n");
+	set_linux_timer(get_ccount() + CCOUNT_PER_JIFFY);
+	secondary_irq_enable(LINUX_TIMER_INT);
+}
+#endif
 
 
 int do_settimeofday(struct timespec *tv)
@@ -156,27 +167,32 @@ EXPORT_SYMBOL(do_gettimeofday);
 
 irqreturn_t timer_interrupt (int irq, void *dev_id)
 {
-
+	unsigned int cpu = smp_processor_id();
 	unsigned long next;
+	unsigned long ticks;
 
 	next = get_linux_timer();
 
 again:
+
+	ticks = 0;
 	while ((signed long)(get_ccount() - next) > 0) {
+		ticks++;
+		next += CCOUNT_PER_JIFFY;
+	}
 
-		profile_tick(CPU_PROFILING);
-#ifndef CONFIG_SMP
-		update_process_times(user_mode(get_irq_regs()));
-#endif
+	/* Note that writing CCOMPARE clears the interrupt. */
 
+	set_linux_timer(next);
+
+
+	profile_tick(CPU_PROFILING);
+	update_process_times(user_mode(get_irq_regs()));
+
+	if (cpu == 0) {
 		write_seqlock(&xtime_lock);
 
-		do_timer(1); /* Linux handler in kernel/timer.c */
-
-		/* Note that writing CCOMPARE clears the interrupt. */
-
-		next += CCOUNT_PER_JIFFY;
-		set_linux_timer(next);
+		do_timer(ticks); /* Linux handler in kernel/timer.c */
 
 		if (ntp_synced() &&
 		    xtime.tv_sec - last_rtc_update >= 659 &&
@@ -189,11 +205,11 @@ again:
 				last_rtc_update += 60;
 		}
 		write_sequnlock(&xtime_lock);
+
+		/* Allow platform to do something useful (Wdog). */
+
+		platform_heartbeat();
 	}
-
-	/* Allow platform to do something useful (Wdog). */
-
-	platform_heartbeat();
 
 	/* Make sure we didn't miss any tick... */
 

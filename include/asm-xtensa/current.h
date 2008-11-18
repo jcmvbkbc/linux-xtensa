@@ -26,7 +26,7 @@ static inline struct task_struct *get_current(void)
 
 #else
 
-#define CURRENT_SHIFT 13
+#define CURRENT_SHIFT CONFIG_STACK_SHIFT
 
 #define GET_CURRENT(reg,sp)		\
 	GET_THREAD_INFO(reg,sp);	\

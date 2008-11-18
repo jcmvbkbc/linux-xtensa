@@ -62,7 +62,7 @@
 
 /*
  * Virtual memory area. We keep a distance to other memory regions to be
- * on the safe side. We also use this area for cache aliasing.
+ * on the safe side. See also fixmap.h
  */
 
 #define VMALLOC_START		0xC0000000
@@ -132,7 +132,7 @@
 #define PAGE_KERNEL_EXEC   __pgprot(_PAGE_PRESENT|_PAGE_HW_WRITE|_PAGE_HW_EXEC)
 
 #if (DCACHE_WAY_SIZE > PAGE_SIZE)
-# define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED)
+# define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_BYPASS)
 #else
 # define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_WB)
 #endif

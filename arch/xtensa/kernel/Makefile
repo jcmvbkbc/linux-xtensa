@@ -9,10 +9,17 @@ obj-y := align.o entry.o irq.o coprocessor.o process.o ptrace.o \
 	 setup.o signal.o syscall.o time.o traps.o vectors.o platform.o  \
 	 pci-dma.o init_task.o io.o
 
+ifdef CONFIG_SMP
+obj-y += mxpic.o
+else
+obj-y += xtpic.o
+endif
+
 ## windowspill.o
 
-obj-$(CONFIG_KGDB) += xtensa-stub.o
+obj-$(CONFIG_KGDB) += kgdb.o
 obj-$(CONFIG_PCI) += pci.o
 obj-$(CONFIG_MODULES) += xtensa_ksyms.o module.o
+obj-$(CONFIG_SMP) += smp.o mxhead.o
 
 

@@ -11,7 +11,7 @@
  *
  * Rewritten by Chris Zankel <chris@zankel.net>
  *
- * Based on work from Joe Taylor <joe@tensilica.com, joetylr@yahoo.com>
+ * Based on work from Joe Taylor <joe@tensilica.com>
  * and Marc Gauthier <marc@tensilica.com, marc@alimni.uwaterloo.ca>
  */
 

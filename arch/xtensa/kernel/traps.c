@@ -13,7 +13,7 @@
  *
  * Copyright (C) 2001 - 2005 Tensilica Inc.
  *
- * Joe Taylor	<joe@tensilica.com, joetylr@yahoo.com>
+ * Joe Taylor	<joe@tensilica.com>
  * Chris Zankel	<chris@zankel.net>
  * Marc Gauthier<marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Kevin Chea
@@ -30,15 +30,17 @@
 #include <linux/stringify.h>
 #include <linux/kallsyms.h>
 #include <linux/delay.h>
+#include <linux/kdebug.h>
 
 #include <asm/ptrace.h>
 #include <asm/timex.h>
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
+#include <asm/kgdb.h>
 
 #ifdef CONFIG_KGDB
-extern int gdb_enter;
+extern int kgdb_connected;
 extern int return_from_debug_flag;
 #endif
 
@@ -85,39 +87,40 @@ typedef struct {
 
 static dispatch_init_table_t __initdata dispatch_init_table[] = {
 
-{ EXCCAUSE_ILLEGAL_INSTRUCTION,	0,	   do_illegal_instruction},
-{ EXCCAUSE_SYSTEM_CALL,		KRNL,	   fast_syscall_kernel },
-{ EXCCAUSE_SYSTEM_CALL,		USER,	   fast_syscall_user },
-{ EXCCAUSE_SYSTEM_CALL,		0,	   system_call },
+{ EXCCAUSE_ILLEGAL_INSTRUCTION,		0,	   do_illegal_instruction},
+{ EXCCAUSE_SYSTEM_CALL,			KRNL,	   fast_syscall_kernel },
+{ EXCCAUSE_SYSTEM_CALL,			USER,	   fast_syscall_user },
+{ EXCCAUSE_SYSTEM_CALL,			0,	   system_call },
 /* EXCCAUSE_INSTRUCTION_FETCH unhandled */
 /* EXCCAUSE_LOAD_STORE_ERROR unhandled*/
-{ EXCCAUSE_LEVEL1_INTERRUPT,	0,	   do_interrupt },
-{ EXCCAUSE_ALLOCA,		USER|KRNL, fast_alloca },
+{ EXCCAUSE_LEVEL1_INTERRUPT,		0,	   do_interrupt },
+{ EXCCAUSE_ALLOCA,			USER|KRNL, fast_alloca },
 /* EXCCAUSE_INTEGER_DIVIDE_BY_ZERO unhandled */
 /* EXCCAUSE_PRIVILEGED unhandled */
 #if XCHAL_UNALIGNED_LOAD_EXCEPTION || XCHAL_UNALIGNED_STORE_EXCEPTION
-#ifdef CONFIG_UNALIGNED_USER
-{ EXCCAUSE_UNALIGNED,		USER,	   fast_unaligned },
-#else
-{ EXCCAUSE_UNALIGNED,		0,	   do_unaligned_user },
+# ifdef CONFIG_UNALIGNED_USER
+{ EXCCAUSE_UNALIGNED,			USER,	   fast_unaligned },
+# else
+{ EXCCAUSE_UNALIGNED,			0,	   do_unaligned_user },
 #endif
-{ EXCCAUSE_UNALIGNED,		KRNL,	   fast_unaligned },
+# ifdef CONFIG_UNALIGNED_KERNEL
+{ EXCCAUSE_UNALIGNED,			KRNL,	   fast_unaligned },
+# endif
 #endif
-{ EXCCAUSE_ITLB_MISS,		0,	   do_page_fault },
-{ EXCCAUSE_ITLB_MISS,		USER|KRNL, fast_second_level_miss},
+{ EXCCAUSE_ITLB_MISS,			0,	   do_page_fault },
+{ EXCCAUSE_ITLB_MISS,			USER|KRNL, fast_second_level_miss},
 { EXCCAUSE_ITLB_MULTIHIT,		0,	   do_multihit },
-{ EXCCAUSE_ITLB_PRIVILEGE,	0,	   do_page_fault },
+{ EXCCAUSE_ITLB_PRIVILEGE,		0,	   do_page_fault },
 /* EXCCAUSE_SIZE_RESTRICTION unhandled */
 { EXCCAUSE_FETCH_CACHE_ATTRIBUTE,	0,	   do_page_fault },
-{ EXCCAUSE_DTLB_MISS,		USER|KRNL, fast_second_level_miss},
-{ EXCCAUSE_DTLB_MISS,		0,	   do_page_fault },
+{ EXCCAUSE_DTLB_MISS,			USER|KRNL, fast_second_level_miss},
+{ EXCCAUSE_DTLB_MISS,			0,	   do_page_fault },
 { EXCCAUSE_DTLB_MULTIHIT,		0,	   do_multihit },
-{ EXCCAUSE_DTLB_PRIVILEGE,	0,	   do_page_fault },
+{ EXCCAUSE_DTLB_PRIVILEGE,		0,	   do_page_fault },
 /* EXCCAUSE_DTLB_SIZE_RESTRICTION unhandled */
 { EXCCAUSE_STORE_CACHE_ATTRIBUTE,	USER|KRNL, fast_store_prohibited },
 { EXCCAUSE_STORE_CACHE_ATTRIBUTE,	0,	   do_page_fault },
 { EXCCAUSE_LOAD_CACHE_ATTRIBUTE,	0,	   do_page_fault },
-/* XCCHAL_EXCCAUSE_FLOATING_POINT unhandled */
 #if XTENSA_HAVE_COPROCESSOR(0)
 COPROCESSOR(0),
 #endif
@@ -152,7 +155,7 @@ COPROCESSOR(7),
  * 2. it is a temporary memory buffer for the exception handlers.
  */
 
-unsigned long exc_table[EXC_TABLE_SIZE/4];
+DEFINE_PER_CPU(unsigned long, exc_table[EXC_TABLE_SIZE/4]);
 
 void die(const char*, struct pt_regs*, long);
 
@@ -169,8 +172,9 @@ __die_if_kernel(const char *str, struct pt_regs *regs, long err)
 
 void do_unhandled(struct pt_regs *regs, unsigned long exccause)
 {
-	__die_if_kernel("Caught unhandled exception - should not happen",
-	    		regs, SIGKILL);
+	char buf[100];
+	sprintf(buf,"Caught unhandled exception - exccause=%d", (int)exccause);
+	__die_if_kernel(buf, regs, SIGKILL);
 
 	/* If in user mode, send SIGILL signal to current process */
 	printk("Caught unhandled exception in '%s' "
@@ -223,13 +227,25 @@ void do_interrupt (struct pt_regs *regs)
 void
 do_illegal_instruction(struct pt_regs *regs)
 {
+	struct task_struct *tsk = current;
+
+#if defined(CONFIG_KGDB) && defined(CONFIG_KGDB_BREAKS_WITH_ILLEGAL_INSTRUCTION)
+	if (memcmp((void *)regs->pc, (void *)&break_inst, 
+						     BREAK_INSTR_SIZE) == 0) {
+		do_debug(regs);
+		regs->pc += BREAK_INSTR_SIZE;
+		return;
+	}
+#endif
+
 	__die_if_kernel("Illegal instruction in kernel", regs, SIGKILL);
 
 	/* If in user mode, send SIGILL signal to current process. */
 
-	printk("Illegal Instruction in '%s' (pid = %d, pc = %#010lx)\n",
-	    current->comm, task_pid_nr(current), regs->pc);
-	force_sig(SIGILL, current);
+	printk("%s: Illegal Instruction in tsk:%p->comm:'%s' (pid = %d, pc = %#010lx)\n",
+	    __func__, tsk, tsk->comm, task_pid_nr(tsk), regs->pc);
+
+	force_sig(SIGILL, tsk);
 }
 
 
@@ -245,22 +261,23 @@ do_illegal_instruction(struct pt_regs *regs)
 void
 do_unaligned_user (struct pt_regs *regs)
 {
+	struct task_struct *tsk = current;
 	siginfo_t info;
 
 	__die_if_kernel("Unhandled unaligned exception in kernel",
 	    		regs, SIGKILL);
 
-	current->thread.bad_vaddr = regs->excvaddr;
-	current->thread.error_code = -3;
-	printk("Unaligned memory access to %08lx in '%s' "
-	       "(pid = %d, pc = %#010lx)\n",
-	       regs->excvaddr, current->comm, task_pid_nr(current), regs->pc);
+	tsk->thread.bad_vaddr = regs->excvaddr;
+	tsk->thread.error_code = -3;
+	printk("%s: Unaligned memory access to %08lx in tsk:%p->comm:'%s' "
+	       "(pid = %d, pc = %#010lx)\n", __func__,
+	       regs->excvaddr, tsk, tsk->comm, task_pid_nr(tsk), regs->pc);
+
 	info.si_signo = SIGBUS;
 	info.si_errno = 0;
 	info.si_code = BUS_ADRALN;
 	info.si_addr = (void *) regs->excvaddr;
-	force_sig_info(SIGSEGV, &info, current);
-
+	force_sig_info(SIGSEGV, &info, tsk);
 }
 #endif
 #endif
@@ -268,25 +285,53 @@ do_unaligned_user (struct pt_regs *regs)
 void
 do_debug(struct pt_regs *regs)
 {
+	unsigned int debug_cause;
+	long exc_cause = EXCCAUSE_MAPPED_DEBUG;
+
 #ifdef CONFIG_KGDB
 	/* If remote debugging is configured AND enabled, we give control to
 	 * kgdb.  Otherwise, we fall through, perhaps giving control to the
 	 * native debugger.
 	 */
 
-	if (gdb_enter) {
-		extern void gdb_handle_exception(struct pt_regs *);
-		gdb_handle_exception(regs);
-		return_from_debug_flag = 1;
-		return;
+	debug_cause = get_sr(DEBUGCAUSE);
+
+#ifdef  CONFIG_KGDB_BREAKS_WITH_ILLEGAL_INSTRUCTION
+	debug_cause = 0X08;	/* Simulate Break Instruction */
+#endif
+
+	if (notify_die(DIE_DEBUG, "debug", regs, debug_cause, 
+			exc_cause, SIGTRAP) == NOTIFY_STOP) {
+
+               	return;
 	}
 #endif
+
+	if (!user_mode(regs)) 
+		printk(KERN_ERR "%s: debug_cause:0x%x\n", __func__, 
+				     debug_cause);
 
 	__die_if_kernel("Breakpoint in kernel", regs, SIGKILL);
 
 	/* If in user mode, send SIGTRAP signal to current process */
 
 	force_sig(SIGTRAP, current);
+}
+
+
+/* Set exception C handler - for temporary use when probing exceptions on cpu[0] */
+
+void *__init
+trap_set_handler(int cause, void *handler)
+{
+	int idx = EXC_TABLE_DEFAULT/4 + cause;
+	unsigned int cpu = 0;
+	void *previous;
+	
+	previous =  (void *) &per_cpu(exc_table, cpu)[idx];
+	per_cpu(exc_table, cpu)[idx] = (unsigned long) handler;
+
+	return previous;
 }
 
 
@@ -303,18 +348,29 @@ do_debug(struct pt_regs *regs)
  * See vectors.S for more details.
  */
 
-#define set_handler(idx,handler) (exc_table[idx] = (unsigned long) (handler))
+//#define set_handler(idx,handler) (exc_table[idx] = (unsigned long) (handler))
+
+static void set_handler(int idx, void (*handler)(void))
+{
+	unsigned int cpu;
+
+	for (cpu = 0; cpu < NR_CPUS; cpu++)
+		per_cpu(exc_table, cpu)[idx] = (unsigned long) handler;
+}
 
 void __init trap_init(void)
 {
 	int i;
+	unsigned long excsave1;
+
+	printk("trap_init %d\n", smp_processor_id());
 
 	/* Setup default vectors. */
 
 	for(i = 0; i < 64; i++) {
 		set_handler(EXC_TABLE_FAST_USER/4   + i, user_exception);
 		set_handler(EXC_TABLE_FAST_KERNEL/4 + i, kernel_exception);
-		set_handler(EXC_TABLE_DEFAULT/4 + i, do_unhandled);
+		set_handler(EXC_TABLE_DEFAULT/4 + i, (void(*)(void))do_unhandled);
 	}
 
 	/* Setup specific handlers. */
@@ -335,9 +391,25 @@ void __init trap_init(void)
 
 	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
 
+	excsave1 = (unsigned long) per_cpu(exc_table, smp_processor_id());
+	asm volatile ("wsr %0, "__stringify(EXCSAVE_1)"\n" : : "a" (excsave1));
+#if 0
 	i = (unsigned long)exc_table;
 	__asm__ __volatile__("wsr  %0, "__stringify(EXCSAVE_1)"\n" : : "a" (i));
+#endif
 }
+
+#ifdef CONFIG_SMP
+void __init secondary_trap_init(void)
+{
+	unsigned long excsave1;
+
+	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
+
+	excsave1 = (unsigned long) per_cpu(exc_table, smp_processor_id());
+	asm volatile ("wsr %0, "__stringify(EXCSAVE_1)"\n" : : "a" (excsave1));
+}
+#endif
 
 /*
  * This function dumps the current valid window frame and other base registers.
