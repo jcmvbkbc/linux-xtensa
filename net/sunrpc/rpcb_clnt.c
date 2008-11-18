@@ -119,14 +119,14 @@ static void rpcb_map_release(void *data)
 
 static const struct sockaddr_in rpcb_inaddr_loopback = {
 	.sin_family		= AF_INET,
-	.sin_addr.s_addr	= htonl(INADDR_LOOPBACK),
-	.sin_port		= htons(RPCBIND_PORT),
+	.sin_addr.s_addr	= __constant_htonl(INADDR_LOOPBACK),
+	.sin_port		= __constant_htons(RPCBIND_PORT),
 };
 
 static const struct sockaddr_in6 rpcb_in6addr_loopback = {
 	.sin6_family		= AF_INET6,
 	.sin6_addr		= IN6ADDR_LOOPBACK_INIT,
-	.sin6_port		= htons(RPCBIND_PORT),
+	.sin6_port		= __constant_htons(RPCBIND_PORT),
 };
 
 static struct rpc_clnt *rpcb_create_local(struct sockaddr *addr,

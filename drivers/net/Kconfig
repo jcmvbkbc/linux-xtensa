@@ -546,6 +546,13 @@ config HAPPYMEAL
 	  To compile this driver as a module, choose M here: the module
 	  will be called sunhme.
 
+config OPENCORES_ETHERNET
+	tristate "Opencores.org Ethernet MAC driver"
+	select MII
+	depends on NET_ETHERNET
+	help
+	  This dirver support the Opencores Ethernet device.
+	  
 config SUNBMAC
 	tristate "Sun BigMAC 10/100baseT support (EXPERIMENTAL)"
 	depends on SBUS && EXPERIMENTAL
@@ -2291,6 +2298,10 @@ config ATL1
 	  To compile this driver as a module, choose M here.  The module
 	  will be called atl1.
 
+config XTENSA_S5000_GMAC
+	bool "S5000 GMAC Ethernet"
+	depends on XTENSA_VARIANT_NAME="s5000"
+	
 config ATL1E
 	tristate "Atheros L1E Gigabit Ethernet support (EXPERIMENTAL)"
 	depends on PCI && EXPERIMENTAL
