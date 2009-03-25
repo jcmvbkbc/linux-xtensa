@@ -8,6 +8,7 @@ menu "Kernel hacking"
 source "lib/Kconfig.debug"
 
 config KGDB_BREAKS_WITH_ILLEGAL_INSTRUCTION
+	bool "Use and Illegal Instruction instead of BREAK instruction.
 	depends on  KGDB
 	default y
 	help
@@ -24,6 +25,8 @@ config CC_OPTIMIZE_FOR_DEBUGGING
 	bool "Kernel Code Optimized for Debugging"
 	depends on !CC_OPTIMIZE_FOR_SIZE && EXPERIMENTAL
 	select OPTIMIZE_INLINING
+	select IP_MULTICAST
+	select IP_MROUTE
 	default n
 	help
 	  If you say Y here the kernel will be compiled without optimization. 
@@ -38,23 +41,27 @@ config CC_OPTIMIZE_FOR_DEBUGGING
 	  This is experimental code. Recommended for debugging and browsing
 	  the kernel code and data structures with a gdb based debugger.
 
+	  It's currently necessary to select IP_MULTICAST and IP_MROUTE
+	  when compiling the kernel code without optimization.
+
 	  If in doubt, say "N".
 
 config CC_DEBUGGING_CFLAGS
 	prompt "Additional CFLAGS to use when Optimized for Debugging"
 	string 
 	depends on CC_OPTIMIZE_FOR_DEBUGGING
-	default "-O0"
+	default "-O0 -g3"
 	help
 	  These are the CFLAGS passed to GCC when OPTIMIZE FOR DEBUGGING.
 	  -O0 results in a better debugging environment where as -O1 generates 
 	  code closer to the target optimized environment.  GCC options -O0 and
 	  -fno-inline put most inline functions on the stack and visible with
-	   gdb backtrace command.
+	  gdb backtrace command. Using -g3 allows gcc to include cpp #defines
+	  in debug info.
 
 	  Suggestions:
-	        -g -O0  
-		-g -O1 -fno-inline
+	        -g -O0 -g3
+		-g -O1 -g3 -fno-inline
 
 choice
 	prompt "Kernel Stack Size"
@@ -91,20 +98,19 @@ config 8KSTACKS
 	  too small when compiling with -O0. 
 
 	  Not recommened when Compiling the kernel to be optimized for 
-	  Debugging.
+	  Debugging; though it often works fine.
 
 config 16KSTACKS
 	bool "Use 16K for kernel stacks, Best if Optimized for Debugging"
 	depends on EXPERIMENTAL || DEBUG_KERNEL
 	help
 	  If you say Y here the kernel will use a 16Kb stack size for the
-	  kernel stack attached to each process/thread. This is required
+	  kernel stack attached to each process/thread. This may be required
 	  when compiling the kernel -O0.
 
 	  This is experimental code.
 
-	  Highly recommended when compiling the kernel with 
-	  CC_OPTIMIZE_FOR_DEBUGGING.
+	  Recommended when compiling the kernel with CC_OPTIMIZE_FOR_DEBUGGING.
 
 	  If in doubt, say "N".
 endchoice

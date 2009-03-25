@@ -5,13 +5,14 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * (C) 2001 - 2005 Tensilica Inc.
+ * (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_CACHE_H
 #define _XTENSA_CACHE_H
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 #define L1_CACHE_SHIFT	XCHAL_DCACHE_LINEWIDTH
 #define L1_CACHE_BYTES	XCHAL_DCACHE_LINESIZE

@@ -7,16 +7,18 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2008 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Joe Taylor <joe@tensilica.com>
+ * Piet Delaney <piet@tensilica.com>
  */
 
 #include <asm-generic/vmlinux.lds.h>
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 OUTPUT_ARCH(xtensa)
 ENTRY(_start)
 
@@ -25,8 +27,6 @@ jiffies = jiffies_64 + 4;
 #else
 jiffies = jiffies_64;
 #endif
-
-#define KERNELOFFSET 0xd0001000
 
 /* Note: In the following macros, it would be nice to specify only the
    vector name and section kind and construct "sym" and "section" using
@@ -372,6 +372,21 @@ SECTIONS
 	EXIT_DATA
         *(.exitcall.exit)
   }
+
+  
+  /*
+   * This is a remapped copy of the Secondary Reset Vector Code.
+   * It keeps gdb in sync with the PC after switching
+   * to the temporary mapping used while setting up 
+   * the V2 MMU mappings for Linux.
+   *
+   * Only debug information about this section is put in the kernel image.
+   */
+  .SecondaryResetVector.remapped_text 0X46000000 (INFO):
+  {
+	*(.SecondaryResetVector.remapped_text)
+  }
+	
 
   .xt.lit : { *(.xt.lit) }
   .xt.prop : { *(.xt.prop) }

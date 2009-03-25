@@ -1,0 +1,510 @@
+#
+# Example .xt-gdbinit file:
+#	Sets a breakpoint in the reset vector to setup
+#	kernel breakpoints once the primary V3 MMU has
+#	remapped to our normal virtaul mappings.
+#
+#	Includes general purpose macros for dumping the
+#	the state of the PTEs, TLB, task list and switching
+#	the context to a particular task for backtrace.
+#
+#	Tuneed for used with xt-gdb driven with ddd with
+#	kernel compiled without optimization.
+#
+#					    -piet
+#
+set editing on
+set radix 0x0a
+set print pretty
+set print array
+set print union
+set pagination off
+set can-use-hw-watchpoints 0
+set print elements 16
+set var $sa_tcp_breakpoints = 0
+set var $set_exception_breakpoints = 0
+set var $mess_with_context_asid = 0
+set var $debug_boot_secondary_processors = 1
+set var $debug_cpu_init = 0
+set var $debug_irq_init = 0
+set var $debug_irqs_disabled = 0
+set var $debug_irq_handler = 0
+
+# NOTE: A Breakpoint at init_arch causes 2nd CPU to get stuck;
+#       which is a handy way to come up with just 1 CPU
+set var $debug_init_arch = 0
+
+# $debug_reset needed for placing breakpoints with V3 MMU
+set var $debug_reset = 1		
+
+set var $debug_out_of_memory = 0
+set var $debug_kernel_start = 0
+set var $debug_platform_init = 0
+set var $debug_platform_setup = 0
+set var $debug_free_area_init_node = 0
+set var $debug_unmap_region = 0
+set var $debug_slab = 1
+set var $debug_open_eth = 0
+set var $debug_exceptions = 0
+set var $mx = 0
+set logging on
+set logging file kgdb.log
+set logging overwrite on
+# show logging
+# set debug remote 10
+# set backtrace limit 50
+
+# set debug remote 1
+# set remotebaud 115200
+# set remotebaud 19200
+
+
+# target remote udp:192.168.110.61:6443 MY_GATE
+# target remote /dev/ttyS0
+# target remote gums:20000 0
+
+if $mx
+#	target remote gums:20000 0
+#	target remote localhost:20010 0
+	target remote localhost:20000 0
+	file arch/xtensa/boot/Image.elf
+else
+	target remote localhost:20000 0
+	file arch/xtensa/boot/Image.elf
+end
+
+reset
+
+# timebomb
+#	set $sar = 0x30
+#	set $sr176 = 0x0f3d2483
+
+load
+
+if $debug_reset
+    break *&_ResetVector
+    set var $_ResetVector = $bpnum
+
+#   NOTE: you can't enable this breakpoint while
+#         single stepping in the MMU-V3 remapping
+#	  code and mapped to 0x46000000.
+#
+    break reset
+    set var $reset = $bpnum
+    commands $reset
+
+	symbol-file vmlinux
+
+	if $debug_boot_secondary_processors == 0
+		set boot_secondary_processors = 0
+	end
+
+# 	break _image_start
+#	break *&_startup
+#	break emit_log_char
+#	break printk
+#	break init_mmu
+#	break init_IRQ
+	if $debug_irq_handler
+		break *&__set_irq_handler
+		break do_interrupt
+		break handle_level_irq
+	end
+
+	if $mx
+	   if  $debug_irq_init
+		break xtensa_mx_irq_mask
+		break xtensa_mx_irq_unmask
+		break xtensa_mx_irq_ack
+		break xtensa_mx_irq_retrigger
+		if $mx
+			break secondary_irq_init
+			break wakeup_secondary_cpu
+		
+			break send_ipi_message
+			break recv_ipi_messages
+			break secondary_irq_enable
+		end
+	   end
+	else
+	    if $debug_irq_init
+		break xtensa_irq_mask
+		break xtensa_irq_unmask
+		break xtensa_irq_ack
+		break xtensa_irq_retrigger
+	    end
+	end
+	
+	if $debug_free_area_init_node
+	    break free_area_init_node
+	    set var $free_area_init_node = $bpnum
+	    commands $free_area_init_node
+	       	continue
+	    end
+	end
+	
+#	break free_area_init_nodes
+	
+	#
+	# These functions don't have an entry instruction,
+	# avoid placing break at entry + 4.
+	#
+	break  *&__platform_idle
+	set var $__platform_idle = $bpnum
+	disable $__platform_idle
+	
+	break  *&_UserExceptionVector
+	set var $_UserExceptionVector = $bpnum
+	if $debug_exceptions == 0
+		disable $_UserExceptionVector
+	end
+
+	break  *&_KernelExceptionVector
+	set var $_KernelExceptionVector = $bpnum
+	if $debug_exceptions == 0
+		disable $_KernelExceptionVector
+	end
+
+	break  *&_DoubleExceptionVector
+	set var $_DoubleExceptionVector = $bpnum
+	set var $_DoubleExceptionVector_count = 0
+	if $debug_exceptions == 0
+		disable $_DoubleExceptionVector
+	end
+	if 0
+#	    Can't use the "commands" command among a breakpoint's commands.	
+	    commands $_DoubleExceptionVector
+		set $_DoubleExceptionVector_exccause = $exccause
+		set $_DoubleExceptionVector_count = $_DoubleExceptionVector_count + 1
+		set $PS_UM_BIT = 5
+		set $PS_UM_MASK = 1 << $PS_UM_BIT
+		set $UM = $ps & $PS_UM_MASK
+		
+		if $_DoubleExceptionVector_count == 0
+		    disable $_DoubleExceptionVector
+		end
+		if $UM && (config_ignore_mm_context_asid == 1)
+		    continue
+		end
+	    end
+	end
+
+	break  *&_DoubleExceptionVector_WindowUnderflow
+	set var $_DoubleExceptionVector_WindowUnderflow = $bpnum
+	if $debug_exceptions == 0
+		disable $_DoubleExceptionVector_WindowUnderflow
+	end
+
+	if $debug_exceptions != 0
+		break  *&_DoubleExceptionVector_WindowOverflow
+		set var $_DoubleExceptionVector_WindowUnderflow = $bpnum
+		if $debug_exceptions == 0
+			disable $_DoubleExceptionVector_WindowOverflow
+		end
+	end
+	
+	break  *&_DebugInterruptVector
+	set var $_DebugInterruptVector = $bpnum
+	if $debug_exceptions == 0
+		disable $_DebugInterruptVector
+	end
+
+	break  *&_Level2InterruptVector
+	set var $_Level2InterruptVector = $bpnum
+	if $debug_exceptions == 0
+		disable $_Level2InterruptVector
+	end
+	
+	break  *&_Level3InterruptVector
+	set var $_Level3InterruptVector = $bpnum
+	if $debug_exceptions == 0
+		disable $_Level3InterruptVector
+	end
+	
+	break  *&_WindowOverflow4
+	set var $_WindowOverflow4 = $bpnum
+	if $debug_exceptions == 0
+		disable $_WindowOverflow4
+	end
+
+	break  *&_WindowUnderflow4
+	set var $_WindowUnderflow4 = $bpnum
+	if $debug_exceptions == 0
+		disable $_WindowUnderflow4
+	end
+	
+	break  *&_WindowOverflow8
+	set var $_WindowOverflow8 = $bpnum
+	if $debug_exceptions == 0
+		disable $_WindowOverflow8
+	end
+
+	break  *&_WindowUnderflow8
+	set var $_WindowUnderflow8 = $bpnum
+	if $debug_exceptions == 0
+		disable $_WindowUnderflow8
+	end
+
+	break  *&_WindowOverflow12
+	set var $_WindowOverflow12 = $bpnum
+	if $debug_exceptions == 0
+		disable $_WindowOverflow12
+	end
+
+	break  *&_WindowUnderflow12
+	set var $_WindowUnderflow12 = $bpnum
+	if $debug_exceptions == 0
+		disable $_WindowUnderflow12
+	end
+	
+	#
+	# Catch Double Exceptions that will hang
+	# can only be placed after arch_init() 
+	# has been called.
+	#
+	break  *&_DoubleExceptionVector_Hang
+	set var $_DoubleExceptionVector_Hang = $bpnum
+	set var $_DoubleExceptionVector_Hang_count = 0
+	disable $_DoubleExceptionVector_Hang
+
+	
+	break  *&fast_unaligned
+	set var $fast_unaligned = $bpnum
+	set var $fast_unaligned_count = 0
+	disable $fast_unaligned
+
+	if $debug_init_arch
+	    break init_arch
+	    set $init_arch = $bpnum
+	    if 0
+#	      Can't use the "commands" command among a breakpoint's commands.
+	      commands $init_arch
+		disable $init_arch
+	        echo "init_arch(): Enabling Breakpoints at Exception Vectors\n"
+	        enable $_DoubleExceptionVector_Hang
+	        echo skip enable $fast_unaligned
+	        if $mess_with_context_asid != 0
+	        	echo "config_ignore_mm_context_asid:"
+	        	print config_ignore_mm_context_asid
+	        	set $dbreaka0 =  &config_ignore_mm_context_asid
+	        	set $dbreakc0 = 0x8000003c
+	        end	
+	       	continue
+	      end
+	    end
+	 end
+	
+	if $debug_kernel_start != 0
+	    break start_kernel
+	    set $start_kernel = $bpnum
+	    disable $start_kernel	
+	    commands $start_kernel
+	    	echo "config_ignore_mm_context_asid:"
+	    	print config_ignore_mm_context_asid
+	    	continue
+	    end
+	end
+	
+	if $debug_platform_setup != 0
+	    if $debug_platform_init
+	        break platform_init
+	        set $platform_init = $bpnum
+	      
+		if 0 
+	            commands $platform_init
+	                continue
+	            end
+	        end
+	    end
+	end
+
+	if $debug_platform_setup != 0
+		break platform_setup
+		set $platform_setup = $bpnum
+		if 0
+	    		commands $platform_setup
+	        	disable $platform_setup	
+	        	continue
+	    	end
+	    end
+	end
+	
+	if $debug_unmap_region
+	    break unmap_region
+	    set $unmap_region = $bpnum
+	    if 0
+	        commands $unmap_region
+	            disable  $unmap_region
+	            if (config_ignore_mm_context_asid == 1)
+	        	continue
+	            end	
+	        end	
+	    end
+	end
+	
+	 if $debug_irqs_disabled
+	    break irqs_disabled
+	    set $irqs_disabled = $bpnum
+	    if 0
+	        commands $irqs_disabled
+	            disable $irqs_disabled
+	            if (config_ignore_mm_context_asid == 1)	
+	        	continue
+	            end	
+	        end	
+	    end
+	end
+	
+	if $debug_out_of_memory
+	    break out_of_memory
+	    set $out_of_memory = $bpnum
+	    if 0
+	        commands $out_of_memory
+	    	    continue
+	        end
+	    end
+	    
+	    break oom_kill_process
+	    set $oom_kill_process = $bpnum
+	    if 0
+	        commands $oom_kill_process
+	    	    if (config_ignore_mm_context_asid == 1)
+	    		continue
+	    	    end
+	    	end
+	    end
+	end
+	
+	if $debug_slab
+		break slab_bp
+		set $slab_bp = $bpnum
+	end
+	
+#	break bp 
+	break die 
+	# break bad_page_fault
+	break panic
+	break show_regs
+	break dump_stack
+	break do_debug
+	break do_illegal_instruction
+	# break do_unaligned_user
+	break do_multihit
+	break do_unhandled
+	# break dtlb_probe
+#	break get_current_bp
+	
+	if $debug_cpu_init != 0
+		break cpu_up
+		break _cpu_up
+		break __cpu_up
+		break cpu_online
+		break smp_init
+		break smp_init_cpus
+		break get_core_count
+		break smp_prepare_cpus
+		break secondary_start_kernel
+	end
+
+	if $debug_open_eth != 0
+		break oeth_probe
+		break oeth_init
+		break oeth_open
+	end
+	
+	# break update_mmu_cache
+	# break copy_pte_range
+	# break zap_pte_range
+	# break remap_pte_range
+	# break change_pte_range
+	# break move_ptes
+	# break ic_dynamic
+	
+	# break parse_early_param
+	
+	# Delete this breakpoint at reset now
+	# that breakpoints have been set.
+
+    #
+    # Bring in gdb macros after re-mapping MMU
+    # so they can access config constants.
+    #	
+    source ps.gdb
+    source showtlb.gdb
+    source showcache.gdb
+    source show_mem_pte.gdb
+
+    help user-defined	
+
+    end	
+
+end
+
+info breakpoints
+
+echo "$mess_with_context_asid:"
+print $mess_with_context_asid
+if $mess_with_context_asid != 0
+	echo "set config_ignore_mm_context_asid = 1;\n"
+	set config_ignore_mm_context_asid = 1
+	print config_ignore_mm_context_asid
+end
+
+display/i $pc
+#target sim --timer
+set output-radix 16
+
+define exit 
+	quit
+	end
+
+define regs 
+	info registers pc a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15
+	end
+
+define cregs
+	info registers ccount ccompare0 ccompare1
+	end
+
+define iregs
+	info registers interrupt intenable icount icountlvl psintlvl
+	end
+
+define lregs
+	info registers lbeg lend lcount
+	end
+
+define restart
+	set *(volatile unsigned *)0xfd020010 = 0xdead
+	end
+
+define i8regs 
+	info registers i80 i81 i82 i83 i84 i85 i86 i87 i88 i89 i810 i811 i812 i813 i814 i815
+	end
+
+define i16regs 
+	info registers i160 i161 i162 i163 i164 i165 i166 i167 i168 i169 i1610 i1611 i1612 i1613 i1614 i1615
+	end
+
+define i32regs 
+	info registers i320 i321 i322 i323 i324 i325 i326 i327 i328 i329 i3210 i3211 i3212 i3213 i3214 i3215
+	end
+
+define extraregs 
+	info registers s8 s16 s32 result
+	end
+
+define memfree
+	graph display contig_page_data
+
+	print contig_page_data.node_zones[0].name
+	print contig_page_data.node_zones[0].present_pages
+
+	print contig_page_data.node_zones[1].name
+	print contig_page_data.node_zones[1].present_pages
+
+	print contig_page_data.node_zones[2].name
+	print contig_page_data.node_zones[2].present_pages
+end
+
+echo ".xt-gdbinit: Done\n"

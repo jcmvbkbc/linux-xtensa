@@ -161,10 +161,30 @@ config MATH_EMULATION
 config HIGHMEM
 	bool "High memory support"
 
+config ARCH_HAS_SMP
+	bool "System Supports SMP"
+	default y
+	---help---
+	This option is use to indicate that the system-on-a-chip (SOC)
+	supports Multiprocessing. Multiprocessor support implemented above
+	the CPU core definition and currently needs to be selected manually.
+	Multiprocessor support in implemented with external cache and
+	interrupt controlers. The external cache controler supports
+	cache coherency; thought still in the process of testing.
+	Currently addition cache flushs have been added to get
+	a SMP system to be stable under LTP test for about four days.
+	The interrupt distributer adds Interprocessor Interrupts
+	and causes the IRQ numbers to be increased by 4 for devices
+	like the open cores ethernet driver and the serial interface.
+
+	You still have to select "Enable SMP" to anable SMP on this SOC.
+
 config SMP
-	bool "Symmetric multi-processing support"
+	bool "Enable Symmetric multi-processing support"
+	depends on ARCH_HAS_SMP
 	help
-	  SMP
+	  Enabled SMP Software; allows more than one CPU/CORE
+	  to be activated during startup.
 
 config NR_CPUS
         depends on SMP

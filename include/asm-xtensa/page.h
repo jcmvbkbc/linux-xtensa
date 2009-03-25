@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License version2 as
  * published by the Free Software Foundation.
  *
- * Copyright (C) 2001 - 2007 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_PAGE_H
@@ -42,6 +42,9 @@
  * If the cache size for one way is greater than the page size, we have to
  * deal with cache aliasing. The cache index is wider than the page size:
  *
+ *     +--- PAGE_MASK
+ *     |
+ * |<--+->|
  * |    |cache| cache index
  * | pfn  |off|	virtual address
  * |xxxx:X|zzz|
@@ -50,38 +53,55 @@
  * |trans.|   |
  * | /  \ |   |
  * |yyyy:Y|zzz|	physical address
+ *       ^
+ *       |
+ *       +---- DCACHE_ALIAS_MASK
  *
  * When the page number is translated to the physical page address, the lowest
  * bit(s) (X) that are part of the cache index are also translated (Y).
- * If this translation changes bit(s) (X), the cache index is also afected,
+ * If this translation changes bit(s) (X), the cache index is also affected,
  * thus resulting in a different cache line than before.
+ *
  * The kernel does not provide a mechanism to ensure that the page color
  * (represented by this bit) remains the same when allocated or when pages
  * are remapped. When user pages are mapped into kernel space, the color of
  * the page might also change.
  *
  * We use the address space VMALLOC_END ... VMALLOC_END + DCACHE_WAY_SIZE * 2
- * to temporarily map a patch so we can match the color.
+ * to temporarily map a patch so we can match the color. 
+ *
+ * Using SPARC convention of using #if DCACHE_ALIASING_POSSIBLE...#endif
+ * See arch/sparc/include/asm/page_64.h example.
+ *
+ * We use the following macros to work in determining if a user page is
+ * using an alias with the kernel addresses. 
  */
 
-#if DCACHE_WAY_SIZE > PAGE_SIZE
+#if DCACHE_WAY_SIZE > PAGE_SIZE && XCHAL_DCACHE_IS_WRITEBACK
+# define DCACHE_ALIASING_POSSIBLE
 # define DCACHE_ALIAS_ORDER	(DCACHE_WAY_SHIFT - PAGE_SHIFT)
 # define DCACHE_ALIAS_MASK	(PAGE_MASK & (DCACHE_WAY_SIZE - 1))
 # define DCACHE_ALIAS(a)	(((a) & DCACHE_ALIAS_MASK) >> PAGE_SHIFT)
 # define DCACHE_ALIAS_EQ(a,b)	((((a) ^ (b)) & DCACHE_ALIAS_MASK) == 0)
 #else
-# define DCACHE_ALIAS_ORDER	0
+# define DCACHE_ALIAS_ORDER	0	/* Number of alias bits */
+# define DCACHE_ALIAS_MASK	0	/* Mask out just the alias bits */
+# define DCACHE_ALIAS(a)        0	/* Alias bits in LSB */
+# define DCACHE_ALIAS_EQ(a,b)   0 	/* True is aliasing isn't a problem */
 #endif
 
 #if ICACHE_WAY_SIZE > PAGE_SIZE
+# define ICACHE_ALIASING_POSSIBLE
 # define ICACHE_ALIAS_ORDER	(ICACHE_WAY_SHIFT - PAGE_SHIFT)
 # define ICACHE_ALIAS_MASK	(PAGE_MASK & (ICACHE_WAY_SIZE - 1))
 # define ICACHE_ALIAS(a)	(((a) & ICACHE_ALIAS_MASK) >> PAGE_SHIFT)
 # define ICACHE_ALIAS_EQ(a,b)	((((a) ^ (b)) & ICACHE_ALIAS_MASK) == 0)
 #else
 # define ICACHE_ALIAS_ORDER	0
+# define ICACHE_ALIAS_MASK      0
+# define ICACHE_ALIAS(a)        0
+# define ICACHE_ALIAS_EQ(a,b)   0
 #endif
-
 
 #ifdef __ASSEMBLY__
 
@@ -135,7 +155,7 @@ extern void copy_page(void *to, void *from);
  * some extra work
  */
 
-#if DCACHE_WAY_SIZE > PAGE_SIZE
+#if defined(DCACHE_ALIASING_POSSIBLE) 
 extern void clear_user_page(void*, unsigned long, struct page*);
 extern void copy_user_page(void*, void*, unsigned long, struct page*);
 #else

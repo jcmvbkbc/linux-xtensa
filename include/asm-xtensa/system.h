@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2008 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_SYSTEM_H
@@ -46,9 +46,18 @@ static inline int irqs_disabled(void)
 	return flags & 0xf;
 }
 
-
+#if 1
+/*
+ * REMIND:
+ *	On LTP Without Workaround: 
+ *		PASS: 2057 FAIL: 28
+ */	
+#define smp_read_barrier_depends() barrier()
+#define read_barrier_depends() barrier()
+#else
 #define smp_read_barrier_depends() do { } while(0)
 #define read_barrier_depends() do { } while(0)
+#endif
 
 #define mb()  barrier()
 #define rmb() mb()
@@ -75,6 +84,20 @@ static inline int irqs_disabled(void)
 extern void *_switch_to(void *last, void *next);
 
 #endif	/* __ASSEMBLY__ */
+
+/*
+ * TIF_THREAD_ACTIVE is being used by gdb ps/btt macros
+ * to know if a task is currenty running a it's CPU.
+ */
+#define prepare_arch_switch(next)                                \
+do {                                                             \
+	set_tsk_thread_flag(next, TIF_CURRENTLY_RUNNING);        \
+} while(0)
+
+#define finish_arch_switch(prev)                                 \
+do {                                                             \
+	clear_tsk_thread_flag(prev, TIF_CURRENTLY_RUNNING);      \
+} while(0)
 
 #define switch_to(prev,next,last)		\
 do {						\
@@ -133,7 +156,7 @@ static __inline__ void __cmpxchg_called_with_bad_pointer(void)
  * This function doesn't exist in highly optimized kernels, so you'll 
  * get a linker error if something tries to do an invalid cmpxchg(). 
  */
-extern void __cmpxchg_called_with_bad_pointer1(void);
+extern void __cmpxchg_called_with_bad_pointer(void);
 #endif
 
 static __inline__ unsigned long
@@ -213,7 +236,7 @@ static __inline__ void __xchg_called_with_bad_pointer(void)
  * gcc-2.5.8 reportedly can't handle this, but I define that one to
  * be dead anyway.
  */
-extern void __xchg_called_with_bad_pointer1(void);
+extern void __xchg_called_with_bad_pointer(void);
 #endif
 
 static __inline__ unsigned long
@@ -251,5 +274,7 @@ static inline void spill_registers(void)
 }
 
 #define arch_align_stack(x) (x)
+
+#define UNUSED __attribute__((__unused__))
 
 #endif	/* _XTENSA_SYSTEM_H */

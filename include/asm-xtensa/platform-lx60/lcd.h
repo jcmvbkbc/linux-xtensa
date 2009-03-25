@@ -11,9 +11,6 @@
 #ifndef __XTENSA_LX60_LCD_H
 #define __XTENSA_LX60_LCD_H
 
-/* Initialize the LCD. */
-void lcd_init(void);
-
 /* Display string STR at position POS on the LCD. */
 void lcd_disp_at_pos(char *str, unsigned char pos);
 

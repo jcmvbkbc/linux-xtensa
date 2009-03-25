@@ -17,6 +17,7 @@
 #include <asm/errno.h>
 #include <linux/linkage.h>
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 /*
  * computes a partial checksum, e.g. for TCP/UDP fragments

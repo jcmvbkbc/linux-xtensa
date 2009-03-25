@@ -1,7 +1,10 @@
 /*
  * Ethernet driver for Open Ethernet Controller (www.opencores.org).
  *      Copyright (c) 2002 Simon Srot (simons@opencores.org)
- *      Copyright (c) 2006, 2007, 2008 Tensilica Inc.
+ *      Copyright (c) 2006, 2007, 2009 Tensilica Inc.
+ *      Copyright (c) Dan Nicolaescu <dann@tensilica.com>
+ *      Copyright (c) Pete Delaney <piet.delaney@tensilica.com>
+ *      Copyright (c) 2008 Florian Fainelli <florian.fainelli@openpattern.org>
  * 
  * Based on:
  *
@@ -107,6 +110,7 @@ struct oeth_private {
 	u8 tx_full;		/* Buffer ring full indicator */
 	u8 rx_cur;		/* Next buffer to be checked if packet received */
 	spinlock_t lock;
+	spinlock_t rx_lock;
 	spinlock_t napi_lock;
 	struct napi_struct napi;
 	unsigned int reschedule_in_poll;
@@ -149,8 +153,9 @@ static int oeth_open(struct net_device *dev)
 	ret = request_irq(OETH_IRQ, oeth_interrupt, OETH_REQUEST_IRQ_FLAG,
 			  dev->name, (void *)dev);
 	if (ret) {
-		dev_err(&dev->dev, "request_irq failed for the Opencore "
-				"ethernet device\n");
+		dev_err(&dev->dev, "%s: request_irq(OETH_IRQ:%d, &oeth_interrupt(), OETH_REQUEST_IRQ_FLAG:%d, dev->name:'%s', dev:%p)" 
+				    " Failed for the Opencore ethernet device\n", __func__, OETH_IRQ, OETH_REQUEST_IRQ_FLAG,  dev->name, dev);
+
 		napi_disable(&cep->napi);
 		return ret;
 	}
@@ -512,9 +517,12 @@ static int oeth_poll(struct napi_struct *napi, int budget)
 	int work_done = 0;
 
 rx_action:
+#if 0
 	oeth_tx(dev);
-
-	work_done += oeth_rx(dev, budget);
+#endif
+	spin_lock(&cep->rx_lock);
+	work_done += oeth_rx(dev, (budget - work_done));
+	spin_unlock(&cep->rx_lock);
 
 	if (netif_running(dev) && (work_done < budget)) {
 		unsigned long flags;
@@ -578,7 +586,9 @@ static int __devinit oeth_probe(struct platform_device *pdev)
 {
 	struct net_device *dev = alloc_etherdev(sizeof(struct oeth_private));
 	int res = 0;
-printk("OETH PROBE\n");
+
+	printk("%s: {\n", __func__);
+
 	if (!dev) {
 		res = -ENOMEM;
 		goto fail;
@@ -593,15 +603,18 @@ printk("OETH PROBE\n");
 		goto fail;
 
 	if (register_netdev(dev)) {
-		printk(KERN_WARNING "Openethernet: No card found\n");
+		printk(KERN_WARNING "%s: No card found.\n", __func__);
 		res = -ENODEV;
 		goto fail;
 	}
 
 	platform_set_drvdata(pdev, dev);
+
+	printk("%s: }\n", __func__);
 	return 0;
 
 fail:
+	printk("%s.fail: \n", __func__);
 	free_netdev(dev);
 	return res;
 }
@@ -715,10 +728,11 @@ static int oeth_setup(struct net_device *dev, unsigned int base_addr,
 	int i, phy_id;
 	unsigned long mem_addr = OETH_SRAM_BUFF_BASE;
 
-	printk(KERN_INFO "Open Ethernet Core Version 1.0\n");
+	printk(KERN_INFO "%s: Open Ethernet Core Version 1.0.1\n", __func__);
 
 	/* Initialize the locks. */
 	spin_lock_init(&cep->lock);
+	spin_lock_init(&cep->rx_lock);
 	spin_lock_init(&cep->napi_lock);
 
 	/* Memory regions for the controller registers and buffer space. */
@@ -770,14 +784,15 @@ static int oeth_setup(struct net_device *dev, unsigned int base_addr,
 	/* Identify phy address. */
 	for (phy_id = 0; phy_id < 0x1f; phy_id++) {
 		int id1, id2;
+
 		id1 = mdio_read(dev, phy_id, MII_PHYSID1);
 		if (id1 < 0 || id1 == 0xffff)
 			continue;
 		id2 = mdio_read(dev, phy_id, MII_PHYSID2);
 		if (id2 < 0 || id2 == 0xffff)
 			continue;
-		dev_info(&dev->dev, "Found PHY %04x:%04x at %d.\n",
-			 id1, id2, phy_id);
+		dev_info(&dev->dev, "%s: Found id1:%04x, id2:%04x at phy_id:%d.\n",
+			 __func__, id1, id2, phy_id);
 		break;
 	}
 #endif
@@ -901,7 +916,7 @@ static int oeth_setup(struct net_device *dev, unsigned int base_addr,
 	/* FIXME: Something needs to be done with dev->tx_timeout and
 	   dev->watchdog timeout here. */
 
-	dev_info(&dev->dev,"Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+	dev_info(&dev->dev,"Hardware MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
 			 dev->dev_addr[0], dev->dev_addr[1],
 			 dev->dev_addr[2], dev->dev_addr[3],
 			 dev->dev_addr[4], dev->dev_addr[5]);

@@ -362,8 +362,17 @@ static void setup_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 		sp = current->sas_ss_sp + current->sas_ss_size;
 	}
 
+	/* REMIND */
 	frame = (void *)((sp - sizeof(*frame)) & -16ul);
 
+	/*
+	 * We now support processing signal handlers after
+	 * getting a double exception. This exception was
+	 * a miss during the first instruction of the window
+	 * spill and in this case the return pc was to the
+	 * window spill handler instead of just redoing the
+	 * the excpetion that caused the spill.
+	 */
 	if (regs->depc > 64)
 		panic ("Double exception sys_sigreturn\n");
 
@@ -500,6 +509,9 @@ int do_signal(struct pt_regs *regs, sigset_t *oldset)
 	siginfo_t info;
 	int signr;
 	struct k_sigaction ka;
+	struct pt_regs *task_regs;
+	struct thread_info *ti = current_thread_info();
+	struct task_struct *task = ti->task;
 
 	if (!user_mode(regs))
 		return 0;
@@ -510,7 +522,8 @@ int do_signal(struct pt_regs *regs, sigset_t *oldset)
 	if (!oldset)
 		oldset = &current->blocked;
 
-	task_pt_regs(current)->icountlevel = 0;
+	task_regs = task_pt_regs(task);
+	task_regs->icountlevel = 0;
 
 	signr = get_signal_to_deliver(&info, &ka, regs, NULL);
 

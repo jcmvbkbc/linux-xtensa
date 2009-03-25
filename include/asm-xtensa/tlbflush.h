@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_TLBFLUSH_H
@@ -48,7 +48,12 @@ extern void flush_tlb_mm(struct mm_struct *);
 extern void flush_tlb_page(struct vm_area_struct *, unsigned long);
 extern void flush_tlb_range(struct vm_area_struct *, unsigned long,
         unsigned long);
-#define flush_tlb_kernel_range(start,end) flush_tlb_all()
+
+static inline void flush_tlb_kernel_range(unsigned long start,
+					  unsigned long end)
+{
+	flush_tlb_all();
+}
 
 #else /* !CONFIG_SMP */
 

@@ -7,11 +7,12 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2008 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Joe Taylor <joe@tensilica.com>
+ * Piet Delaney <piet@tensilica.com>
  * Kevin Chea
  */
 
@@ -59,12 +60,15 @@ _start:	_j	2f
 	.align 4
 _startup:
 
-	/* Disable interrupts and exceptions. */
+	/* Disable interrupts and exceptions; but allow ocd to service xt-gdb. */
 
-	movi	a0, LOCKLEVEL
+	movi	a0, XCHAL_DEBUGLEVEL -1
 	wsr	a0, PS
 
-	/* Preserve the pointer to the boot parameter list in EXCSAVE_1 */
+	/* 
+	 * Preserve the pointer to the boot parameter list in EXCSAVE_1 
+	 * EXCSAVE_1 will be set up to point to exc_table[cpu]
+	 */
 
 	wsr	a2, EXCSAVE_1
 
@@ -145,15 +149,36 @@ _startup:
 
 #endif	/* CONFIG_SMP */
 
-	/* Unpack data sections
+	/* 
+	 * Copy Exception Vectors and their associted Literals to their live locations.
+	 * This is done so we don't disturb the environment of the code that loaded us.
 	 *
-	 * The linker script used to build the Linux kernel image
-	 * creates a table located at __boot_reloc_table_start
-	 * that contans the information what data needs to be unpacked.
+	 * The linker script used to build the Linux kernel image creates a table located at 
+	 * __boot_reloc_table_start that contans the information what data needs to be copied.
 	 *
-	 * Uses a2-a7.
+	 *                                           EXAMPLE
+         *        a2:__boot_reloc_table_start        =======
+         *         DESTINATION         SOURCE
+         *        a4        a5           a6                      
+         *      START       END         START	   VECTOR OFFSET NAME        VALUE             VECTOR
+         *    ==========  =========   ========== ======================    ========== ==============================
+         *    0xd0000000  0xd000016a  0xd02f4fd4                                      _WindowOverflow4
+         *    0xd0000180  0xd0000197  0xd02f5148 XCHAL_INTLEVEL2_VECOFS    0x00000180 _Level2InterruptVector
+         *    0xd00001c0  0xd00001da  0xd02f5160 XCHAL_INTLEVEL3_VECOFS    0x000001C0 _Level3InterruptVector
+         *    0xd0000300  0xd0000320  0xd02f517c XCHAL_KERNEL_VECOFS       0x00000300 _KernelExceptionVector
+         *    0xd0000340  0xd000035c  0xd02f519c XCHAL_USER_VECOFS         0x00000340 _UserExceptionVector
+         *    0xd00003b0  0xd00003bc  0xd02f51b8          -                    -      _DoubleExceptionVector_literals
+         *    0xd00003c0  0xd00004d8  0xd02f51c4 XCHAL_DOUBLEEXC_VECOFS    0x000003C0 _DoubleExceptionVector
+         *    0xd0000280  0xd0000286  0xd02f5140 XCHAL_INTLEVEL6_VECOFS    0x00000280 _DebugInterruptVector
+         *    0xd80004fc  0xd8000500  0xd02f52dc          -                     -     _SecondaryResetVector_literals
+         *    0xd8000500  0xd8000580  0xd02f52e0 XCHAL_RESET_VECTOR1_PADDR 0x00000500 _SecondaryResetVector
+         *    0x00000000  0x00000000  0xd02bdedc
+         *    0x00000000  0x00000000  0xd02bdedc
+         *        a3:__boot_reloc_table_end
+	 *
+	 * Use command "objdump -wph vmlinux" to see details.
+	 *
 	 */
-
 	movi	a2, __boot_reloc_table_start
 	movi	a3, __boot_reloc_table_end
 
@@ -196,9 +221,12 @@ _startup:
 // FIXME: CPU should come up that way
 
 	___invalidate_dcache_all a2 a3
-	movi	a2, CCON
+
+#ifdef CONFIG_ARCH_HAS_SMP
+	movi	a2, CCON			# MX External Register to Configure Cache
 	movi	a3, 1
 	wer	a3, a2
+#endif
 
 
 
@@ -213,29 +241,45 @@ _startup:
 	wsr	a2, PS				# (enable reg-windows; progmode stack)
 	rsync
 
-	/* Set up EXCSAVE[DEBUGLEVEL] to point to the Debug Exception Handler.*/
-
+	/* 
+	 * Set up pointer to the Debug Exception Handler.
+	 * REMIND-FIXME: We Need a reference to the ISA here.
+	 */
 	movi	a2, debug_exception
 	wsr	a2, EXCSAVE + XCHAL_DEBUGLEVEL
 
-#if 0
-	/* Set up EXCSAVE[1] to point to the exc_table. */
-
+#if 0	
+	/*
+	 * REMIND-FIXME: try to do something in the spirit of this;
+	 *  much earlier than trap_init().
+	 *
+	 * SKIP this, the per_cpu exc_table[] is currently zero'd out.
+ 	 *      it will be done a bit later in traps.c in trap_init()
+	 *	which is called from start_kernel().
+	 * 
+	 * Set up EXCSAVE[1] to point to the exc_table. 
+	 */
 	rsr	a4, PRID
 	movi	a6, per_cpu__exc_table
 	slli	a4, a4, EXC_TABLE_SIZE_LOG2
 	add	a6, a6, a4
-	xsr	a6, EXCSAVE_1
 #endif
+	xsr	a6, EXCSAVE_1			# restore a6 with boot args that were...
+						# ... saved above from a2.
 
-	/* init_arch kick-starts the linux kernel */
-
+	/* 
+	 * Initialize Architecture spcecic stuff.
+	 *
+	 * NOTE: can't allow most excpetions yet,
+	 *	 pointer in EXCSAVE to per_cpu exc_table[]
+	 *	 hasn't been set up yet.
+	 */
 	movi	a4, init_arch
-	callx4	a4
+	callx4	a4				# Call init_arch( (bp_tag_t *) a6)
 
 	movi	a4, start_info
 	l32i	a4, a4, 4
-	callx4	a4
+	callx4	a4				# Call start_kernel(void)
 
 should_never_return:
 	j	should_never_return
@@ -254,7 +298,7 @@ ENTRY(start_info)
  * BSS section
  */
 	
-.section ".bss.page_aligned", "w"
+	.section ".bss.page_aligned", "w"
 ENTRY(swapper_pg_dir)
 	.fill	PAGE_SIZE, 1, 0
 ENTRY(empty_zero_page)

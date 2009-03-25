@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_UNISTD_H
@@ -718,6 +718,9 @@ __SYSCALL(306, sys_eventfd, 1)
 #define __ARCH_WANT_SYS_RT_SIGACTION
 #define __ARCH_WANT_SYS_RT_SIGSUSPEND
 #define __ARCH_WANT_SYS_GETPGRP
+#define __ARCH_WANT_IPC_PARSE_VERSION
+#define __ARCH_WANT_SYS_GETHOSTNAME
+
 
 /* 
  * Ignore legacy system calls in the checksyscalls.sh script

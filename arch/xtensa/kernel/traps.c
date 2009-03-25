@@ -11,11 +11,12 @@
  *
  * Essentially rewritten for the Xtensa architecture port.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  *
  * Joe Taylor	<joe@tensilica.com>
  * Chris Zankel	<chris@zankel.net>
  * Marc Gauthier<marc@tensilica.com, marc@alumni.uwaterloo.ca>
+ * Piet Delaney <piet@tensilica.com>
  * Kevin Chea
  *
  * This file is subject to the terms and conditions of the GNU General Public
@@ -203,9 +204,12 @@ extern void do_IRQ(int, struct pt_regs *);
 
 void do_interrupt (struct pt_regs *regs)
 {
-	unsigned long intread = get_sr (INTREAD);
-	unsigned long intenable = get_sr (INTENABLE);
+	unsigned long intread = get_sr(INTREAD);
+	unsigned long intenable = get_sr(INTENABLE);
+	unsigned long ps = get_sr(PS);
+	UNUSED struct task_struct *tsk = current;
 	int i, mask;
+	
 
 	/* Handle all interrupts (no priorities).
 	 * (Clear the interrupt before processing, in case it's
@@ -214,8 +218,9 @@ void do_interrupt (struct pt_regs *regs)
 
 	for (i=0, mask = 1; i < XCHAL_NUM_INTERRUPTS; i++, mask <<= 1) {
 		if (mask & (intread & intenable)) {
-			set_sr (mask, INTCLEAR);
-			do_IRQ (i,regs);
+			set_sr(mask, INTCLEAR);
+			ps = get_sr(PS);		/* DEBUG */
+			do_IRQ(i,regs);
 		}
 	}
 }
@@ -285,15 +290,14 @@ do_unaligned_user (struct pt_regs *regs)
 void
 do_debug(struct pt_regs *regs)
 {
+#ifdef CONFIG_KGDB
 	unsigned int debug_cause;
 	long exc_cause = EXCCAUSE_MAPPED_DEBUG;
 
-#ifdef CONFIG_KGDB
 	/* If remote debugging is configured AND enabled, we give control to
 	 * kgdb.  Otherwise, we fall through, perhaps giving control to the
 	 * native debugger.
 	 */
-
 	debug_cause = get_sr(DEBUGCAUSE);
 
 #ifdef  CONFIG_KGDB_BREAKS_WITH_ILLEGAL_INSTRUCTION
@@ -305,11 +309,10 @@ do_debug(struct pt_regs *regs)
 
                	return;
 	}
-#endif
-
 	if (!user_mode(regs)) 
 		printk(KERN_ERR "%s: debug_cause:0x%x\n", __func__, 
 				     debug_cause);
+#endif
 
 	__die_if_kernel("Breakpoint in kernel", regs, SIGKILL);
 
@@ -403,6 +406,8 @@ void __init trap_init(void)
 void __init secondary_trap_init(void)
 {
 	unsigned long excsave1;
+
+	printk("secondary_trap_init %d\n", smp_processor_id());
 
 	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
 

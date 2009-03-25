@@ -5,13 +5,14 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2005 Tensilica Inc.
+ * Copyright (C) 2005 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_ASMMACRO_H
 #define _XTENSA_ASMMACRO_H
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 /*
  * Some little helpers for loops. Use zero-overhead-loops

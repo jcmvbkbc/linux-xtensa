@@ -28,6 +28,14 @@ struct oeth_bd {
 	u32 addr;		/* Buffer address */
 };
 
+struct oeth_platform_data {
+	unsigned tx_bd_num;
+	unsigned rx_bd_num;
+	unsigned tx_buf_size;
+	unsigned rx_buf_size;
+	int phy_id;
+};
+
 /* Tx BD */
 #define OETH_TX_BD_READY        0x8000	/* Tx BD Ready */
 #define OETH_TX_BD_IRQ          0x4000	/* Tx BD IRQ Enable */

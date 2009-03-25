@@ -1388,9 +1388,11 @@ static int task_hot(struct task_struct *p, u64 now, struct sched_domain *sd);
 static unsigned long cpu_avg_load_per_task(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
+	unsigned long nr_running = rq->nr_running;
 
-	if (rq->nr_running)
-		rq->avg_load_per_task = rq->load.weight / rq->nr_running;
+	 /* Local copy of nr_running used to avoid a possible div by zero */
+	if (nr_running)
+		rq->avg_load_per_task = rq->load.weight / nr_running;
 
 	return rq->avg_load_per_task;
 }

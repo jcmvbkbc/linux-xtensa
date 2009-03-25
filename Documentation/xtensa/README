@@ -1,0 +1,11 @@
+gdbmacros:
+
+	Xtensa specific gdb Macros for printing information about:
+		Task, their stacks, and PTE's
+		CPU TLB
+		CPU Caaches
+		The current task from optional $sp (get_current).
+
+	Curently used with xt-gdb and AVNET development boards.
+
+

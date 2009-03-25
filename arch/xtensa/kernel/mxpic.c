@@ -148,9 +148,11 @@ void __init init_IRQ(void)
 	per_cpu(cached_irq_mask, smp_processor_id()) |= 0x3c;
 	set_sr(0x3c, INTENABLE);
 
+#ifdef CONFIG_SMP
 	smp_init_irq();
+#endif
 
-	/* Route all external interrupts to the first processor */
+	/* Route all external interrupts to the first processor, perhaps only */
 	for (index = 0; index < 4; index++)
 		set_er(1, MIROUT(index));
 
@@ -160,6 +162,8 @@ void __init init_IRQ(void)
 #endif
 
 }
+
+#ifdef CONFIG_SMP
 
 void __init secondary_irq_init(void)
 {
@@ -214,8 +218,9 @@ void secondary_irq_enable(int intrnum)
 {
 	int cpu = smp_processor_id();
 	xtensa_irq_unmask(intrnum);
-	printk("cpu %d mask %x\n", cpu, get_sr(INTENABLE));
+	printk("%s: cpu:%d, mask:%x\n", __func__, cpu, get_sr(INTENABLE));
 
 }
+#endif
 
 

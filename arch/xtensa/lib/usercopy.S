@@ -16,7 +16,7 @@
  *  Public License.  See the file "COPYING" in the main directory of
  *  this archive for more details.
  *
- *  Copyright (C) 2002 Tensilica Inc.
+ *  Copyright (C) 2002 - 2009 Tensilica Inc.
  */
 
 
@@ -54,6 +54,7 @@
  */
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 #ifdef __XTENSA_EB__
 #define ALIGN(R, W0, W1) src	R, W0, W1

@@ -5,12 +5,12 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001-2008 Tensilica Inc.
+ * Copyright (C) 2001-2009 Tensilica Inc.
  *
  * Chris Zankel	<chris@zankel.net>
- * Joe Taylor
- * Marc Gauthier
- *
+ * Joe Taylor <joe@tensilica.com>
+ * Marc Gauthier <marc@tensilica.com
+ * Pete Delaney <piet@tensilica.com.
  */
 
 #include <linux/init.h>
@@ -47,6 +47,17 @@ int config_ignore_mm_context_asid = 1;
 int config_ignore_mm_context_asid = 0;
 #endif
 
+/*
+ * Workaround for SMP to prevent PG_arch_1
+ * bit being used for lazy cache and tlb
+ * flushed.
+ */
+#ifdef CONFIG_IGNORE_PAGE_ARCH_1_BIT
+int config_ignore_PG_arch_1 = 1;
+#else
+int config_ignore_PG_arch_1 = 0;
+#endif
+
 /* 
  * Note:
  * The kernel provides one architecture bit PG_arch_1 in the page flags that 
@@ -70,12 +81,11 @@ int config_ignore_mm_context_asid = 0;
  *
  */
 
-#if (DCACHE_WAY_SIZE > PAGE_SIZE) && XCHAL_DCACHE_IS_WRITEBACK
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 
 /*
  * Any time the kernel writes to a user page cache page, or it is about to
  * read from a page cache page this routine is called.
- *
  */
 
 void flush_dcache_page(struct page *page)
@@ -88,7 +98,7 @@ void flush_dcache_page(struct page *page)
 	 * caches until update_mmu().
 	 */
 
-	if (mapping && !mapping_mapped(mapping)) {
+	if (mapping && !config_ignore_PG_arch_1 && !mapping_mapped(mapping)) {
 		if (!test_bit(PG_arch_1, &page->flags))
 			set_bit(PG_arch_1, &page->flags);
 		return;
@@ -97,6 +107,7 @@ void flush_dcache_page(struct page *page)
 
 		unsigned long phys = page_to_phys(page);
 		unsigned long temp = page->index << PAGE_SHIFT;
+		unsigned long mask = DCACHE_ALIAS_MASK;
 		unsigned long alias = !(DCACHE_ALIAS_EQ(temp, phys));
 		unsigned long virt;
 
@@ -106,13 +117,13 @@ void flush_dcache_page(struct page *page)
 		 * an issue, but we do have to synchronize I$ and D$
 		 * if we have a mapping.
 		 */
-
 		if (!alias && !mapping)
 			return;
 
+		/* Flush page in kernel space */
 		__flush_invalidate_dcache_page((long)page_address(page));
 
-		virt = TLBTEMP_BASE_1 + (temp & DCACHE_ALIAS_MASK);
+		virt = TLBTEMP_BASE_1 + (temp & mask);
 
 		if (alias)
 			__flush_invalidate_dcache_page_alias(virt, phys);
@@ -123,45 +134,118 @@ void flush_dcache_page(struct page *page)
 
 	/* There shouldn't be an entry in the cache for this page anymore. */
 }
-
+#endif /* DCACHE_ALIASING_POSSIBLE */
 
 /*
- * For now, flush the whole cache. FIXME??
+ * Flush an anonymous page so that users of get_user_pages()
+ * can safely access the data.  The expected sequence is:
+ *
+ *  get_user_pages()
+ *    -> flush_anon_page
+ *  memcpy() to/from page
+ *  if written to page, flush_dcache_page()
+ *
+ * NOTE:
+ *	Currently get_user_pages() always calls flush_dcache_page()
+ *	after calling flush_anon_page(). So for a VIPT cache this
+ *	function ends up doing the same thing as flush_dcache_page()
+ *	and shouldn't be necessary.
+ */
+void __flush_anon_page(struct vm_area_struct *vma, struct page *page, unsigned long vmaddr)
+{
+	unsigned long pfn;
+
+	/* VIPT non-aliasing caches need do nothing */
+	if (cache_is_vipt_nonaliasing())
+		return;
+
+	/*
+	 * Write back and invalidate userspace mapping.
+	 */
+	if (cache_is_vivt()) {
+		pfn = page_to_pfn(page);
+		flush_cache_page(vma, vmaddr, pfn);
+	} else {
+		unsigned long phys = page_to_phys(page);
+		unsigned long temp = page->index << PAGE_SHIFT;
+		unsigned long virt;
+
+		virt = TLBTEMP_BASE_1 + (temp & DCACHE_ALIAS_MASK);
+		/*
+		 * For aliasing VIPT, we can flush an alias of the
+		 * userspace address only.
+		 */
+		 __flush_invalidate_dcache_page_alias(virt, phys);
+	}
+
+	/*
+	 * Invalidate kernel mapping.  No data should be contained
+	 * in this mapping of the page.  FIXME: this is overkill
+	 * since we actually ask for a write-back and invalidate.
+	 */
+	__flush_invalidate_dcache_page((long)page_address(page));
+}
+
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
+/*
+ * For now, flush the whole cache on the local CPU. FIXME??
  */
 
-void flush_cache_range(struct vm_area_struct* vma, 
+void local_flush_cache_range(struct vm_area_struct* vma, 
 		       unsigned long start, unsigned long end)
 {
+#if 0
+	/* 
+	 * REMIND: Why does this cause severe problems
+	 * at do_illegal_instruction() when starting the
+	 * 1st process?
+	 */
+	__flush_invalidate_dcache_range(start, end);
+	__invalidate_icache_range(start, end);
+#else
 	__flush_invalidate_dcache_all();
 	__invalidate_icache_all();
+#endif
 }
 
 /* 
- * Remove any entry in the cache for this page. 
+ * Remove any entry in the local CPU's cache for this physical page. 
  *
  * Note that this function is only called for user pages, so use the
  * alias versions of the cache flush functions.
+ *
+ * This is called when changing a pte, the pte will be flushed by
+ * update_pte(). Here we make sure the data currently mapped by
+ * the pte is flushed and invalidated prior to changeing the pte.
+ *
+ * Often the user_address will not yet be mapped, and we can't
+ * make a TLB entry with the same virtual and physical addresses,
+ * as that would cause a multi-hit. So we use it's kernel alias 
+ * equivalent to flush page. The alias address uses the same cache 
+ * lines, so flushing it is equivalent.
  */
 
-void flush_cache_page(struct vm_area_struct* vma, unsigned long address,
+void local_flush_cache_page(struct vm_area_struct* vma, unsigned long user_address,
     		      unsigned long pfn)
 {
-	/* Note that we have to use the 'alias' address to avoid multi-hit */
-
+	/* 
+	 * Note that we have to use the 'alias' address to avoid 
+	 * multi-hit (#17) or TLB Miss (#24).
+ 	 */
 	unsigned long phys = page_to_phys(pfn_to_page(pfn));
-	unsigned long virt = TLBTEMP_BASE_1 + (address & DCACHE_ALIAS_MASK);
+	unsigned long virt = TLBTEMP_BASE_1 + (user_address & DCACHE_ALIAS_MASK);
 
+	/*
+	 * The functions below will dynamicly create TLB entrys
+	 * prior to doing the flushes and then invalidate the
+	 * the tlb entry that they just created.
+	 */
 	__flush_invalidate_dcache_page_alias(virt, phys);
 	__invalidate_icache_page_alias(virt, phys);
 }
 
-#endif
+#endif /* defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP) */
 
-#ifdef CONFIG_IGNORE_PAGE_ARCH_1_BIT
-int config_ignore_PG_arch_1 = 1;
-#else
-int config_ignore_PG_arch_1 = 0;
-#endif
 
 void
 update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
@@ -181,7 +265,7 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
 	invalidate_itlb_mapping(addr);
 	invalidate_dtlb_mapping(addr);
 
-#if (DCACHE_WAY_SIZE > PAGE_SIZE) && XCHAL_DCACHE_IS_WRITEBACK
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 
 	if (!PageReserved(page) && (config_ignore_PG_arch_1 || test_bit(PG_arch_1, &page->flags))) {
 
@@ -220,7 +304,7 @@ update_mmu_cache(struct vm_area_struct * vma, unsigned long addr, pte_t pte)
  * flush_dcache_page() on the page.
  */
 
-#if (DCACHE_WAY_SIZE > PAGE_SIZE) && XCHAL_DCACHE_IS_WRITEBACK
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 
 void copy_to_user_page(struct vm_area_struct *vma, struct page *page, 
 		unsigned long vaddr, void *dst, const void *src,

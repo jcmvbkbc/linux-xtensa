@@ -1,7 +1,11 @@
 #include <asm/variant/core.h>
+#include <asm/core.h>
 #include <asm/regs.h>
 #include <asm/asmmacro.h>
 #include <asm/cacheasm.h>
+
+	/* NOTE: Not currently update to work with MMU V3 */
+
 	/*
 	 * RB-Data: RedBoot data/bss
 	 * P:	    Boot-Parameters

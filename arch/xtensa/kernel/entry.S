@@ -7,10 +7,11 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2004 - 2008 by Tensilica Inc.
+ * Copyright (C) 2004 - 2009 by Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
  */
 
 #include <linux/linkage.h>
@@ -32,6 +33,12 @@
 #undef KERNEL_STACK_OVERFLOW_CHECK
 #undef PREEMPTIBLE_KERNEL
 #undef ALLOCA_EXCEPTION_IN_IRAM
+
+/*
+ * Define this to disable debugging in user space
+ * and allow single stepping with xt-gdb of this code.
+ */
+#undef DEBUG_ENTRY_CODE
 
 /*
  * Macro to find first bit set in WINDOWBASE from the left + 1
@@ -115,22 +122,32 @@ ENTRY(user_exception)
 	.globl _user_exception
 _user_exception:
 
+#ifdef DEBUG_ENTRY_CODE
+	/* 
+	 * Only save Shift Amount Register (SAR), skip saving and 
+`	 * restoring ICOUNT registers. Doing this allows xt-gdb to 
+	 * single step here but prevents gdb from working in user space.
+	 */
+	rsr	a3, SAR
+	s32i	a3, a1, PT_SAR
+#else
 	/* Save SAR and turn off single stepping */
-
 	movi	a2, 0
 	rsr	a3, SAR
 	xsr	a2, ICOUNTLEVEL
 	s32i	a3, a1, PT_SAR
 	s32i	a2, a1, PT_ICOUNTLEVEL
+#endif
 
-	/* Rotate ws so that the current windowbase is at bit0. */
-	/* Assume ws = xxwww1yyyy. Rotate ws right, so that a2 = yyyyxxwww1 */
-
+	/* 
+	 * Rotate ws so that the current windowbase is at bit0.
+	 * Assume ws = xxwww1yyyy. Rotate ws right, so that a2 = yyyyxxwww1 
+	 */
 	rsr	a2, WINDOWBASE
 	rsr	a3, WINDOWSTART
-	ssr	a2
-	s32i	a2, a1, PT_WINDOWBASE
-	s32i	a3, a1, PT_WINDOWSTART
+	ssr	a2			# Set Shift Amount Register (SAR)  = WINDOWBASE
+	s32i	a2, a1, PT_WINDOWBASE	# regs->pt_window_base = WINDOWBASE
+	s32i	a3, a1, PT_WINDOWSTART	# regs->pt_window_start = WINDOWSTART
 	slli	a2, a3, 32-WSBITS
 	src	a2, a3, a2
 	srli	a2, a2, 32-WSBITS
@@ -210,10 +227,10 @@ _user_exception:
 
 2:
 
-/*
- * Save the remaining special registers, switch to kernel mode, and jump
- * to the second-level exception handler.
- */
+	/*
+ 	 * Save the remaining special registers, switch to kernel mode, and jump
+ 	 * to the second-level exception handler.
+ 	 */
 
 	/* Save some registers, disable loops and clear the syscall flag. */
 
@@ -238,7 +255,8 @@ _user_exception:
 	s32i	a0, a1, PT_EXCCAUSE
 	s32i	a3, a2, EXC_TABLE_FIXUP
 
-	/* All unrecoverable states are saved on stack, now, and a1 is valid,
+	/* 
+	 * All unrecoverable states are saved on stack, now, and a1 is valid,
 	 * so we can allow exceptions and interrupts (*) again.
 	 * Set PS(EXCM = 0, UM = 0, RING = 0, OWB = 0, WOE = 1, INTLEVEL = X)
 	 *
@@ -282,13 +300,24 @@ _user_exception:
 
 	//movi	a4, exc_table
 	rsr	a4, EXCSAVE_1
-	mov	a6, a1			# pass stack frame
+	mov	a6, a1			# pass pt_regs which begins at the top of the stack.
 	mov	a7, a0			# pass EXCCAUSE
 	addx4	a4, a0, a4
 	l32i	a4, a4, EXC_TABLE_DEFAULT		# load handler
 
-	/* Call the second-level handler */
+	/* 
+	 * Restore registers in current frame so backtrace
+	 * correctly shows current state of the kernel function
+	 * causing the exception.
+	 */
+	l32i	a2, a1, PT_AREG2
+	l32i	a3, a1, PT_AREG3
 
+	/* 
+	 * Call the second-level handle:
+	 *                                                        r6      r7
+	 *                               *(ext_table[EXCCAUSE]) (regs, exc_cause)
+	 */
 	callx4	a4
 
 .Luser_exception_return:
@@ -364,8 +393,9 @@ user_exception_exit:
 	rotw	-1			# we restore a4..a7
 	_bltui	a6, 16, 1f		# only have to restore current window?
 
-	/* The working registers are a0 and a3.  We are restoring to
-	 * a4..a7.  Be careful not to destroy what we have just restored.
+	/* 
+	 * The working registers are a0 and a3.  We are restoring to a4...a7.
+	 * Be careful not to destroy what we have just restored.
 	 * Note: wmask has the format YYYYM:
 	 *       Y: number of registers saved in groups of 4
 	 *       M: 4 bit mask of first 16 registers
@@ -407,6 +437,14 @@ user_exception_exit:
 
 2:	j	common_exception_exit
 
+	.globl NullReturnAddressEntry
+	.globl NullReturnAddress
+
+ENTRY(NullReturnAddressEntry)			/* For gdb */
+	nop
+
+ENTRY(NullReturnAddress)			/* For dump_stack() */
+	j 	NullReturnAddress
 
 
 /*
@@ -450,27 +488,46 @@ ENTRY(kernel_exception)
 	.globl _kernel_exception
 _kernel_exception:
 
+#if DEBUG_ENTRY_CODE
+	/* 
+	 * Save SAR (Shift Amount Register) but skip saving 
+	 * ICOUNT registers.  Doing this break gdb in user 
+	 * space temporally but allows xt-gdb to single step 
+	 * through the code in this file.
+	 */
+	rsr	a3, SAR
+	s32i	a3, a1, PT_SAR
+#else
 	/* Save SAR and turn off single stepping */
-
 	movi	a2, 0
 	rsr	a3, SAR
 	xsr	a2, ICOUNTLEVEL
 	s32i	a3, a1, PT_SAR
 	s32i	a2, a1, PT_ICOUNTLEVEL
+#endif
+	/* 
+	 * Rotate ws so that the current windowbase is at bit0.
+	 * Assume ws = xxwww1yyyy. Rotate ws right, so that a2 = yyyyxxwww1 
+	 * 
+	 * We don't need to save WINDOWBASE and WINDOWSTART. We will
+	 * need shifted versions. We typically shift by 24, where
+	 * WSBITS = 8 for a system with 32 address registers.
+	 */
+	rsr	a2, WINDOWBASE		# a2 = WINDOWBASE
+	s32i	a2, a1, PT_WINDOWBASE
+	rsr	a3, WINDOWSTART		# a3 = WINDOWSTART
+	s32i	a3, a1, PT_WINDOWSTART
+	ssr	a2			# Shift Amount Register (SAR)  = WINDOWBASE & 0X1F
+	slli	a2, a3, 32-WSBITS	# a2 = a3:WINDOWSTART << 24
+	src	a2, a3, a2		# a2 = ((a2 << 32) | a3) >> SAR
+	srli	a2, a2, 32-WSBITS	# a2 = a2 >> 24
+	s32i	a2, a1, PT_WMASK	# save regs->pt_mask for kernel_exception_exit
 
-	/* Rotate ws so that the current windowbase is at bit0. */
-	/* Assume ws = xxwww1yyyy. Rotate ws right, so that a2 = yyyyxxwww1 */
-
-	rsr	a2, WINDOWBASE		# don't need to save these, we only
-	rsr	a3, WINDOWSTART		# need shifted windowstart: windowmask
-	ssr	a2
-	slli	a2, a3, 32-WSBITS
-	src	a2, a3, a2
-	srli	a2, a2, 32-WSBITS
-	s32i	a2, a1, PT_WMASK	# needed for kernel_exception_exit
-
-	/* Save only the live window-frame */
-
+	/* 
+	 * Save only the live window-frame.
+	 * Note that these are saved at 48 + PT_SIZE from the original stack pointer.
+	 * Making space for the maximum call size we might use (call12).
+	 */
 	_bbsi.l	a2, 1, 1f
 	s32i	a4, a1, PT_AREG4
 	s32i	a5, a1, PT_AREG5
@@ -535,38 +592,91 @@ _kernel_exception:
 	/* FIXME: technically, here we should set PS.INTLEVEL = max(PS.INTLEVEL, EXCM_LEVEL)
 	 *	to properly handle exceptions occurring when PS.INTLEVEL > EXCM_LEVEL;
 	 *	for now, that's not expected (OR IS IT, for debug exceptions?),
-	 *	but that might change later:  */
+	 *	but that might change later:  
+	 */
 	movi	a2, 0x50000+XCHAL_EXCM_LEVEL	# WOE=1, CALLINC=1, INTLEVEL=EXCM_LEVEL
 	rsr	a3, EPC_1		# must read this *before* window overflows
 	l32i	a0, a1, PT_AREG0	# restore a0
-	xsr	a2, PS			# read and set PS
+	xsr	a2, PS			# read and set PS = {WOE=1, CALLINC=1, INTLEVEL=EXCM_LEVEL}
 	s32i	a3, a1, PT_PC		# save exception PC
-	s32i	a2, a1, PT_PS		# save PS
-	l32i	a1, a1, PT_AREG1	# restore a1 (a1 += 16+PT_SIZE)
+	s32i	a2, a1, PT_PS		# save original PS in ptregs->ps
+
+	l32i	a2, a1, PT_AREG2	# restore a2 
+	l32i	a3, a1, PT_AREG3	# restore a3
+	l32i	a1, a1, PT_AREG1	# restore a1 (a1 += 48+PT_SIZE)
 	rsync				# wait for PS update to complete
 
-	/* We can now start using a4 .. a15, overflows will happen as needed. */
+	/* 
+	 * We can now start using a4 .. a15, overflows will happen as needed.
+	 * We need to stop using a0 ... a3 to preserve spilled values on the stack;
+ 	 * so we stop using them from now on. We will use a temp sp and fetch
+	 * the execption PC from the stack so as to preserve correct state in
+	 * the back trace.
+	 *
+	 * We are now about to make it look as if a call4 came from the exception PC,
+	 * So we need to or 0X40000 with EPC & 0x3ffffff. This algorithm saves
+	 * an instruction...
+	 *
+	 *	1 1 x x | x x x x | x x x x | x x x x		r3: EPC | 0XC0000000
+	 *      1 0 0 0   0 0 0 0   0 0 0 0   0 0 0 0		0xc0000 << 1
+	 *      --------------------------------------
+	 *      0 1 x x   x x x x   x x x x   x x x x   
+	 *      
+	 */
+	addi    a7, a1, -(PT_SIZE+48)   # create a temporary stack pointer for just this calc in a7
+	l32i	a6, a7, PT_PC		# r6 = exception PC
+	movi	a4, 0x3FFFFFFF
+	and	a4, a4, a6		# And off hight order two bits
+	bnez	a4, 1f
+	movi	a6, NullReturnAddress	# gdb stops backtrace if it hits a zero return address
+1:	movi	a4, 0xC0000000		# For return PC+WinInc computation...
+	or	a6, a4, a6		# Set upper two bits of exception frame return PC in a6
+	addx2	a4, a4, a6		# a4 = (a4 << 1) + a6 clear upper bit
+					# After a call4 it's expected that the return address is in a4.
 
-	movi	a4, 0xC0000000		# [for debug] for return PC computation below
-	or	a3, a4, a3		# [for debug] set upper two bits of return PC
-	addx2	a4, a4, a3		# [for debug] clear upper bit
-
+#
+#	The _entry below will rotate window with:
+#		a0 ... a3 	being out of the window and now
+#				not being potentially spilled out (Ex: during an interrupt below)
+#
+#		a4 	becomming a0		# restored above from EPC & WinInc
+#		new sp 	becomming a1
+#		a6 	becomming a2
+#		a7 	becomming a3
+#
+#	There is a problem in some hardware releases where it's
+#	necessary for a4 to be active before this instuction
+#	occures. This was considered a feature by some HW designers.
+#
+#	The underscoer prefix '_' in '_entry prevents the assembled from
+#	automatically aligning the ENTRY instruction on a 4-byte boundry.
+#	which in this case would create a fatal gap in the instruction stream.
+#
 #       .global general_exception	# this label ...
+#
 .Lgeneral_exception:			# makes tracebacks through exceptions look nicer
-	_entry  a1, 16 + PT_SIZE	# rotate per a CALL4 (PS.CALLINC set to 1 above)
+	_entry  a1, 48 + PT_SIZE	# rotate per a CALL4 (PS.CALLINC set to 1 above).
+					# Leaving space on the stack for subsequent call12.
 
 	/* If an exception (not level-one interrupt), keep PS.INTLEVEL: */
 
 	l32i	a2, a1, PT_EXCCAUSE
-	l32i	a3, a1, PT_PS
+	l32i	a3, a1, PT_PS		# a3 = ptregs->ps = orig_PS
 	_beqi	a2, EXCCAUSE_LEVEL1_INTERRUPT, 1f
-	rsr	a2, PS
-	xor	a3, a3, a2
-	extui	a3, a3, 0, 4
-	xor	a2, a2, a3		# ps.intlevel ^ ps.intlevel ^ orig.intlevel == orig
-	wsr	a2, PS
+
+	/* 
+	 * EXCCAUSE == Level-one interrupt; set PS.INTLEVEL = orig.PS.intlevel
+	 *
+	 *  	ps.intlevel ^ ps.intlevel ^ orig_ps.intlevel == orig_PS
+	 */
+	rsr	a2, PS			# a2 = PS
+	xor	a3, a3, a2		# a3 = a3:orig_ps ^ a2:PS
+	extui	a3, a3, 0, 4		# a3 = a3 & 0xF = orig_ps.intlevel ^ ps.intlevel
+	xor	a2, a2, a3		# a2 = a3:(orig_ps.intlevel ^ ps.intlevel) ^ a2:ps.intlevel
+	wsr	a2, PS			# restore orig_ps.intlevel
 	rsync
 1:
+	mov	a11,a3			# Save PS for after return.
 
 	/* Save LBEG, LEND */
 
@@ -595,11 +705,46 @@ _kernel_exception:
 	rsr	a4, EXCSAVE_1
 	mov	a6, a1			# pass stack frame
 	addx4	a4, a7, a4
-	l32i	a4, a4, EXC_TABLE_DEFAULT		# load handler
+	l32i	a4, a4, EXC_TABLE_DEFAULT # load handler
 
-	/* Call the second-level handler */
+	mov	a6, a4			# avoide doing a spill till we restore a2 ... a5
 
-	callx4	a4
+#if 1 || defined(CONFIG_DEBUG_KERNEL)
+	/* 
+	 * Restore registers to values at the
+	 * the time of the exception other than:
+	 *    a0, a1, a2. a3: 		Set up when we did our _entry
+	 *    a12, a13, a14, a15: 	Weren't available to function experencing the trap.
+	 *
+	 * We are on a relatively slow path where the cost of saving
+	 * a dozen registers is likely rather small compared to the
+	 * cost of having more complex environment to consider when
+	 * fixing bugs.
+	 */
+        l32i    a2,  a1, PT_AREG6
+        l32i    a3,  a1, PT_AREG7
+        l32i    a4,  a1, PT_AREG8
+        l32i    a5,  a1, PT_AREG9
+
+	mov	a12, a6			# Ok to spill a2 ... a5
+        l32i    a6,  a1, PT_AREG10
+        l32i    a7,  a1, PT_AREG11
+        l32i    a8,  a1, PT_AREG12
+        l32i    a9,  a1, PT_AREG13
+        l32i    a10, a1, PT_AREG14
+        l32i    a11, a1, PT_AREG15
+#endif 
+
+	l32i    a15, a1, PT_EXCCAUSE     # pass EXCCAUSE
+	mov     a14, a1                  # pass stack frame
+
+	/*
+	 * Call the second-level exception handler from exc_table[EXCCAUSE]:
+	 *
+	 * 							   r14    r15
+	 *				  (exc_table[exc_cause]) (regs, exc_cause)
+	 */
+	callx12	a12
 
 .Lkernel_exception_return:
 
@@ -614,12 +759,15 @@ _kernel_exception:
 	wsr	a2, SCOMPARE1
 #endif
 
-	l32i	a3, a1, PT_PS
-	movi	a0, 1f + (0x40000000 - 0xC0000000)
+	l32i	a3, a1, PT_PS				# a3 = ptregs->ps [NOTE: Used below after retw]
+	movi	a0, 1f + (0x40000000 - 0xC0000000)	# Calculate Return address for "1f" and store in a0
 	rsil	a2, XCHAL_EXCM_LEVEL	# FIXME: again, only do this if PS.INTLEVEL <= EXCM_LEVEL
 	retw				# rotate back by 4 registers, possibly with underflow
-1:	mov	a1, a5			# a1 became a5, bring it back
-	mov	a3, a7			# a3 became a7, bring it back also
+					# Back out our _entry Frame above...
+
+					# ... We return here from above retw.
+1:	mov	a1, a5			# our a1 became a5 at the above _entry, a1 = a5
+	mov	a3, a7			# our a3 became a7 at the above _entry, a3 = a7
 
 	wsr	a3, PS			# restore PS (interrupts disabled, EXCM set, etc)
 	rsync
@@ -724,12 +872,20 @@ common_exception_exit:
 	wsr	a3, LEND
 	wsr	a2, LCOUNT
 
-	/* We control single stepping through the ICOUNTLEVEL register. */
-
+#ifndef DEBUG_ENTRY_CODE
+	/* 
+	 * We maintain single stepping with gdbthrough the ICOUNT registers.
+	 *
+	 * NOTE:
+	 *   You may want to skip doing this while debugging this file with xt-gdb.
+	 *   That prevent gdb from working in user space but allows you
+	 *   to single step thru this code.
+	 */
 	l32i	a2, a1, PT_ICOUNTLEVEL
 	movi	a3, -2
 	wsr	a2, ICOUNTLEVEL
 	wsr	a3, ICOUNT
+#endif
 
 	/* Check if it was double exception. */
 
@@ -1382,8 +1538,8 @@ fast_syscall_spill_registers_fixup_return:
  *  - must be called with call0.
  *  - uses a3, a4 and SAR.
  *  - the last 'valid' register of each frame is clobbered.
- *  - the caller must have registered a fixup handler
- *    (or be inside a critical section)
+ *  - the caller must have registered a fixup handler,
+ *        or indicated that it's curently inside a critical section.
  *  - PS_EXCM must be set (PS_WOE cleared?)
  */
 
@@ -2035,9 +2191,9 @@ ENTRY(_switch_to)
 
 	rsr	a3, EXCSAVE_1		# exc_table
 	movi	a6, 0
-	addi	a7, a5, PT_REGS_OFFSET
+	addi	a7, a5, PT_REGS_OFFSET	# a7 = ti->(KERNEL_STACK_SIZE - PT_USER_SIZE)
 	s32i	a6, a3, EXC_TABLE_FIXUP
-	s32i	a7, a3, EXC_TABLE_KSTK
+	s32i	a7, a3, EXC_TABLE_KSTK	# Store Initial Stack pointer used when comming from user space
 
 	/* restore context of the task that 'next' addresses */
 
@@ -2053,10 +2209,20 @@ ENTRY(_switch_to)
 	retw
 
 
+	/*
+	 *  We get here (from the retw in _switch_to above) for a newly created
+	 *  task (see copy_thread() in process.c) with:
+	 *	a0 == 0
+	 *	a1 == (pt_regs*)
+	 *	a2..a5 == undefined
+	 *	a6 == prev task (got here from fake call4 frame; see also _switch_to)
+	 *	a7..a15 == undefined
+	 *	no caller window is active (only one bit set in windowbase).
+	 */
 ENTRY(ret_from_fork)
 
 	/* void schedule_tail (struct task_struct *prev)
-	 * Note: prev is still in a6 (return value from fake call4 frame)
+	 * Note: a6 == prev task
 	 */
 	movi	a4, schedule_tail
 	callx4	a4
@@ -2065,10 +2231,26 @@ ENTRY(ret_from_fork)
 	mov	a6, a1
 	callx4	a4
 
-	/* Jump to user or kernel exception return sequence as appropriate. */
+	/* 
+	 * Jump to user or kernel exception return sequence as appropriate. 
+	 * We could leave an extra frame on the stack below. On the next entry
+	 * into the kernel we will always start with a fresh stack.
+	 */
+	l32i    a3, a1, PT_PS
+        _bbsi.l a3, PS_UM_BIT, 2f
 
-	# addi	a1, a1, 16		/* hoaky, think it's okay ?? */
+	/* 
+	 * For kernel exception return we add a stack frame that 
+	 * will be removed after restoreing optional registers.
+	 * copy_thread() didn't leave an extra frame on the stack.
+	 */
+	rsil	a7, LOCKLEVEL		/* disable ints while setting hoaky stack ptr */
+	rsync
+	addi	a1, a1, 16		/* funky stack ptr, != next frame to help backtrace */
 	call4	1f
-1:	_entry	a1, 0	# 16...
-	j	common_exception_return
+1:	_entry	a1, 16
+	wsr	a3, PS			/* restore ints; a7 became a3 */
+	rsync				/* Might be safer to do this before restoreing registers */
+2:
+	j	common_exception_return	/* (rsync occurs after this label) */
 

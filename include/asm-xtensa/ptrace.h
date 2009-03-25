@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2008 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_PTRACE_H
@@ -164,6 +164,7 @@ struct pt_regs {
 #define REG_GDB_ORIG_AREG2  0x1
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 # define task_pt_regs(tsk) ((struct pt_regs*) \
   (task_stack_page(tsk) + KERNEL_STACK_SIZE - (XCHAL_NUM_AREGS-16)*4) - 1)

@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Copyright (C) 2001 - 2007 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_PGTABLE_H
@@ -61,14 +61,33 @@
 #define FIRST_USER_PGD_NR	(FIRST_USER_ADDRESS >> PGDIR_SHIFT)
 
 /*
- * Virtual memory area. We keep a distance to other memory regions to be
+ * Kernel's Virtual memory area. We keep a distance to other memory regions to be
  * on the safe side. See also fixmap.h
  */
 
 #define VMALLOC_START		0xC0000000
 #define VMALLOC_END		0xC7FEFFFF
+
+#if DCACHE_WAY_SIZE > ICACHE_WAY_SIZE
+ #define MAX_CACHE_WAY_SIZE 	DCACHE_WAY_SIZE
+ #define MAX_CACHE_WAY_SHIFT	DCACHE_WAY_SHIFT
+#else
+ #define MAX_CACHE_WAY_SIZE     ICACHE_WAY_SIZE
+ #define MAX_CACHE_WAY_SHIFT    ICACHE_WAY_SHIFT
+#endif
+
+#if 0
+#define TLBTEMP_BASE_1		0xC7FF0000
+#define TLBTEMP_BASE_2		(TLBTEMP_BASE_1 + MAX_CACHE_WAY_SIZE)
+#define TLBTEMP_BASE_END	(TLBTEMP_BASE_2 + MAX_CACHE_WAY_SIZE)
+
+#else
 #define TLBTEMP_BASE_1		0xC7FF0000
 #define TLBTEMP_BASE_2		0xC7FF8000
+#define TLBTEMP_BASE_END	0xC8000000
+#endif
+
+
 
 /*
  * Xtensa Linux config PTE layout (when present):
@@ -76,6 +95,9 @@
  *	11-6:	Software
  *	5-4:	RING
  *	3-0:	CA
+ *
+ * A pte is considered to be 'present' if it's valid, not swapped out
+ * and the protection bits are meaningful.
  *
  * Similar to the Alpha and MIPS ports, we need to keep track of the ref
  * and mod bits in software.  We have a software "you can read
@@ -100,19 +122,27 @@
 #define _PAGE_CA_MASK		(3<<2)
 #define _PAGE_INVALID		(3<<2)
 
-#define _PAGE_USER		(1<<4)	/* user access (ring=1) */
+#define _PAGE_KERNEL		(0<<4)	/* user access (ring = 1) */
+#define _PAGE_USER		(1<<4)	/* user access (ring = 1) */
+#define _PAGE_RING_MASK		(3<<4)	/* access bits (ring = 0||1||2||3) */
 
-/* Software */
+/* Software - bits 6 7 .  8 9 10 11*/
 #define _PAGE_WRITABLE_BIT	6
 #define _PAGE_WRITABLE		(1<<6)	/* software: page writable */
 #define _PAGE_DIRTY		(1<<7)	/* software: page dirty */
 #define _PAGE_ACCESSED		(1<<8)	/* software: page accessed (read) */
+#define _PAGE_SOFTWARE_MASK	(0x3F<<6)
 
-/* On older HW revisions, we always have to set bit 0 */
+/* 
+ * On older HW revisions, MMU V1, we always have to 
+ * set bit 0 to indicate a valid PTE 
+ */
 #if XCHAL_HW_VERSION_MAJOR < 2000
 # define _PAGE_VALID		(1<<0)
+# define MMU_V1 1
 #else
 # define _PAGE_VALID		0
+# define MMU_V1 0
 #endif
 
 #define _PAGE_CHG_MASK	(PAGE_MASK | _PAGE_ACCESSED | _PAGE_DIRTY)
@@ -131,7 +161,7 @@
 #define PAGE_KERNEL	   __pgprot(_PAGE_PRESENT | _PAGE_HW_WRITE)
 #define PAGE_KERNEL_EXEC   __pgprot(_PAGE_PRESENT|_PAGE_HW_WRITE|_PAGE_HW_EXEC)
 
-#if (DCACHE_WAY_SIZE > PAGE_SIZE)
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 # define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_BYPASS)
 #else
 # define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_WB)
@@ -192,25 +222,52 @@ extern pgd_t swapper_pg_dir[PAGE_SIZE/sizeof(pgd_t)];
 #define pmd_page(pmd) virt_to_page(pmd_val(pmd))
 
 /*
- * pte status.
+ * pte_none() returns true if page has no mapping at all.
+ * Makes sure the other fields of the pte are NULL:
+ *	(pte & _PAGE_MASK) == 0
+ *	(pte & _RING_MASK) == 0
+ *	(pte && _PAGE_SOFTWARE_MASK) == 0
  */
-#define pte_none(pte)	 (pte_val(pte) == _PAGE_INVALID)
-#define pte_present(pte)						\
-	(((pte_val(pte) & _PAGE_CA_MASK) != _PAGE_INVALID)		\
-	 || ((pte_val(pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE))
-#define pte_clear(mm,addr,ptep)						\
-	do { update_pte(ptep, __pte(_PAGE_INVALID)); } while(0)
+#define pte_none(pte)	 (pte_val(pte) == (_PAGE_INVALID | _PAGE_USER) )
+
+/*
+ * pte_present() returns true if the pte_pfn(pte) and protection bits are valid.
+ */
+#if MMU_V1
+#define pte_present(pte) (((pte_val(pte) & _PAGE_CA_MASK) != _PAGE_INVALID)	\
+	               || ((pte_val(pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE))
+#else
+#define pte_present(pte) ((pte_val(pte) & _PAGE_CA_MASK) != _PAGE_INVALID)
+#endif
+
+/*
+ * Set the pte to be pte_none; pte has no mapping
+ */
+#define pte_clear(mm, addr, ptep)                                               \
+	do {                                                                    \
+		if (mm != NULL)							\
+			update_pte(ptep, __pte(_PAGE_INVALID | _PAGE_USER));    \
+		else                                                            \
+			update_pte(ptep, __pte(_PAGE_INVALID | _PAGE_USER));    \
+	} while(0)                                                              \
 
 #define pmd_none(pmd)	 (!pmd_val(pmd))
 #define pmd_present(pmd) (pmd_val(pmd) & PAGE_MASK)
 #define pmd_bad(pmd)	 (pmd_val(pmd) & ~PAGE_MASK)
 #define pmd_clear(pmdp)	 do { set_pmd(pmdp, __pmd(0)); } while (0)
 
+/*
+ * These functions are only valid if pte_present() IS true.
+ */
 static inline int pte_write(pte_t pte) { return pte_val(pte) & _PAGE_WRITABLE; }
 static inline int pte_dirty(pte_t pte) { return pte_val(pte) & _PAGE_DIRTY; }
 static inline int pte_young(pte_t pte) { return pte_val(pte) & _PAGE_ACCESSED; }
-static inline int pte_file(pte_t pte)  { return pte_val(pte) & _PAGE_FILE; }
 static inline int pte_special(pte_t pte) { return 0; }
+
+/*
+ * This macro is only valid if pte_present() is NOT true.
+ */
+static inline int pte_file(pte_t pte)  { return pte_val(pte) & _PAGE_FILE; }
 
 static inline pte_t pte_wrprotect(pte_t pte)	
 	{ pte_val(pte) &= ~(_PAGE_WRITABLE | _PAGE_HW_WRITE); return pte; }
@@ -251,7 +308,15 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 static inline void update_pte(pte_t *ptep, pte_t pteval)
 {
 	*ptep = pteval;
-#if (DCACHE_WAY_SIZE > PAGE_SIZE) && XCHAL_DCACHE_IS_WRITEBACK
+
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
+	/* 
+	 * Use a "Data Cache Hit Writeback Invalidate" to force this pte to memory.
+	 * Invalidating to make sure we always use what's in physical memory.
+	 * REMIND:
+	 *    This is in Chris's code that Joe checked in but NOT in
+	 *    Chris's linux-next repo.
+	 */
 	__asm__ __volatile__ ("dhwb %0, 0" :: "a" (ptep));
 #endif
 
@@ -270,6 +335,14 @@ static inline void
 set_pmd(pmd_t *pmdp, pmd_t pmdval)
 {
 	*pmdp = pmdval;
+
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
+	/* 
+	 * Use a "Data Cache Hit Writeback Invalidate" to force this pmd to memory.
+	 * Invalidating to make sure we always use what's in physical memory.
+	 */
+	__asm__ __volatile__ ("dhwb %0, 0" :: "a" (pmdp));
+#endif
 }
 
 struct vm_area_struct;
@@ -348,6 +421,9 @@ ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
 
+/*
+ * The following only work if pte_present() is not true.
+ */
 #define PTE_FILE_MAX_BITS	28
 #define pte_to_pgoff(pte)	(pte_val(pte) >> 4)
 #define pgoff_to_pte(off)	\
@@ -372,6 +448,9 @@ ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 #define _PGD_INDEX(rt,rs)	extui	rt, rs, PGDIR_SHIFT, 32-PGDIR_SHIFT
 #define _PTE_INDEX(rt,rs)	extui	rt, rs, PAGE_SHIFT, PTRS_PER_PTE_SHIFT
 
+/*
+ * Returns &pgd_entry in mm
+ */
 #define _PGD_OFFSET(mm,adr,tmp)		l32i	mm, mm, MM_PGD;		\
 					_PGD_INDEX(tmp, adr);		\
 					addx4	mm, tmp, mm
@@ -391,6 +470,15 @@ extern  void update_mmu_cache(struct vm_area_struct * vma,
 			      unsigned long address, pte_t pte);
 
 /*
+ * Mark the prot value as bypass with Write and Exec attributes/permissions.
+ *
+ * Added to mmap() KIO region which also maps it for the kernel
+ * via static way 6.
+ */
+#define pgprot_noncached(prot)  __pgprot( (pgprot_val(prot) & ~(_PAGE_CA_WB)) |            \
+					  (_PAGE_CA_BYPASS|_PAGE_HW_WRITE|_PAGE_HW_EXEC))
+
+/*
  * remap a physical page `pfn' of size `size' with page protection `prot'
  * into virtual address `from'
  */
@@ -403,8 +491,22 @@ extern void pgtable_cache_init(void);
 
 typedef pte_t *pte_addr_t;
 
+/*  
+ * __HAVE_ARCH_ENTER_LAZY_MMU_MODE:
+ * These virtualization hooks might be handy for TLB/CACHE testing.
+ */
+#if 0
+#define arch_enter_lazy_mmu_mode()      {local_flush_tlb_all(); __flush_invalidate_dcache_all(); __invalidate_icache_all(); invalidate_page_directory(); }
+#define arch_leave_lazy_mmu_mode()      {local_flush_tlb_all(); __flush_invalidate_dcache_all(); __invalidate_icache_all(); invalidate_page_directory(); }
+#else
+#define arch_enter_lazy_mmu_mode()	do {} while (0)
+#define arch_leave_lazy_mmu_mode()	do {} while (0)
+#define arch_flush_lazy_mmu_mode()      do {} while (0)
+#endif /* 0 */
+
 #endif /* !defined (__ASSEMBLY__) */
 
+#define __HAVE_ARCH_ENTER_LAZY_MMU_MODE			/* Have arch_*_lazy_mmu_mode() */
 #define __HAVE_ARCH_PTEP_TEST_AND_CLEAR_YOUNG
 #define __HAVE_ARCH_PTEP_GET_AND_CLEAR
 #define __HAVE_ARCH_PTEP_SET_WRPROTECT

@@ -7,11 +7,12 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  *
  * Chris Zankel	<chris@zankel.net>
  * Joe Taylor	<joe@tensilica.com>
  * Marc Gauthier <marc@tensilica.com>
+ * Piet Delaney <piet@tensilica.com>
  * Kevin Chea
  */
 
@@ -31,6 +32,16 @@
 #include <asm/page.h>
 #include <asm/pgalloc.h>
 #include <asm/setup.h>
+
+#if 0
+int tlbtemp_base_1 = TLBTEMP_BASE_1;
+int tlbtemp_base_2 = TLBTEMP_BASE_2;
+int tlbtemp_base_end = TLBTEMP_BASE_END;
+int dcache_way_size = DCACHE_WAY_SIZE;
+int icache_way_size = ICACHE_WAY_SIZE;
+int max_cache_way_size = MAX_CACHE_WAY_SIZE;
+int max_cache_way_shift = MAX_CACHE_WAY_SHIFT;
+#endif
 
 
 DEFINE_PER_CPU(struct mmu_gather, mmu_gathers);
@@ -187,20 +198,64 @@ void __init paging_init(void)
 
 void __init init_mmu (void)
 {
-	/* Writing zeros to the <t>TLBCFG special registers ensure
-	 * that valid values exist in the register.  For existing
-	 * PGSZID<w> fields, zero selects the first element of the
-	 * page-size array.  For nonexistent PGSZID<w> fields, zero is
-	 * the best value to write.  Also, when changing PGSZID<w>
+
+#if XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
+	/* 
+	 * We have a V3 MMU, the TLB was initialized with  virtual == physical 
+	 * mappings on a hardware reset. This was done by the hardware by 
+	 * presetting idenity mapping in Way 6:
+	 *
+         *  vaddr=0x00000000 asid=0x01  paddr=0x00000000  ca=3  ITLB way 6 (512 MB)
+         *  vaddr=0x20000000 asid=0x01  paddr=0x20000000  ca=3  ITLB way 6 (512 MB)
+         *  vaddr=0x40000000 asid=0x01  paddr=0x40000000  ca=3  ITLB way 6 (512 MB)
+         *  vaddr=0x60000000 asid=0x01  paddr=0x60000000  ca=3  ITLB way 6 (512 MB)
+         *  vaddr=0x80000000 asid=0x01  paddr=0x80000000  ca=3  ITLB way 6 (512 MB)
+         *  vaddr=0xa0000000 asid=0x01  paddr=0xa0000000  ca=3  ITLB way 6 (512 MB)
+         *  vaddr=0xc0000000 asid=0x01  paddr=0xc0000000  ca=3  ITLB way 6 (512 MB)
+         *  vaddr=0xe0000000 asid=0x01  paddr=0xe0000000  ca=4  ITLB way 6 (512 MB)
+	 * 
+	 * The reset vector code remapped KSEG (0xD000000) to map physical memory 
+	 * in way 5 and changed the page size to in way 6 to 256 MB by setting the 
+	 * TLB config register, It removed the (virtual == physical) mappings
+	 * by setting the ASID fields to zero in way 6 and set up the KIO mappings;
+	 * Un-Cached at 0xF0000000 and Cached at 0xE000000.
+	 *
+	 * Way 5
+	 *   vaddr=0x40000000 asid=0x00  paddr=0xf8000000  ca=3  ITLB way 5 (128 MB)
+	 *   vaddr=0x08000000 asid=0x00  paddr=0x00000000  ca=0  ITLB way 5 (128 MB)
+	 *   vaddr=0xd0000000 asid=0x01  paddr=0x00000000  ca=7  ITLB way 5 (128 MB)
+	 *   vaddr=0xd8000000 asid=0x01  paddr=0x00000000  ca=3  ITLB way 5 (128 MB)
+	 *
+	 * Way 6
+	 *   vaddr=0x00000000 asid=0x00  paddr=0x00000000  ca=3  ITLB way 6 (256 MB)
+	 *   vaddr=0x10000000 asid=0x00  paddr=0x20000000  ca=3  ITLB way 6 (256 MB)
+	 *   vaddr=0x20000000 asid=0x00  paddr=0x40000000  ca=3  ITLB way 6 (256 MB)
+	 *   vaddr=0x30000000 asid=0x00  paddr=0x60000000  ca=3  ITLB way 6 (256 MB)
+	 *   vaddr=0x40000000 asid=0x00  paddr=0x80000000  ca=3  ITLB way 6 (256 MB)
+	 *   vaddr=0x50000000 asid=0x00  paddr=0xa0000000  ca=3  ITLB way 6 (256 MB)
+	 *   vaddr=0xe0000000 asid=0x01  paddr=0xf0000000  ca=7  ITLB way 6 (256 MB)
+	 *   vaddr=0xf0000000 asid=0x01  paddr=0xf0000000  ca=3  ITLB way 6 (256 MB)
+	 * 
+	 *   See arch/xtensa/boot/boot-elf/bootstrap for details.
+	 */
+#else
+	/* 
+	 * Writing zeros to the instruction and data TLBCFG special 
+	 * registers ensure that valid values exist in the register.  
+	 *
+	 * For existing PGSZID<w> fields, zero selects the first element 
+	 * of the page-size array.  For nonexistent PGSZID<w> fields, 
+	 * zero is the best value to write.  Also, when changing PGSZID<w>
 	 * fields, the corresponding TLB must be flushed.
 	 */
 	set_itlbcfg_register (0);
 	set_dtlbcfg_register (0);
-	local_flush_tlb_all ();
+#endif
+	local_flush_tlb_all ();		/* Flush the Auto-Refill TLB Ways (0...3) */
 
 	/* Set rasid register to a known value. */
 
-	set_rasid_register (ASID_USER_FIRST);
+	set_rasid_register (ASID_INSERT(ASID_USER_FIRST));
 
 	/* Set PTEVADDR special register to the start of the page
 	 * table, which is in kernel mappable space (ie. not
@@ -276,9 +331,14 @@ void free_initrd_mem(unsigned long start, unsigned long end)
 
 void free_initmem(void)
 {
+#if 1
 	free_reserved_mem(&__init_begin, &__init_end);
 	printk("Freeing unused kernel memory: %dk freed\n",
 	       (&__init_end - &__init_begin) >> 10);
+#else
+	printk("SKIPPED Freeing unused kernel memory: %dk freed\n",
+	       (&__init_end - &__init_begin) >> 10);
+#endif
 }
 
 struct kmem_cache *pgtable_cache __read_mostly;

@@ -1,0 +1,20 @@
+xt-gdbinit:		
+	A sample .xt-gdbint file, illustrated placeing breakpoints in 
+	after V3 MMU remapping.
+
+ps.gdb:			
+	An enhanced 'ps' macro can also display task back-traces 
+	(similar to kdump btt macro).
+
+showcache.gdb:		
+	Used to dump the contents of a CPU's Instruction and Data caches.
+
+show_mem_pte.gdb:	
+	Used to print task's PTE information associtates with a 
+	virtual address.
+
+	Also defines macro get_current to get the current task pointer.
+
+showtlb.gdb:		
+	Used to show the contents to a CPU's Translation Lookaside Buffer.
+

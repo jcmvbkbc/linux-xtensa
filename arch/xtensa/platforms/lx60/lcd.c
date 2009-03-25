@@ -33,7 +33,7 @@
 #define LCD_SHIFT_LEFT		0x18
 #define LCD_SHIFT_RIGHT		0x1c
 
-void lcd_init(void)
+static int __init lcd_init(void)
 {
 	*LCD_INSTR_ADDR = LCD_DISPLAY_MODE8BIT;
 	mdelay(5);
@@ -46,6 +46,8 @@ void lcd_init(void)
 	*LCD_INSTR_ADDR = LCD_CLEAR;
 	mdelay(10);
 	lcd_disp_at_pos("XTENSA LINUX", 0);
+
+	return 0;
 }
 
 void lcd_disp_at_pos (char *str, unsigned char pos)

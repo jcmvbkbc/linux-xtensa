@@ -92,7 +92,7 @@ int main(void)
 	DEFINE(MM_PGD, offsetof (struct mm_struct, pgd));
 
 	/* struct page */
-	DEFINE(PAGE_FLAGS, offsetof(struct page, flags));
+	DEFINE(PAGE_STRUCT_FLAGS, offsetof(struct page, flags));
 
 	/* constants */
 	DEFINE(_CLONE_VM, CLONE_VM);

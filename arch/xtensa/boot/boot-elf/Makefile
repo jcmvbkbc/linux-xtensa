@@ -1,7 +1,16 @@
 #
+# arch/xtensa/boot/boot-elf/Makefile
+#
 # This file is subject to the terms and conditions of the GNU General Public
 # License.  See the file "COPYING" in the main directory of this archive
 # for more details.
+#
+# Copyright (C) 2001 - 2009  Tensilica Inc.
+#
+#  Bob Wilson <bob.wilson@acm.org>
+#  Chris Zankel <chris@zankel.net>
+#  Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
+#  Piet Delaney <piet@tensilica.com>
 #
 
 GZIP = gzip
@@ -15,6 +24,8 @@ endif
 
 export OBJCOPY_ARGS
 export CPPFLAGS_boot.lds += -P -C
+export KBUILD_CFLAGS += -g3
+export KBUILD_AFLAGS += -mtext-section-literals -dwarf3 
 
 boot-y		:= bootstrap.o
 

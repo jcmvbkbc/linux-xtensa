@@ -8,10 +8,11 @@
  *  Public License.  See the file "COPYING" in the main directory of
  *  this archive for more details.
  *
- *  Copyright (C) 2002 Tensilica Inc.
+ *  Copyright (C) 2009 Tensilica Inc.
  */
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 /*
  * void *memset(void *dst, int c, size_t length)

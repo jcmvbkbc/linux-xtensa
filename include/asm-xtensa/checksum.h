@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_CHECKSUM_H
@@ -13,6 +13,7 @@
 
 #include <linux/in6.h>
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 /*
  * computes the checksum of a memory block at buff, length len,
@@ -85,7 +86,7 @@ static __inline__ __sum16 csum_fold(__wsum sum)
  *	This is a version of ip_compute_csum() optimized for IP headers,
  *	which always checksum on 4 octet boundaries.
  */
-static __inline__ __sum16 ip_fast_csum(const void *iph, unsigned int ihl)
+static __inline__ __sum16 ip_fast_csum(const char *iph, unsigned int ihl)
 {
 	unsigned int sum, tmp, endaddr;
 
@@ -109,11 +110,19 @@ static __inline__ __sum16 ip_fast_csum(const void *iph, unsigned int ihl)
 		"blt		%1, %4, 0b\n\t"
 #endif
 		"2:\t"
-	/* Since the input registers which are loaded with iph and ihl
-	   are modified, we must also specify them as outputs, or gcc
-	   will assume they contain their original values. */
+	/* 
+	 * Since the input registers which are loaded with iph and ihl
+	 * are modified, we must also specify them as outputs, or gcc
+	 * will assume they contain their original values. 
+	 *
+	 * We indicate that the macro is reading memory at *iph with "m"
+	 * to avoid a problem with compiler optimization. To play it safe
+	 * we indicate "memory" in the third field which is the list of
+	 * clobbered registers.
+	 */
 		: "=r" (sum), "=r" (iph), "=r" (ihl), "=&r" (tmp), "=&r" (endaddr)
-		: "1" (iph), "2" (ihl));
+		: "1" (iph), "2" (ihl), "m" (*iph)
+		: "memory" );
 
 	return	csum_fold(sum);
 }

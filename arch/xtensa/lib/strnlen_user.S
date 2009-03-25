@@ -8,10 +8,11 @@
  *  Returns strnlen, including trailing zero terminator.
  *  Zero indicates error.
  *
- *  Copyright (C) 2002 Tensilica Inc.
+ *  Copyright (C) 2002 - 2009 Tensilica Inc.
  */
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 /* Load or store instructions that may cause exceptions use the EX macro. */
 

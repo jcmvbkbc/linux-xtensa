@@ -6,12 +6,13 @@
  * for more details.
  *
  * Copyright (C) 1995  Linus Torvalds
- * Copyright (C) 2001 - 2008  Tensilica Inc.
+ * Copyright (C) 2001 - 2009  Tensilica Inc.
  *
  * Chris Zankel	<chris@zankel.net>
  * Joe Taylor	<joe@tensilica.com>
- * Kevin Chea
  * Marc Gauthier<marc@tensilica.com> <marc@alumni.uwaterloo.ca>
+ * Piet Delaney <piet@tensilica.com>
+ * Kevin Chea
  */
 
 #include <linux/smp.h>
@@ -76,7 +77,7 @@ extern unsigned long loops_per_jiffy;
 static char __initdata command_line[COMMAND_LINE_SIZE];
 
 #ifdef CONFIG_CMDLINE_BOOL
-static char default_command_line[COMMAND_LINE_SIZE] __initdata = CONFIG_CMDLINE;
+static  __initdata char default_command_line[COMMAND_LINE_SIZE] __initdata = CONFIG_CMDLINE;
 #endif
 
 sysmem_info_t __initdata sysmem;
@@ -159,6 +160,10 @@ return 0;
 
 __tagtable(BP_TAG_COMMAND_LINE, parse_tag_cmdline);
 
+/*
+ * Currently only the primary processor has boot params.
+ * You shouldn't get here from _startup() on secondary processors.
+ */
 static int __init parse_bootparam(const bp_tag_t* tag)
 {
 	extern tagtable_t __tagtable_begin, __tagtable_end;
@@ -501,6 +506,33 @@ void machine_power_off(void)
 	platform_power_off();
 	while (1);
 }
+
+/*
+ * Constants for showcache.gdb macro.
+ * Perhaps should be #ifdef CONFIG_DEBUG_KERNEL
+ */
+int xchal_have_be = XCHAL_HAVE_BE;
+
+int xchal_icache_line_lockable = XCHAL_ICACHE_LINE_LOCKABLE;
+int xchal_dcache_line_lockable = XCHAL_DCACHE_LINE_LOCKABLE;
+
+int xchal_icache_linesize = XCHAL_ICACHE_LINESIZE;
+int xchal_dcache_linesize = XCHAL_DCACHE_LINESIZE;
+
+int xchal_icache_size = XCHAL_ICACHE_SIZE;
+int xchal_dcache_size = XCHAL_DCACHE_SIZE;
+
+int xchal_icache_ways = XCHAL_ICACHE_WAYS;
+int xchal_dcache_ways = XCHAL_DCACHE_WAYS; 
+
+int xchal_dcache_is_writeback = XCHAL_DCACHE_IS_WRITEBACK;
+
+int xchal_have_ptp_mmu = XCHAL_HAVE_PTP_MMU;
+int xchal_have_spanning_way = XCHAL_HAVE_SPANNING_WAY;
+
+int thread_size = CONFIG_STACK_SIZE;
+
+
 #ifdef CONFIG_PROC_FS
 
 /*

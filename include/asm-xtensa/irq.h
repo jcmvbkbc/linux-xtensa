@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_IRQ_H
@@ -13,6 +13,7 @@
 
 #include <asm/platform/hardware.h>
 #include <asm/variant/core.h>
+#include <asm/core.h>
 
 #ifndef PLATFORM_NR_IRQS
 # define PLATFORM_NR_IRQS 0

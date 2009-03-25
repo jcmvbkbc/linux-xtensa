@@ -7,9 +7,11 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2008 Tensilica Inc.
+ * Copyright (C) 2008 - 2009 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
+ * Joe Taylor <joe@tensilica.com>
+ * Pete Delaney <piet@tensilica.com
  */
 
 #include <linux/init.h>
@@ -33,6 +35,7 @@
 #  error "The S32C1I option is required for SMP."
 # endif
 #endif
+
 
 /* Per-processor data. */
 
@@ -65,6 +68,14 @@ static inline unsigned int get_core_count(void)
         return ((syscfgid >> 18) & 0xf) + 1;
 }
 
+int get_core_id(void)
+{
+        /* Bits 0...18 of SYSCFGID contain the core id  */
+        unsigned int core_id = get_er(SYSCFGID);
+
+        return (core_id & 0x3fff);
+}
+
 void __init smp_prepare_cpus(unsigned int max_cpus)
 {
 }
@@ -73,8 +84,10 @@ void __init smp_init_cpus(void)
 {
 	unsigned i;
 	unsigned int ncpus = get_core_count();
+	unsigned int core_id = get_core_id();
 
-	printk("Core count = %d\n", ncpus);
+	printk("%s: Core Count = %d\n", __func__, ncpus);
+	printk("%s: Core Id = %d\n", __func__, core_id);
 
 	for (i = 0; i < ncpus; i++) {
 		cpu_set(i, cpu_present_map);
@@ -91,22 +104,35 @@ void __devinit smp_prepare_boot_cpu(void)
 	BUG_ON(cpu != 0);
 	cpu_asid_cache(cpu) = ASID_USER_FIRST;
 
-	printk("smp prepare boot cpu\n");
+	printk("%s:\n", __func__);
 }
 
 void __init smp_cpus_done(unsigned int max_cpus)
 {
-	printk("smp_cpus_done\n");
+	printk("%s:\n", __func__);
 }
 
 extern void __init secondary_irq_init(void);
 extern void secondary_irq_enable(int);
+
+volatile int boot_secondary_processors = 1;	/* Set with xt-gdb via .xt-gdb */
+
 void __init secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
 	unsigned int cpu = smp_processor_id();
 
-	printk("CPU%u: Booted secondary processor\n", cpu);
+#ifdef CONFIG_DEBUG_KERNEL
+	if (boot_secondary_processors == 0) {
+		printk("%s: boot_secondary_processors:%d; Hanging cpu:%d\n", 
+			__func__, boot_secondary_processors, cpu);
+		for(;;)
+			;
+	}
+
+	printk("%s: boot_secondary_processors:%d; Booting cpu:%d\n", 
+		__func__, cpu, boot_secondary_processors);
+#endif
 
 	/* Init EXCSAVE1 */
 
@@ -159,7 +185,10 @@ int __cpuinit __cpu_up(unsigned int cpu)
 
 	start_info.stack = (unsigned long) idle->thread.sp;
 	start_info.start = secondary_start_kernel;
-printk("wakeup secondary cpu=%d\n", cpu);
+
+	pr_debug("%s: Calling wakeup_secondary(cpu:%d, idle:%p)\n", __func__,
+					       cpu,    idle);
+
 	ret = wakeup_secondary_cpu(cpu, idle);
 
 	if (ret == 0) {
@@ -174,9 +203,13 @@ printk("wakeup secondary cpu=%d\n", cpu);
 			barrier();
 		}
 
-		if (!cpu_online(cpu))
+		if (!cpu_online(cpu)) {
 			ret = -EIO;
+			pr_debug("%s: ret = -EIO:%d);\n", __func__, ret);
+		}
 	}
+	udelay(100000);
+	pr_debug("%s: return(ret:%d);\n", __func__, ret);
 	return ret;
 }
 extern void send_ipi_message(cpumask_t, int);
@@ -191,10 +224,10 @@ void smp_send_reschedule(int cpu)
 
 void smp_send_stop(void)
 {
-/* FIXME: remove this infinite loop. */
-printk("smp_send_stop()\n");
-while(1);
-	// smp_call_function(stop_this_cpu, 0, 1, 0); ?? SH
+	/* REMIND-FIXME: remove this infinite loop. */
+	printk("smp_send_stop()\n");
+	while(1);
+		// smp_call_function(stop_this_cpu, 0, 1, 0); ?? SH
 }
 
 struct smp_call_data {
@@ -218,12 +251,9 @@ int smp_call_function_on_cpu(void (*func)(void *info), void *info,
 	long nrcpus;
 	unsigned long timeout;
 
-#ifdef DBG
-	register int ra asm("a0");
-printk("**********\nsmp_call_function %d -> %d%d %p(%p) w:%d\n", 
-smp_processor_id(), cpu_isset(0, cpu_online_map), cpu_isset(1, cpu_online_map),
-func, info, wait);
-#endif
+	// pr_debug("**********\nsmp_call_function %d -> %d%d %p(%p) w:%d\n",
+	//	 smp_processor_id(), cpu_isset(0, cpu_online_map),
+	//	 cpu_isset(1, cpu_online_map), func, info, wait);
 
 	/* Exclude this CPU from the mask */
 	cpu_clear(smp_processor_id(), callmask);
@@ -252,7 +282,8 @@ func, info, wait);
 		barrier();
 
 	if (atomic_read(&data.pending) != 0) {
-		printk("timeout\n");
+		printk("%s: Cross Call Timed Out; data.pending:%d; wait:%d\n", 
+			__func__,    atomic_read(&data.pending),   wait);
 	}
 
 	smp_call_function_data = NULL;
@@ -285,6 +316,10 @@ void ipi_call_function(void)
 
 	/* Execute function. */
 
+#if 0
+	printk("%s: data:%p->func:%p(data->info:%p)\n",
+	  __func__, data, data->func, data->info);
+#endif
 	data->func(data->info);
 
 	/* If caller is waiting on us, decrement running counter. */
@@ -309,11 +344,14 @@ extern int recv_ipi_messages(void);
 irqreturn_t ipi_interrupt(int irq, void *dev_id)
 {
 	int msg;
-	// int cpu = smp_processor_id();
 	
 	msg = recv_ipi_messages();
 #if 0
-	printk("---------\nipi_interrupt msg %x on %d!\n", msg, cpu);
+	{
+		int cpu = smp_processor_id();
+
+		printk("---------\nipi_interrupt msg %x on %d!\n", msg, cpu);
+	}
 #endif
 
 	if (msg & (1 << IPI_RESCHEDULE)) {
@@ -329,7 +367,7 @@ irqreturn_t ipi_interrupt(int irq, void *dev_id)
 		struct pt_regs *regs = NULL;
 
 		printk("%s: notify_die(DIE_NMI_IPI, 'nmi_ipi', "
-			"regs:%x, msg:0X%x, 2, SIGINT);\n", __func__, 
+			"regs:%p, msg:0X%x, 2, SIGINT);\n", __func__, 
                          regs,    msg);
 
 		// notify_die(DIE_NMI_IPI, "nmi_ipi", regs, msg, 2, SIGINT);
@@ -343,11 +381,47 @@ irqreturn_t ipi_interrupt(int irq, void *dev_id)
 // FIXME move somewhere else...
 int setup_profiling_timer(unsigned int multiplier)
 {
-printk("setup_profiling_timer %d\n", multiplier);
+	pr_debug("setup_profiling_timer %d\n", multiplier);
 	return 0;
 }
 
 /* ------------------------------------------------------------------------- */
+
+#if defined(CONFIG_SMP)
+/*
+ * It's not clear yet how many of these cache and TLB flushes 
+ * have to be implemented with Cross Calls.
+ */
+
+void ipi_flush_cache_page(const void *arg[])
+{
+	local_flush_cache_page((struct vm_area_struct *) arg[0], 
+			     (unsigned long) arg[1], (unsigned long) arg[2]);
+}
+
+void ipi_flush_cache_range(const void *arg[])
+{
+	/* 
+	 * NOTE: on_each_cpu() disables interrupts while doing
+	 * local_flush_cache_range() on the local processor.
+	 */
+	local_flush_cache_range((struct vm_area_struct *) arg[0], 
+			     (unsigned long) arg[1], (unsigned long) arg[2]);
+}
+
+
+void ipi_flush_cache_all(void)
+{
+	local_flush_cache_all();
+}
+#endif /* CONFIG_SMP */
+
+
+
+void ipi_flush_icache_range(const void *arg[])
+{
+	local_flush_icache_range((unsigned long) arg[0], (unsigned long) arg[1]);
+}
 
 void ipi_flush_tlb_page(const void *arg[])
 {
@@ -371,18 +445,52 @@ void flush_tlb_mm(struct mm_struct* mm)
 	on_each_cpu((void(*)(void*))local_flush_tlb_mm, mm, 1);
 }
 
-void flush_tlb_page(struct vm_area_struct* mm, unsigned long addr)
+void flush_tlb_page(struct vm_area_struct *vma, unsigned long addr)
 {
-	unsigned long args[] = { (unsigned long )mm, addr};
+	unsigned long args[] = { (unsigned long )vma, addr};
+
 	on_each_cpu((void(*)(void*))ipi_flush_tlb_page, args, 1);
 }
 
-void flush_tlb_range(struct vm_area_struct* mm, 
+void flush_tlb_range(struct vm_area_struct *vma, 
 		     unsigned long start, unsigned long end)
 {
-	unsigned long args[] = { (unsigned long)mm, start, end };
+	unsigned long args[] = { (unsigned long)vma, start, end };
+
 	on_each_cpu((void(*)(void*))ipi_flush_tlb_range, args, 1);
 }
+
+void flush_icache_range(unsigned long start, unsigned long end)
+{
+	unsigned long args[] = {start, end};
+
+	on_each_cpu((void(*)(void*))ipi_flush_icache_range, args, 1);
+}
+
+#ifdef CONFIG_SMP
+void flush_cache_page(struct vm_area_struct *vma, 
+		     unsigned long address, unsigned long pfn)
+{
+	unsigned long args[] = { (unsigned long)vma, address, pfn};
+
+	on_each_cpu((void(*)(void*))ipi_flush_cache_page, args, 1);
+}
+
+void flush_cache_range(struct vm_area_struct *vma, 
+		     unsigned long start, unsigned long end)
+{
+	unsigned long args[] = { (unsigned long)vma, start, end};
+
+	on_each_cpu((void(*)(void*))ipi_flush_cache_range, args, 1);
+}
+
+void flush_cache_all()
+{
+	unsigned long args[] = { 0UL, 0UL, 0UL };
+
+	on_each_cpu((void(*)(void*))ipi_flush_cache_all, args, 1);
+}
+#endif /* CONFIG_SMP */
 
 /* ------------------------------------------------------------------------- */
 

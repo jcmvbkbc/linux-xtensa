@@ -9,7 +9,14 @@ obj-y := align.o entry.o irq.o coprocessor.o process.o ptrace.o \
 	 setup.o signal.o syscall.o time.o traps.o vectors.o platform.o  \
 	 pci-dma.o init_task.o io.o
 
-ifdef CONFIG_SMP
+#
+# Allow literals to be inseted into text section.
+# Need for MMU V3 code in mxhead.S
+#
+KBUILD_AFLAGS += -g3
+AFLAGS_mxpic.o += -mtext-section-literals 
+
+ifdef CONFIG_ARCH_HAS_SMP
 obj-y += mxpic.o
 else
 obj-y += xtpic.o

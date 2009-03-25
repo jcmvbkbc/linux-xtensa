@@ -18,10 +18,12 @@
 
 #include <linux/types.h>
 
-#define XCHAL_KIO_CACHED_VADDR	0xf0000000
-#define XCHAL_KIO_BYPASS_VADDR	0xf8000000
+#define XCHAL_KIO_CACHED_VADDR	0xe0000000
+#define XCHAL_KIO_BYPASS_VADDR	0xf0000000
 #define XCHAL_KIO_PADDR		0xf0000000
-#define XCHAL_KIO_SIZE		0x08000000
+#define XCHAL_KIO_SIZE		0x10000000
+
+#define IOADDR(x)               (XCHAL_KIO_BYPASS_VADDR + (x))
 
 /*
  * swap functions to change byte order from little-endian to big-endian and
@@ -68,8 +70,8 @@ static inline void * phys_to_virt(unsigned long address)
 static inline void *ioremap(unsigned long offset, unsigned long size)
 {
 	if (offset >= XCHAL_KIO_PADDR
-	    && offset < XCHAL_KIO_PADDR + XCHAL_KIO_SIZE)
-		return (void*)(offset-XCHAL_KIO_PADDR+XCHAL_KIO_BYPASS_VADDR);
+	    && offset < (XCHAL_KIO_PADDR + (XCHAL_KIO_SIZE - 1)))
+		return (void*)((offset -XCHAL_KIO_PADDR) + XCHAL_KIO_BYPASS_VADDR);
 
 	else
 		BUG();
@@ -78,8 +80,8 @@ static inline void *ioremap(unsigned long offset, unsigned long size)
 static inline void *ioremap_nocache(unsigned long offset, unsigned long size)
 {
 	if (offset >= XCHAL_KIO_PADDR
-	    && offset < XCHAL_KIO_PADDR + XCHAL_KIO_SIZE)
-		return (void*)(offset-XCHAL_KIO_PADDR+XCHAL_KIO_CACHED_VADDR);
+	    && offset < (XCHAL_KIO_PADDR + (XCHAL_KIO_SIZE - 1)))
+		return (void*)((offset - XCHAL_KIO_PADDR) + XCHAL_KIO_CACHED_VADDR);
 	else
 		BUG();
 }

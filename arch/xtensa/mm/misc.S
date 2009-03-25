@@ -7,7 +7,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2007 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  *
  * Chris Zankel	<chris@zankel.net>
  */
@@ -113,13 +113,13 @@ ENTRY(clear_user_page)
 	/* Mark page dirty and determine alias. */
 
 	movi	a7, (1 << PG_ARCH_1)
-	l32i	a5, a4, PAGE_FLAGS
+	l32i	a5, a4, PAGE_STRUCT_FLAGS
 	xor	a6, a2, a3
 	extui	a3, a3, PAGE_SHIFT, DCACHE_ALIAS_ORDER
 	extui	a6, a6, PAGE_SHIFT, DCACHE_ALIAS_ORDER
 	or	a5, a5, a7
 	slli	a3, a3, PAGE_SHIFT
-	s32i	a5, a4, PAGE_FLAGS
+	s32i	a5, a4, PAGE_STRUCT_FLAGS
 
 	/* Skip setting up a temporary DTLB if not aliased. */
 
@@ -175,7 +175,7 @@ ENTRY(copy_user_page)
 	/* Mark page dirty and determine alias for destination. */
 
 	movi	a8, (1 << PG_ARCH_1)
-	l32i	a9, a5, PAGE_FLAGS
+	l32i	a9, a5, PAGE_STRUCT_FLAGS
 	xor	a6, a2, a4
 	xor	a7, a3, a4
 	extui	a4, a4, PAGE_SHIFT, DCACHE_ALIAS_ORDER
@@ -183,7 +183,7 @@ ENTRY(copy_user_page)
 	extui	a7, a7, PAGE_SHIFT, DCACHE_ALIAS_ORDER
 	or	a9, a9, a8
 	slli	a4, a4, PAGE_SHIFT
-	s32i	a9, a5, PAGE_FLAGS
+	s32i	a9, a5, PAGE_STRUCT_FLAGS
 	movi	a5, -PAGE_OFFSET + (PAGE_KERNEL | _PAGE_HW_WRITE)
 
 	beqz	a6, 1f

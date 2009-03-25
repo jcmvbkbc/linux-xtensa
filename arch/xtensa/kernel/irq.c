@@ -51,7 +51,7 @@ asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
 	struct irq_desc *desc = irq_desc + irq;
 	register int a1 asm("a1");
 
-	if (irq <2)
+	if (irq < 2)
 	printk("do_IRQ cpu %d regs %x a1 %x\n", smp_processor_id(), regs, a1);
 	old_regs = set_irq_regs(regs);
 #endif
@@ -60,7 +60,7 @@ asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
 				__func__, irq);
 	}
 
-	irq_enter();
+	irq_enter();		/* Disable Preemption */
 
 #ifdef CONFIG_DEBUG_STACKOVERFLOW
 	/* Debugging check for stack overflow: is there less than 1KB free? */
@@ -77,7 +77,8 @@ asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
 #endif
 	desc->handle_irq(irq, desc);
 
-	irq_exit();
+	irq_exit();		/* Enable Preemption */
+
 	set_irq_regs(old_regs);
 }
 

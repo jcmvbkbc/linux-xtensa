@@ -18,6 +18,7 @@
 #include <asm/uaccess.h>
 #include <asm/syscall.h>
 #include <asm/unistd.h>
+#include <asm/io.h>
 #include <linux/linkage.h>
 #include <linux/stringify.h>
 #include <linux/errno.h>
@@ -57,13 +58,32 @@ asmlinkage long xtensa_pipe(int __user *userfds)
 	return error;
 }
 
-
 asmlinkage long xtensa_mmap2(unsigned long addr, unsigned long len,
    			     unsigned long prot, unsigned long flags,
 			     unsigned long fd, unsigned long pgoff)
 {
 	int error = -EBADF;
 	struct file * file = NULL;
+
+	/*
+	 * REMIND-FIXME:
+	 *
+	 * We are hitting a panic when len is > 7500 pages.
+	 * mm->nr_ptes is 1 and should be 0 in exit_mmap()
+	 * at BUGON(). The exit is due to a NULL PTE that
+	 * we are trying to use in a user 2nd level tlb fault.
+	 *
+	 * Fails in Linux LTP test with mmap001 -m 10000.
+	 *
+	 * You may want to place a conditional breakpoint 
+	 * here when:
+	 *	addr == XCHAL_KIO_CACHED_VADDR, or,
+	 *	addr == XCHAL_KIO_BYPASS_VADDR 
+	 */
+	if (len > 30720000) {
+		error = EFBIG;
+		goto out;
+	}
 
 	flags &= ~(MAP_EXECUTABLE | MAP_DENYWRITE);
 	if (!(flags & MAP_ANONYMOUS)) {

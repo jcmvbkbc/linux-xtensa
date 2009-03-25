@@ -8,10 +8,11 @@
  *  Returns: -EFAULT if exception before terminator, N if the entire
  *  buffer filled, else strlen.
  *
- *  Copyright (C) 2002 Tensilica Inc.
+ *  Copyright (C) 2002 - 2009 Tensilica Inc.
  */
 
 #include <asm/variant/core.h>
+#include <asm/core.h>
 #include <linux/errno.h>
 
 /* Load or store instructions that may cause exceptions use the EX macro. */

@@ -114,20 +114,62 @@ void coprocessor_flush_all(struct thread_info *ti, unsigned long cpenable)
 
 #endif
 
+#ifdef CONFIG_DEBUG_KERNEL
+unsigned long idle_jiffies[NR_CPUS];
+unsigned long idle_count[NR_CPUS];
+
+void cpu_idle_monitor(int sched)
+{
+	int cpu = smp_processor_id();
+	int dt = jiffies - idle_jiffies[cpu];
+	int prid;
+	unsigned long ccount = get_ccount();
+
+	asm volatile ("rsr %0, "__stringify(PRID)"\n" : "=a" (prid));
+
+	if (prid != cpu) panic("cpu");
+
+	if (dt < 0) dt = - dt;
+
+	if ((cpu >= 0) && (cpu <= NR_CPUS)) {
+		idle_count[cpu]++;
+		if (dt > (60 * HZ) ) {
+			printk(KERN_DEBUG "%s: cpu:%d, ccount:%08lx, dt:%d, idle_count:[%lu, %lu]\n", __func__,
+					       cpu,    ccount,       dt,    idle_count[0],  idle_count[1]);
+
+			idle_jiffies[cpu] = jiffies;	
+		}
+	} else 
+		printk("%s: cpu:%d is Bizzare!\n", __func__, cpu);
+}
+#endif
+
+/*
+ * Function for gdb macro to indicate it doesn't know what pc is.
+ */
+void running_on_somewhere_on_another_cpu(void)
+{
+}
+			
+
 
 /*
  * Powermanagement idle function, if any is provided by the platform.
  */
-
 void cpu_idle(void)
 {
   	local_irq_enable();
 
 	/* endless idle loop with no priority at all */
 	while (1) {
-		while (!need_resched())
+		while (!need_resched()) {
 			platform_idle();
+#ifdef CONFIG_DEBUG_KERNEL
+			cpu_idle_monitor(0);
+#endif
+		}
 		preempt_enable_no_resched();
+		cpu_idle_monitor(1);
 		schedule();
 		preempt_disable();
 	}
