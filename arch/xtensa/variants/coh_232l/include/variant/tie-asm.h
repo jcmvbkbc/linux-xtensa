@@ -3,11 +3,10 @@
  * macros, etc.) for this specific Xtensa processor's TIE extensions
  * and options.  It is customized to this Xtensa processor configuration.
  *
- * This file is subject to the terms and conditions of the GNU General Public
- * License.  See the file "COPYING" in the main directory of this archive
- * for more details.
+ * This file is subject to the terms and conditions of version 2.1 of the GNU
+ * Lesser General Public License as published by the Free Software Foundation.
  *
- * Copyright (C) 1999-2007 Tensilica Inc.
+ * Copyright (C) 1999-2008 Tensilica Inc.
  */
 
 #ifndef _XTENSA_CORE_TIE_ASM_H
