@@ -80,6 +80,10 @@ static struct sctp_auth_bytes *sctp_auth_create_key(__u32 key_len, gfp_t gfp)
 {
 	struct sctp_auth_bytes *key;
 
+	/* Verify that we are not going to overflow INT_MAX */
+	if ((INT_MAX - key_len) < sizeof(struct sctp_auth_bytes))
+		return NULL;
+
 	/* Allocate the shared key */
 	key = kmalloc(sizeof(struct sctp_auth_bytes) + key_len, gfp);
 	if (!key)
@@ -137,8 +141,8 @@ void sctp_auth_destroy_keys(struct list_head *keys)
 /* Compare two byte vectors as numbers.  Return values
  * are:
  * 	  0 - vectors are equal
- * 	< 0 - vector 1 is smaller then vector2
- * 	> 0 - vector 1 is greater then vector2
+ * 	< 0 - vector 1 is smaller than vector2
+ * 	> 0 - vector 1 is greater than vector2
  *
  * Algorithm is:
  * 	This is performed by selecting the numerically smaller key vector...
@@ -485,7 +489,7 @@ int sctp_auth_init_hmacs(struct sctp_endpoint *ep, gfp_t gfp)
 	return 0;
 
 out_err:
-	/* Clean up any successfull allocations */
+	/* Clean up any successful allocations */
 	sctp_auth_destroy_hmacs(ep->auth_hmacs);
 	return -ENOMEM;
 }
@@ -781,6 +785,9 @@ int sctp_auth_ep_set_hmacs(struct sctp_endpoint *ep,
 	 */
 	for (i = 0; i < hmacs->shmac_num_idents; i++) {
 		id = hmacs->shmac_idents[i];
+
+		if (id > SCTP_AUTH_HMAC_ID_MAX)
+			return -EOPNOTSUPP;
 
 		if (SCTP_AUTH_HMAC_ID_SHA1 == id)
 			has_sha1 = 1;

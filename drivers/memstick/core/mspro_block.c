@@ -30,6 +30,8 @@ module_param(major, int, 0644);
 #define MSPRO_BLOCK_SIGNATURE        0xa5c3
 #define MSPRO_BLOCK_MAX_ATTRIBUTES   41
 
+#define MSPRO_BLOCK_PART_SHIFT 3
+
 enum {
 	MSPRO_BLOCK_ID_SYSINFO         = 0x10,
 	MSPRO_BLOCK_ID_MODELNAME       = 0x15,
@@ -50,14 +52,14 @@ struct mspro_sys_attr {
 };
 
 struct mspro_attr_entry {
-	unsigned int  address;
-	unsigned int  size;
+	__be32 address;
+	__be32 size;
 	unsigned char id;
 	unsigned char reserved[3];
 } __attribute__((packed));
 
 struct mspro_attribute {
-	unsigned short          signature;
+	__be16 signature;
 	unsigned short          version;
 	unsigned char           count;
 	unsigned char           reserved[11];
@@ -67,28 +69,28 @@ struct mspro_attribute {
 struct mspro_sys_info {
 	unsigned char  class;
 	unsigned char  reserved0;
-	unsigned short block_size;
-	unsigned short block_count;
-	unsigned short user_block_count;
-	unsigned short page_size;
+	__be16 block_size;
+	__be16 block_count;
+	__be16 user_block_count;
+	__be16 page_size;
 	unsigned char  reserved1[2];
 	unsigned char  assembly_date[8];
-	unsigned int   serial_number;
+	__be32 serial_number;
 	unsigned char  assembly_maker_code;
 	unsigned char  assembly_model_code[3];
-	unsigned short memory_maker_code;
-	unsigned short memory_model_code;
+	__be16 memory_maker_code;
+	__be16 memory_model_code;
 	unsigned char  reserved2[4];
 	unsigned char  vcc;
 	unsigned char  vpp;
-	unsigned short controller_number;
-	unsigned short controller_function;
-	unsigned short start_sector;
-	unsigned short unit_size;
+	__be16 controller_number;
+	__be16 controller_function;
+	__be16 start_sector;
+	__be16 unit_size;
 	unsigned char  ms_sub_class;
 	unsigned char  reserved3[4];
 	unsigned char  interface_type;
-	unsigned short controller_code;
+	__be16 controller_code;
 	unsigned char  format_type;
 	unsigned char  reserved4;
 	unsigned char  device_type;
@@ -122,11 +124,11 @@ struct mspro_specfile {
 } __attribute__((packed));
 
 struct mspro_devinfo {
-	unsigned short cylinders;
-	unsigned short heads;
-	unsigned short bytes_per_track;
-	unsigned short bytes_per_sector;
-	unsigned short sectors_per_track;
+	__be16 cylinders;
+	__be16 heads;
+	__be16 bytes_per_track;
+	__be16 bytes_per_sector;
+	__be16 sectors_per_track;
 	unsigned char  reserved[6];
 } __attribute__((packed));
 
@@ -170,9 +172,9 @@ static int mspro_block_complete_req(struct memstick_dev *card, int error);
 
 /*** Block device ***/
 
-static int mspro_block_bd_open(struct inode *inode, struct file *filp)
+static int mspro_block_bd_open(struct block_device *bdev, fmode_t mode)
 {
-	struct gendisk *disk = inode->i_bdev->bd_disk;
+	struct gendisk *disk = bdev->bd_disk;
 	struct mspro_block_data *msb = disk->private_data;
 	int rc = -ENXIO;
 
@@ -180,7 +182,7 @@ static int mspro_block_bd_open(struct inode *inode, struct file *filp)
 
 	if (msb && msb->card) {
 		msb->usage_count++;
-		if ((filp->f_mode & FMODE_WRITE) && msb->read_only)
+		if ((mode & FMODE_WRITE) && msb->read_only)
 			rc = -EROFS;
 		else
 			rc = 0;
@@ -195,7 +197,7 @@ static int mspro_block_bd_open(struct inode *inode, struct file *filp)
 static int mspro_block_disk_release(struct gendisk *disk)
 {
 	struct mspro_block_data *msb = disk->private_data;
-	int disk_id = disk->first_minor >> MEMSTICK_PART_SHIFT;
+	int disk_id = MINOR(disk_devt(disk)) >> MSPRO_BLOCK_PART_SHIFT;
 
 	mutex_lock(&mspro_block_disk_lock);
 
@@ -216,9 +218,8 @@ static int mspro_block_disk_release(struct gendisk *disk)
 	return 0;
 }
 
-static int mspro_block_bd_release(struct inode *inode, struct file *filp)
+static int mspro_block_bd_release(struct gendisk *disk, fmode_t mode)
 {
-	struct gendisk *disk = inode->i_bdev->bd_disk;
 	return mspro_block_disk_release(disk);
 }
 
@@ -337,8 +338,7 @@ static ssize_t mspro_block_attr_show_sysinfo(struct device *dev,
 	rc += scnprintf(buffer + rc, PAGE_SIZE - rc, "assembly date: "
 			"GMT%+d:%d %04u-%02u-%02u %02u:%02u:%02u\n",
 			date_tz, date_tz_f,
-			be16_to_cpu(*(unsigned short *)
-				    &x_sys->assembly_date[1]),
+			be16_to_cpup((__be16 *)&x_sys->assembly_date[1]),
 			x_sys->assembly_date[3], x_sys->assembly_date[4],
 			x_sys->assembly_date[5], x_sys->assembly_date[6],
 			x_sys->assembly_date[7]);
@@ -826,7 +826,7 @@ static void mspro_block_submit_req(struct request_queue *q)
 
 	if (msb->eject) {
 		while ((req = elv_next_request(q)) != NULL)
-			end_queued_request(req, -ENODEV);
+			__blk_end_request(req, -ENODEV, blk_rq_bytes(req));
 
 		return;
 	}
@@ -877,6 +877,7 @@ static int mspro_block_switch_interface(struct memstick_dev *card)
 	struct mspro_block_data *msb = memstick_get_drvdata(card);
 	int rc = 0;
 
+try_again:
 	if (msb->caps & MEMSTICK_CAP_PAR4)
 		rc = mspro_block_set_interface(card, MEMSTICK_SYS_PAR4);
 	else
@@ -885,14 +886,14 @@ static int mspro_block_switch_interface(struct memstick_dev *card)
 	if (rc) {
 		printk(KERN_WARNING
 		       "%s: could not switch to 4-bit mode, error %d\n",
-		       card->dev.bus_id, rc);
+		       dev_name(&card->dev), rc);
 		return 0;
 	}
 
 	msb->system = MEMSTICK_SYS_PAR4;
 	host->set_param(host, MEMSTICK_INTERFACE, MEMSTICK_PAR4);
 	printk(KERN_INFO "%s: switching to 4-bit parallel mode\n",
-	       card->dev.bus_id);
+	       dev_name(&card->dev));
 
 	if (msb->caps & MEMSTICK_CAP_PAR8) {
 		rc = mspro_block_set_interface(card, MEMSTICK_SYS_PAR8);
@@ -903,11 +904,11 @@ static int mspro_block_switch_interface(struct memstick_dev *card)
 					MEMSTICK_PAR8);
 			printk(KERN_INFO
 			       "%s: switching to 8-bit parallel mode\n",
-			       card->dev.bus_id);
+			       dev_name(&card->dev));
 		} else
 			printk(KERN_WARNING
 			       "%s: could not switch to 8-bit mode, error %d\n",
-			       card->dev.bus_id, rc);
+			       dev_name(&card->dev), rc);
 	}
 
 	card->next_request = h_mspro_block_req_init;
@@ -920,7 +921,7 @@ static int mspro_block_switch_interface(struct memstick_dev *card)
 	if (rc) {
 		printk(KERN_WARNING
 		       "%s: interface error, trying to fall back to serial\n",
-		       card->dev.bus_id);
+		       dev_name(&card->dev));
 		msb->system = MEMSTICK_SYS_SERIAL;
 		host->set_param(host, MEMSTICK_POWER, MEMSTICK_POWER_OFF);
 		msleep(10);
@@ -930,6 +931,18 @@ static int mspro_block_switch_interface(struct memstick_dev *card)
 		rc = memstick_set_rw_addr(card);
 		if (!rc)
 			rc = mspro_block_set_interface(card, msb->system);
+
+		if (!rc) {
+			msleep(150);
+			rc = mspro_block_wait_for_ced(card);
+			if (rc)
+				return rc;
+
+			if (msb->caps & MEMSTICK_CAP_PAR8) {
+				msb->caps &= ~MEMSTICK_CAP_PAR8;
+				goto try_again;
+			}
+		}
 	}
 	return rc;
 }
@@ -978,14 +991,14 @@ static int mspro_block_read_attributes(struct memstick_dev *card)
 
 	if (be16_to_cpu(attr->signature) != MSPRO_BLOCK_SIGNATURE) {
 		printk(KERN_ERR "%s: unrecognized device signature %x\n",
-		       card->dev.bus_id, be16_to_cpu(attr->signature));
+		       dev_name(&card->dev), be16_to_cpu(attr->signature));
 		rc = -ENODEV;
 		goto out_free_attr;
 	}
 
 	if (attr->count > MSPRO_BLOCK_MAX_ATTRIBUTES) {
 		printk(KERN_WARNING "%s: way too many attribute entries\n",
-		       card->dev.bus_id);
+		       dev_name(&card->dev));
 		attr_count = MSPRO_BLOCK_MAX_ATTRIBUTES;
 	} else
 		attr_count = attr->count;
@@ -1029,7 +1042,6 @@ static int mspro_block_read_attributes(struct memstick_dev *card)
 
 		s_attr->dev_attr.attr.name = s_attr->name;
 		s_attr->dev_attr.attr.mode = S_IRUGO;
-		s_attr->dev_attr.attr.owner = THIS_MODULE;
 		s_attr->dev_attr.show = mspro_block_attr_show(s_attr->id);
 
 		if (!rc)
@@ -1117,14 +1129,16 @@ static int mspro_block_init_card(struct memstick_dev *card)
 		return -EIO;
 
 	msb->caps = host->caps;
+
+	msleep(150);
+	rc = mspro_block_wait_for_ced(card);
+	if (rc)
+		return rc;
+
 	rc = mspro_block_switch_interface(card);
 	if (rc)
 		return rc;
 
-	msleep(200);
-	rc = mspro_block_wait_for_ced(card);
-	if (rc)
-		return rc;
 	dev_dbg(&card->dev, "card activated\n");
 	if (msb->system != MEMSTICK_SYS_SERIAL)
 		msb->caps |= MEMSTICK_CAP_AUTO_GET_INT;
@@ -1192,12 +1206,12 @@ static int mspro_block_init_disk(struct memstick_dev *card)
 	if (rc)
 		return rc;
 
-	if ((disk_id << MEMSTICK_PART_SHIFT) > 255) {
+	if ((disk_id << MSPRO_BLOCK_PART_SHIFT) > 255) {
 		rc = -ENOSPC;
 		goto out_release_id;
 	}
 
-	msb->disk = alloc_disk(1 << MEMSTICK_PART_SHIFT);
+	msb->disk = alloc_disk(1 << MSPRO_BLOCK_PART_SHIFT);
 	if (!msb->disk) {
 		rc = -ENOMEM;
 		goto out_release_id;
@@ -1220,7 +1234,7 @@ static int mspro_block_init_disk(struct memstick_dev *card)
 				   MSPRO_BLOCK_MAX_PAGES * msb->page_size);
 
 	msb->disk->major = major;
-	msb->disk->first_minor = disk_id << MEMSTICK_PART_SHIFT;
+	msb->disk->first_minor = disk_id << MSPRO_BLOCK_PART_SHIFT;
 	msb->disk->fops = &ms_block_bdops;
 	msb->usage_count = 1;
 	msb->disk->private_data = msb;
@@ -1416,7 +1430,7 @@ out_unlock:
 
 static struct memstick_device_id mspro_block_id_tbl[] = {
 	{MEMSTICK_MATCH_ALL, MEMSTICK_TYPE_PRO, MEMSTICK_CATEGORY_STORAGE_DUO,
-	 MEMSTICK_CLASS_GENERIC_DUO},
+	 MEMSTICK_CLASS_DUO},
 	{}
 };
 

@@ -32,6 +32,7 @@
  */
 
 #include "dm-bio-list.h"
+#include <linux/delay.h>
 #include <linux/raid/raid1.h>
 #include <linux/raid/bitmap.h>
 
@@ -779,7 +780,7 @@ static int make_request(struct request_queue *q, struct bio * bio)
 	struct page **behind_pages = NULL;
 	const int rw = bio_data_dir(bio);
 	const int do_sync = bio_sync(bio);
-	int do_barriers;
+	int cpu, do_barriers;
 	mdk_rdev_t *blocked_rdev;
 
 	/*
@@ -804,8 +805,11 @@ static int make_request(struct request_queue *q, struct bio * bio)
 
 	bitmap = mddev->bitmap;
 
-	disk_stat_inc(mddev->gendisk, ios[rw]);
-	disk_stat_add(mddev->gendisk, sectors[rw], bio_sectors(bio));
+	cpu = part_stat_lock();
+	part_stat_inc(cpu, &mddev->gendisk->part0, ios[rw]);
+	part_stat_add(cpu, &mddev->gendisk->part0, sectors[rw],
+		      bio_sectors(bio));
+	part_stat_unlock();
 
 	/*
 	 * make_request() can abort the operation when READA is being
@@ -1012,12 +1016,16 @@ static void error(mddev_t *mddev, mdk_rdev_t *rdev)
 	 * else mark the drive as failed
 	 */
 	if (test_bit(In_sync, &rdev->flags)
-	    && (conf->raid_disks - mddev->degraded) == 1)
+	    && (conf->raid_disks - mddev->degraded) == 1) {
 		/*
 		 * Don't fail the drive, act as though we were just a
-		 * normal single drive
+		 * normal single drive.
+		 * However don't try a recovery from this drive as
+		 * it is very likely to fail.
 		 */
+		mddev->recovery_disabled = 1;
 		return;
+	}
 	if (test_and_clear_bit(In_sync, &rdev->flags)) {
 		unsigned long flags;
 		spin_lock_irqsave(&conf->device_lock, flags);
@@ -1229,8 +1237,9 @@ static void end_sync_write(struct bio *bio, int error)
 	update_head_pos(mirror, r1_bio);
 
 	if (atomic_dec_and_test(&r1_bio->remaining)) {
-		md_done_sync(mddev, r1_bio->sectors, uptodate);
+		sector_t s = r1_bio->sectors;
 		put_buf(r1_bio);
+		md_done_sync(mddev, s, uptodate);
 	}
 }
 
@@ -1302,9 +1311,6 @@ static void sync_request_write(mddev_t *mddev, r1bio_t *r1_bio)
 					sbio->bi_size = r1_bio->sectors << 9;
 					sbio->bi_idx = 0;
 					sbio->bi_phys_segments = 0;
-					sbio->bi_hw_segments = 0;
-					sbio->bi_hw_front_size = 0;
-					sbio->bi_hw_back_size = 0;
 					sbio->bi_flags &= ~(BIO_POOL_MASK - 1);
 					sbio->bi_flags |= 1 << BIO_UPTODATE;
 					sbio->bi_next = NULL;
@@ -1635,7 +1641,8 @@ static void raid1d(mddev_t *mddev)
 			}
 
 			bio = r1_bio->bios[r1_bio->read_disk];
-			if ((disk=read_balance(conf, r1_bio)) == -1) {
+			if ((disk=read_balance(conf, r1_bio)) == -1 ||
+			    disk == r1_bio->read_disk) {
 				printk(KERN_ALERT "raid1: %s: unrecoverable I/O"
 				       " read error for block %llu\n",
 				       bdevname(bio->bi_bdev,b),
@@ -1790,7 +1797,6 @@ static sector_t sync_request(mddev_t *mddev, sector_t sector_nr, int *skipped, i
 		bio->bi_vcnt = 0;
 		bio->bi_idx = 0;
 		bio->bi_phys_segments = 0;
-		bio->bi_hw_segments = 0;
 		bio->bi_size = 0;
 		bio->bi_end_io = NULL;
 		bio->bi_private = NULL;
@@ -1919,7 +1925,6 @@ static int run(mddev_t *mddev)
 	int i, j, disk_idx;
 	mirror_info_t *disk;
 	mdk_rdev_t *rdev;
-	struct list_head *tmp;
 
 	if (mddev->level != 1) {
 		printk("raid1: %s: raid level not set to mirroring (%d)\n",
@@ -1964,7 +1969,7 @@ static int run(mddev_t *mddev)
 	spin_lock_init(&conf->device_lock);
 	mddev->queue->queue_lock = &conf->device_lock;
 
-	rdev_for_each(rdev, tmp, mddev) {
+	list_for_each_entry(rdev, &mddev->disks, same_set) {
 		disk_idx = rdev->raid_disk;
 		if (disk_idx >= mddev->raid_disks
 		    || disk_idx < 0)

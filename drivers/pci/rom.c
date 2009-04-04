@@ -21,7 +21,7 @@
  * between the ROM and other resources, so enabling it may disable access
  * to MMIO registers or other card memory.
  */
-static int pci_enable_rom(struct pci_dev *pdev)
+int pci_enable_rom(struct pci_dev *pdev)
 {
 	struct resource *res = pdev->resource + PCI_ROM_RESOURCE;
 	struct pci_bus_region region;
@@ -45,7 +45,7 @@ static int pci_enable_rom(struct pci_dev *pdev)
  * Disable ROM decoding on a PCI device by turning off the last bit in the
  * ROM BAR.
  */
-static void pci_disable_rom(struct pci_dev *pdev)
+void pci_disable_rom(struct pci_dev *pdev)
 {
 	u32 rom_addr;
 	pci_read_config_dword(pdev, pdev->rom_base_reg, &rom_addr);
@@ -55,6 +55,7 @@ static void pci_disable_rom(struct pci_dev *pdev)
 
 /**
  * pci_get_rom_size - obtain the actual size of the ROM image
+ * @pdev: target PCI device
  * @rom: kernel virtual pointer to image of ROM
  * @size: size of PCI window
  *  return: size of actual ROM image
@@ -63,7 +64,7 @@ static void pci_disable_rom(struct pci_dev *pdev)
  * The PCI window size could be much larger than the
  * actual image size.
  */
-size_t pci_get_rom_size(void __iomem *rom, size_t size)
+size_t pci_get_rom_size(struct pci_dev *pdev, void __iomem *rom, size_t size)
 {
 	void __iomem *image;
 	int last_image;
@@ -72,8 +73,10 @@ size_t pci_get_rom_size(void __iomem *rom, size_t size)
 	do {
 		void __iomem *pds;
 		/* Standard PCI ROMs start out with these bytes 55 AA */
-		if (readb(image) != 0x55)
+		if (readb(image) != 0x55) {
+			dev_err(&pdev->dev, "Invalid ROM contents\n");
 			break;
+		}
 		if (readb(image + 1) != 0xAA)
 			break;
 		/* get the PCI data structure and check its signature */
@@ -100,7 +103,8 @@ size_t pci_get_rom_size(void __iomem *rom, size_t size)
  * pci_map_rom - map a PCI ROM to kernel space
  * @pdev: pointer to pci device struct
  * @size: pointer to receive size of pci window over ROM
- * @return: kernel virtual pointer to image of ROM
+ *
+ * Return: kernel virtual pointer to image of ROM
  *
  * Map a PCI ROM into kernel space. If ROM is boot video ROM,
  * the shadow BIOS copy will be returned instead of the
@@ -158,7 +162,7 @@ void __iomem *pci_map_rom(struct pci_dev *pdev, size_t *size)
 	 * size is much larger than the actual size of the ROM.
 	 * True size is important if the ROM is going to be copied.
 	 */
-	*size = pci_get_rom_size(rom, *size);
+	*size = pci_get_rom_size(pdev, rom, *size);
 	return rom;
 }
 
@@ -167,7 +171,8 @@ void __iomem *pci_map_rom(struct pci_dev *pdev, size_t *size)
  * pci_map_rom_copy - map a PCI ROM to kernel space, create a copy
  * @pdev: pointer to pci device struct
  * @size: pointer to receive size of pci window over ROM
- * @return: kernel virtual pointer to image of ROM
+ *
+ * Return: kernel virtual pointer to image of ROM
  *
  * Map a PCI ROM into kernel space. If ROM is boot video ROM,
  * the shadow BIOS copy will be returned instead of the
@@ -260,3 +265,5 @@ void pci_cleanup_rom(struct pci_dev *pdev)
 
 EXPORT_SYMBOL(pci_map_rom);
 EXPORT_SYMBOL(pci_unmap_rom);
+EXPORT_SYMBOL_GPL(pci_enable_rom);
+EXPORT_SYMBOL_GPL(pci_disable_rom);

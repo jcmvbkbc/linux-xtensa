@@ -19,8 +19,10 @@
 
 #include <linux/init.h>
 
-#include <asm/platform/hardware.h>
-#include <asm/platform/lcd.h>
+#include <platform/hardware.h>
+#include <asm/processor.h>
+#include <platform/system.h>
+#include <platform/lcd.h>
 #include <linux/delay.h>
 
 #define LCD_PAUSE_ITERATIONS	4000 

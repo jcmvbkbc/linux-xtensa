@@ -108,6 +108,9 @@ static int i2c_device_probe(struct device *dev)
 	if (!driver->probe || !driver->id_table)
 		return -ENODEV;
 	client->driver = driver;
+	if (!device_can_wakeup(&client->dev))
+		device_init_wakeup(&client->dev,
+					client->flags & I2C_CLIENT_WAKE);
 	dev_dbg(dev, "probe\n");
 
 	status = driver->probe(client, i2c_match_id(driver->id_table, client));
@@ -262,9 +265,11 @@ i2c_new_device(struct i2c_adapter *adap, struct i2c_board_info const *info)
 	client->adapter = adap;
 
 	client->dev.platform_data = info->platform_data;
-	device_init_wakeup(&client->dev, info->flags & I2C_CLIENT_WAKE);
 
-	client->flags = info->flags & ~I2C_CLIENT_WAKE;
+	if (info->archdata)
+		client->dev.archdata = *info->archdata;
+
+	client->flags = info->flags;
 	client->addr = info->addr;
 	client->irq = info->irq;
 
@@ -435,6 +440,10 @@ static int i2c_register_adapter(struct i2c_adapter *adap)
 {
 	int res = 0, dummy;
 
+	/* Can't register until after driver model init */
+	if (unlikely(WARN_ON(!i2c_bus_type.p)))
+		return -EAGAIN;
+
 	mutex_init(&adap->bus_lock);
 	mutex_init(&adap->clist_lock);
 	INIT_LIST_HEAD(&adap->clients);
@@ -450,7 +459,7 @@ static int i2c_register_adapter(struct i2c_adapter *adap)
 		pr_debug("I2C adapter driver [%s] forgot to specify "
 			 "physical device\n", adap->name);
 	}
-	sprintf(adap->dev.bus_id, "i2c-%d", adap->nr);
+	dev_set_name(&adap->dev, "i2c-%d", adap->nr);
 	adap->dev.release = &i2c_adapter_dev_release;
 	adap->dev.class = &i2c_adapter_class;
 	res = device_register(&adap->dev);
@@ -622,7 +631,7 @@ int i2c_del_adapter(struct i2c_adapter *adap)
 
 	/* detach any active clients. This must be done first, because
 	 * it can fail; in which case we give up. */
-	list_for_each_entry_safe(client, _n, &adap->clients, list) {
+	list_for_each_entry_safe_reverse(client, _n, &adap->clients, list) {
 		struct i2c_driver	*driver;
 
 		driver = client->driver;
@@ -693,6 +702,10 @@ static int __attach_adapter(struct device *dev, void *data)
 int i2c_register_driver(struct module *owner, struct i2c_driver *driver)
 {
 	int res;
+
+	/* Can't register until after driver model init */
+	if (unlikely(WARN_ON(!i2c_bus_type.p)))
+		return -EAGAIN;
 
 	/* new style driver methods can't mix with legacy ones */
 	if (is_newstyle_driver(driver)) {
@@ -832,8 +845,8 @@ int i2c_attach_client(struct i2c_client *client)
 	} else
 		client->dev.release = i2c_client_dev_release;
 
-	snprintf(&client->dev.bus_id[0], sizeof(client->dev.bus_id),
-		"%d-%04x", i2c_adapter_id(adapter), client->addr);
+	dev_set_name(&client->dev, "%d-%04x", i2c_adapter_id(adapter),
+		     client->addr);
 	res = device_register(&client->dev);
 	if (res)
 		goto out_err;
@@ -843,7 +856,7 @@ int i2c_attach_client(struct i2c_client *client)
 	mutex_unlock(&adapter->clist_lock);
 
 	dev_dbg(&adapter->dev, "client [%s] registered with bus id %s\n",
-		client->name, client->dev.bus_id);
+		client->name, dev_name(&client->dev));
 
 	if (adapter->client_register)  {
 		if (adapter->client_register(client)) {
@@ -976,7 +989,10 @@ static void __exit i2c_exit(void)
 	bus_unregister(&i2c_bus_type);
 }
 
-subsys_initcall(i2c_init);
+/* We must initialize early, because some subsystems register i2c drivers
+ * in subsys_initcall() code, but are linked (and initialized) before i2c.
+ */
+postcore_initcall(i2c_init);
 module_exit(i2c_exit);
 
 /* ----------------------------------------------------
@@ -1188,8 +1204,8 @@ int i2c_probe(struct i2c_adapter *adapter,
 		 && address_data->normal_i2c[0] == I2C_CLIENT_END)
 			return 0;
 
-		dev_warn(&adapter->dev, "SMBus Quick command not supported, "
-			 "can't probe for chips\n");
+		dev_dbg(&adapter->dev, "SMBus Quick command not supported, "
+			"can't probe for chips\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -1350,6 +1366,10 @@ static int i2c_detect(struct i2c_adapter *adapter, struct i2c_driver *driver)
 		}
 	}
 
+	/* Stop here if the classes do not match */
+	if (!(adapter->class & driver->class))
+		goto exit_free;
+
 	/* Stop here if we can't use SMBUS_QUICK */
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_QUICK)) {
 		if (address_data->probe[0] == I2C_CLIENT_END
@@ -1361,10 +1381,6 @@ static int i2c_detect(struct i2c_adapter *adapter, struct i2c_driver *driver)
 		err = -EOPNOTSUPP;
 		goto exit_free;
 	}
-
-	/* Stop here if the classes do not match */
-	if (!(adapter->class & driver->class))
-		goto exit_free;
 
 	/* Probe entries are done second, and are not affected by ignore
 	   entries either */
@@ -1675,6 +1691,28 @@ s32 i2c_smbus_write_word_data(struct i2c_client *client, u8 command, u16 value)
 EXPORT_SYMBOL(i2c_smbus_write_word_data);
 
 /**
+ * i2c_smbus_process_call - SMBus "process call" protocol
+ * @client: Handle to slave device
+ * @command: Byte interpreted by slave
+ * @value: 16-bit "word" being written
+ *
+ * This executes the SMBus "process call" protocol, returning negative errno
+ * else a 16-bit unsigned "word" received from the device.
+ */
+s32 i2c_smbus_process_call(struct i2c_client *client, u8 command, u16 value)
+{
+	union i2c_smbus_data data;
+	int status;
+	data.word = value;
+
+	status = i2c_smbus_xfer(client->adapter, client->addr, client->flags,
+				I2C_SMBUS_WRITE, command,
+				I2C_SMBUS_PROC_CALL, &data);
+	return (status < 0) ? status : data.word;
+}
+EXPORT_SYMBOL(i2c_smbus_process_call);
+
+/**
  * i2c_smbus_read_block_data - SMBus "block read" protocol
  * @client: Handle to slave device
  * @command: Byte interpreted by slave
@@ -1793,7 +1831,8 @@ static s32 i2c_smbus_xfer_emulated(struct i2c_adapter * adapter, u16 addr,
 	case I2C_SMBUS_QUICK:
 		msg[0].len = 0;
 		/* Special case: The read/write field is used as data */
-		msg[0].flags = flags | (read_write==I2C_SMBUS_READ)?I2C_M_RD:0;
+		msg[0].flags = flags | (read_write == I2C_SMBUS_READ ?
+					I2C_M_RD : 0);
 		num = 1;
 		break;
 	case I2C_SMBUS_BYTE:

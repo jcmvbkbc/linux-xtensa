@@ -6,7 +6,7 @@
  *	This code is released under the GNU General Public License version 2 or
  *	later.
  */
-#include <linux/mc146818rtc.h>
+#include <linux/seq_file.h>
 #include <linux/proc_fs.h>
 #include <linux/kernel.h>
 
@@ -17,6 +17,7 @@
 #include <asm/genapic.h>
 #include <asm/idle.h>
 #include <asm/tsc.h>
+#include <asm/irq_vectors.h>
 
 #include <mach_apic.h>
 
@@ -199,6 +200,7 @@ static int uv_wait_completion(struct bau_desc *bau_desc,
 				destination_timeouts = 0;
 			}
 		}
+		cpu_relax();
 	}
 	return FLUSH_COMPLETE;
 }
@@ -565,14 +567,10 @@ static int __init uv_ptc_init(void)
 	if (!is_uv_system())
 		return 0;
 
-	if (!proc_mkdir("sgi_uv", NULL))
-		return -EINVAL;
-
 	proc_uv_ptc = create_proc_entry(UV_PTC_BASENAME, 0444, NULL);
 	if (!proc_uv_ptc) {
 		printk(KERN_ERR "unable to create %s proc entry\n",
 		       UV_PTC_BASENAME);
-		remove_proc_entry("sgi_uv", NULL);
 		return -EINVAL;
 	}
 	proc_uv_ptc->proc_fops = &proc_uv_ptc_operations;
@@ -585,7 +583,6 @@ static int __init uv_ptc_init(void)
 static struct bau_control * __init uv_table_bases_init(int blade, int node)
 {
 	int i;
-	int *ip;
 	struct bau_msg_status *msp;
 	struct bau_control *bau_tabp;
 
@@ -601,13 +598,6 @@ static struct bau_control * __init uv_table_bases_init(int blade, int node)
 	for (i = 0, msp = bau_tabp->msg_statuses; i < DEST_Q_SIZE; i++, msp++)
 		bau_cpubits_clear(&msp->seen_by, (int)
 				  uv_blade_nr_possible_cpus(blade));
-
-	bau_tabp->watching =
-	    kmalloc_node(sizeof(int) * DEST_NUM_RESOURCES, GFP_KERNEL, node);
-	BUG_ON(!bau_tabp->watching);
-
-	for (i = 0, ip = bau_tabp->watching; i < DEST_Q_SIZE; i++, ip++)
-		*ip = 0;
 
 	uv_bau_table_bases[blade] = bau_tabp;
 
@@ -631,7 +621,6 @@ uv_table_bases_finish(int blade, int node, int cur_cpu,
 		bcp->bau_msg_head	= bau_tablesp->va_queue_first;
 		bcp->va_queue_first	= bau_tablesp->va_queue_first;
 		bcp->va_queue_last	= bau_tablesp->va_queue_last;
-		bcp->watching		= bau_tablesp->watching;
 		bcp->msg_statuses	= bau_tablesp->msg_statuses;
 		bcp->descriptor_base	= adp;
 	}
@@ -783,7 +772,7 @@ static int __init uv_bau_init(void)
 		uv_init_blade(blade, node, cur_cpu);
 		cur_cpu += uv_blade_nr_possible_cpus(blade);
 	}
-	set_intr_gate(UV_BAU_MESSAGE, uv_bau_message_intr1);
+	alloc_intr_gate(UV_BAU_MESSAGE, uv_bau_message_intr1);
 	uv_enable_timeouts();
 
 	return 0;

@@ -33,10 +33,6 @@
  *
  * --> ATAPI support (Marvell claims the 60xx/70xx chips can do it).
  *
- * --> Investigate problems with PCI Message Signalled Interrupts (MSI).
- *
- * --> Cache frequently-accessed registers in mv_port_priv to reduce overhead.
- *
  * --> Develop a low-power-consumption strategy, and implement it.
  *
  * --> [Experiment, low priority] Investigate interrupt coalescing.
@@ -72,7 +68,7 @@
 #include <linux/libata.h>
 
 #define DRV_NAME	"sata_mv"
-#define DRV_VERSION	"1.24"
+#define DRV_VERSION	"1.25"
 
 enum {
 	/* BAR's are enumerated in terms of pci_resource_start() terms */
@@ -351,8 +347,6 @@ enum {
 
 	EDMA_HALTCOND_OFS	= 0x60,		/* GenIIe halt conditions */
 
-	GEN_II_NCQ_MAX_SECTORS	= 256,		/* max sects/io on Gen2 w/NCQ */
-
 	/* Host private flags (hp_flags) */
 	MV_HP_FLAG_MSI		= (1 << 0),
 	MV_HP_ERRATA_50XXB0	= (1 << 1),
@@ -493,10 +487,10 @@ struct mv_hw_ops {
 	void (*reset_bus)(struct ata_host *host, void __iomem *mmio);
 };
 
-static int mv_scr_read(struct ata_port *ap, unsigned int sc_reg_in, u32 *val);
-static int mv_scr_write(struct ata_port *ap, unsigned int sc_reg_in, u32 val);
-static int mv5_scr_read(struct ata_port *ap, unsigned int sc_reg_in, u32 *val);
-static int mv5_scr_write(struct ata_port *ap, unsigned int sc_reg_in, u32 val);
+static int mv_scr_read(struct ata_link *link, unsigned int sc_reg_in, u32 *val);
+static int mv_scr_write(struct ata_link *link, unsigned int sc_reg_in, u32 val);
+static int mv5_scr_read(struct ata_link *link, unsigned int sc_reg_in, u32 *val);
+static int mv5_scr_write(struct ata_link *link, unsigned int sc_reg_in, u32 val);
 static int mv_port_start(struct ata_port *ap);
 static void mv_port_stop(struct ata_port *ap);
 static int mv_qc_defer(struct ata_queued_cmd *qc);
@@ -667,9 +661,10 @@ static const struct pci_device_id mv_pci_tbl[] = {
 	{ PCI_VDEVICE(MARVELL, 0x5041), chip_504x },
 	{ PCI_VDEVICE(MARVELL, 0x5080), chip_5080 },
 	{ PCI_VDEVICE(MARVELL, 0x5081), chip_508x },
-	/* RocketRAID 1740/174x have different identifiers */
-	{ PCI_VDEVICE(TTI, 0x1740), chip_508x },
-	{ PCI_VDEVICE(TTI, 0x1742), chip_508x },
+	/* RocketRAID 1720/174x have different identifiers */
+	{ PCI_VDEVICE(TTI, 0x1720), chip_6042 },
+	{ PCI_VDEVICE(TTI, 0x1740), chip_6042 },
+	{ PCI_VDEVICE(TTI, 0x1742), chip_6042 },
 
 	{ PCI_VDEVICE(MARVELL, 0x6040), chip_604x },
 	{ PCI_VDEVICE(MARVELL, 0x6041), chip_604x },
@@ -882,19 +877,15 @@ static void mv_start_dma(struct ata_port *ap, void __iomem *port_mmio,
 		struct mv_host_priv *hpriv = ap->host->private_data;
 		int hardport = mv_hardport_from_port(ap->port_no);
 		void __iomem *hc_mmio = mv_hc_base_from_port(
-					mv_host_base(ap->host), hardport);
-		u32 hc_irq_cause, ipending;
+					mv_host_base(ap->host), ap->port_no);
+		u32 hc_irq_cause;
 
 		/* clear EDMA event indicators, if any */
 		writelfl(0, port_mmio + EDMA_ERR_IRQ_CAUSE_OFS);
 
-		/* clear EDMA interrupt indicator, if any */
-		hc_irq_cause = readl(hc_mmio + HC_IRQ_CAUSE_OFS);
-		ipending = (DEV_IRQ | DMA_IRQ) << hardport;
-		if (hc_irq_cause & ipending) {
-			writelfl(hc_irq_cause & ~ipending,
-				 hc_mmio + HC_IRQ_CAUSE_OFS);
-		}
+		/* clear pending irq events */
+		hc_irq_cause = ~((DEV_IRQ | DMA_IRQ) << hardport);
+		writelfl(hc_irq_cause, hc_mmio + HC_IRQ_CAUSE_OFS);
 
 		mv_edma_cfg(ap, want_ncq);
 
@@ -1069,23 +1060,23 @@ static unsigned int mv_scr_offset(unsigned int sc_reg_in)
 	return ofs;
 }
 
-static int mv_scr_read(struct ata_port *ap, unsigned int sc_reg_in, u32 *val)
+static int mv_scr_read(struct ata_link *link, unsigned int sc_reg_in, u32 *val)
 {
 	unsigned int ofs = mv_scr_offset(sc_reg_in);
 
 	if (ofs != 0xffffffffU) {
-		*val = readl(mv_ap_base(ap) + ofs);
+		*val = readl(mv_ap_base(link->ap) + ofs);
 		return 0;
 	} else
 		return -EINVAL;
 }
 
-static int mv_scr_write(struct ata_port *ap, unsigned int sc_reg_in, u32 val)
+static int mv_scr_write(struct ata_link *link, unsigned int sc_reg_in, u32 val)
 {
 	unsigned int ofs = mv_scr_offset(sc_reg_in);
 
 	if (ofs != 0xffffffffU) {
-		writelfl(val, mv_ap_base(ap) + ofs);
+		writelfl(val, mv_ap_base(link->ap) + ofs);
 		return 0;
 	} else
 		return -EINVAL;
@@ -1098,20 +1089,12 @@ static void mv6_dev_config(struct ata_device *adev)
 	 *
 	 * Gen-II does not support NCQ over a port multiplier
 	 *  (no FIS-based switching).
-	 *
-	 * We don't have hob_nsect when doing NCQ commands on Gen-II.
-	 * See mv_qc_prep() for more info.
 	 */
 	if (adev->flags & ATA_DFLAG_NCQ) {
 		if (sata_pmp_attached(adev->link->ap)) {
 			adev->flags &= ~ATA_DFLAG_NCQ;
 			ata_dev_printk(adev, KERN_INFO,
 				"NCQ disabled for command-based switching\n");
-		} else if (adev->max_sectors > GEN_II_NCQ_MAX_SECTORS) {
-			adev->max_sectors = GEN_II_NCQ_MAX_SECTORS;
-			ata_dev_printk(adev, KERN_INFO,
-				"max_sectors limited to %u for NCQ\n",
-				adev->max_sectors);
 		}
 	}
 }
@@ -1134,30 +1117,16 @@ static int mv_qc_defer(struct ata_queued_cmd *qc)
 	if (ap->nr_active_links == 0)
 		return 0;
 
-	if (pp->pp_flags & MV_PP_FLAG_EDMA_EN) {
-		/*
-		 * The port is operating in host queuing mode (EDMA).
-		 * It can accomodate a new qc if the qc protocol
-		 * is compatible with the current host queue mode.
-		 */
-		if (pp->pp_flags & MV_PP_FLAG_NCQ_EN) {
-			/*
-			 * The host queue (EDMA) is in NCQ mode.
-			 * If the new qc is also an NCQ command,
-			 * then allow the new qc.
-			 */
-			if (qc->tf.protocol == ATA_PROT_NCQ)
-				return 0;
-		} else {
-			/*
-			 * The host queue (EDMA) is in non-NCQ, DMA mode.
-			 * If the new qc is also a non-NCQ, DMA command,
-			 * then allow the new qc.
-			 */
-			if (qc->tf.protocol == ATA_PROT_DMA)
-				return 0;
-		}
-	}
+	/*
+	 * The port is operating in host queuing mode (EDMA) with NCQ
+	 * enabled, allow multiple NCQ commands.  EDMA also allows
+	 * queueing multiple DMA commands but libata core currently
+	 * doesn't allow it.
+	 */
+	if ((pp->pp_flags & MV_PP_FLAG_EDMA_EN) &&
+	    (pp->pp_flags & MV_PP_FLAG_NCQ_EN) && ata_is_ncq(qc->tf.protocol))
+		return 0;
+
 	return ATA_DEFER_PORT;
 }
 
@@ -1463,7 +1432,8 @@ static void mv_qc_prep(struct ata_queued_cmd *qc)
 	 * only 11 bytes...so we must pick and choose required
 	 * registers based on the command.  So, we drop feature and
 	 * hob_feature for [RW] DMA commands, but they are needed for
-	 * NCQ.  NCQ will drop hob_nsect.
+	 * NCQ.  NCQ will drop hob_nsect, which is not needed there
+	 * (nsect is used only for the tag; feat/hob_feat hold true nsect).
 	 */
 	switch (tf->command) {
 	case ATA_CMD_READ:
@@ -1849,7 +1819,6 @@ static void mv_unexpected_intr(struct ata_port *ap, int edma_was_enabled)
 /**
  *      mv_err_intr - Handle error interrupts on the port
  *      @ap: ATA channel to manipulate
- *      @qc: affected command (non-NCQ), or NULL
  *
  *      Most cases require a full reset of the chip's state machine,
  *      which also performs a COMRESET.
@@ -2228,9 +2197,15 @@ static irqreturn_t mv_interrupt(int irq, void *dev_instance)
 	struct ata_host *host = dev_instance;
 	struct mv_host_priv *hpriv = host->private_data;
 	unsigned int handled = 0;
+	int using_msi = hpriv->hp_flags & MV_HP_FLAG_MSI;
 	u32 main_irq_cause, pending_irqs;
 
 	spin_lock(&host->lock);
+
+	/* for MSI:  block new interrupts while in here */
+	if (using_msi)
+		writel(0, hpriv->main_irq_mask_addr);
+
 	main_irq_cause = readl(hpriv->main_irq_cause_addr);
 	pending_irqs   = main_irq_cause & hpriv->main_irq_mask;
 	/*
@@ -2244,6 +2219,11 @@ static irqreturn_t mv_interrupt(int irq, void *dev_instance)
 			handled = mv_host_intr(host, pending_irqs);
 	}
 	spin_unlock(&host->lock);
+
+	/* for MSI: unmask; interrupt cause bits will retrigger now */
+	if (using_msi)
+		writel(hpriv->main_irq_mask, hpriv->main_irq_mask_addr);
+
 	return IRQ_RETVAL(handled);
 }
 
@@ -2264,11 +2244,11 @@ static unsigned int mv5_scr_offset(unsigned int sc_reg_in)
 	return ofs;
 }
 
-static int mv5_scr_read(struct ata_port *ap, unsigned int sc_reg_in, u32 *val)
+static int mv5_scr_read(struct ata_link *link, unsigned int sc_reg_in, u32 *val)
 {
-	struct mv_host_priv *hpriv = ap->host->private_data;
+	struct mv_host_priv *hpriv = link->ap->host->private_data;
 	void __iomem *mmio = hpriv->base;
-	void __iomem *addr = mv5_phy_base(mmio, ap->port_no);
+	void __iomem *addr = mv5_phy_base(mmio, link->ap->port_no);
 	unsigned int ofs = mv5_scr_offset(sc_reg_in);
 
 	if (ofs != 0xffffffffU) {
@@ -2278,11 +2258,11 @@ static int mv5_scr_read(struct ata_port *ap, unsigned int sc_reg_in, u32 *val)
 		return -EINVAL;
 }
 
-static int mv5_scr_write(struct ata_port *ap, unsigned int sc_reg_in, u32 val)
+static int mv5_scr_write(struct ata_link *link, unsigned int sc_reg_in, u32 val)
 {
-	struct mv_host_priv *hpriv = ap->host->private_data;
+	struct mv_host_priv *hpriv = link->ap->host->private_data;
 	void __iomem *mmio = hpriv->base;
-	void __iomem *addr = mv5_phy_base(mmio, ap->port_no);
+	void __iomem *addr = mv5_phy_base(mmio, link->ap->port_no);
 	unsigned int ofs = mv5_scr_offset(sc_reg_in);
 
 	if (ofs != 0xffffffffU) {
@@ -2835,8 +2815,7 @@ static void mv_eh_thaw(struct ata_port *ap)
 	writel(0, port_mmio + EDMA_ERR_IRQ_CAUSE_OFS);
 
 	/* clear pending irq events */
-	hc_irq_cause = readl(hc_mmio + HC_IRQ_CAUSE_OFS);
-	hc_irq_cause &= ~((DEV_IRQ | DMA_IRQ) << hardport);
+	hc_irq_cause = ~((DEV_IRQ | DMA_IRQ) << hardport);
 	writelfl(hc_irq_cause, hc_mmio + HC_IRQ_CAUSE_OFS);
 
 	mv_enable_port_irqs(ap, ERR_IRQ);
@@ -3036,7 +3015,8 @@ static int mv_chip_id(struct ata_host *host, unsigned int board_idx)
 		break;
 	case chip_soc:
 		hpriv->ops = &mv_soc_ops;
-		hp_flags |= MV_HP_FLAG_SOC | MV_HP_ERRATA_60X1C0;
+		hp_flags |= MV_HP_FLAG_SOC | MV_HP_GEN_IIE |
+			MV_HP_ERRATA_60X1C0;
 		break;
 
 	default:
@@ -3088,6 +3068,9 @@ static int mv_init_host(struct ata_host *host, unsigned int board_idx)
 		hpriv->main_irq_mask_addr  = mmio + PCI_HC_MAIN_IRQ_MASK_OFS;
 	}
 
+	/* initialize shadow irq mask with register's value */
+	hpriv->main_irq_mask = readl(hpriv->main_irq_mask_addr);
+
 	/* global interrupt mask: 0 == mask everything */
 	mv_set_main_irq_mask(host, ~0, 0);
 
@@ -3131,19 +3114,17 @@ static int mv_init_host(struct ata_host *host, unsigned int board_idx)
 		writelfl(0, hc_mmio + HC_IRQ_CAUSE_OFS);
 	}
 
-	if (!IS_SOC(hpriv)) {
-		/* Clear any currently outstanding host interrupt conditions */
-		writelfl(0, mmio + hpriv->irq_cause_ofs);
+	/* Clear any currently outstanding host interrupt conditions */
+	writelfl(0, mmio + hpriv->irq_cause_ofs);
 
-		/* and unmask interrupt generation for host regs */
-		writelfl(hpriv->unmask_all_irqs, mmio + hpriv->irq_mask_ofs);
+	/* and unmask interrupt generation for host regs */
+	writelfl(hpriv->unmask_all_irqs, mmio + hpriv->irq_mask_ofs);
 
-		/*
-		 * enable only global host interrupts for now.
-		 * The per-port interrupts get done later as ports are set up.
-		 */
-		mv_set_main_irq_mask(host, 0, PCI_ERR);
-	}
+	/*
+	 * enable only global host interrupts for now.
+	 * The per-port interrupts get done later as ports are set up.
+	 */
+	mv_set_main_irq_mask(host, 0, PCI_ERR);
 done:
 	return rc;
 }
@@ -3443,9 +3424,9 @@ static int mv_pci_init_one(struct pci_dev *pdev,
 	if (rc)
 		return rc;
 
-	/* Enable interrupts */
-	if (msi && pci_enable_msi(pdev))
-		pci_intx(pdev, 1);
+	/* Enable message-switched interrupts, if requested */
+	if (msi && pci_enable_msi(pdev) == 0)
+		hpriv->hp_flags |= MV_HP_FLAG_MSI;
 
 	mv_dump_pci_cfg(pdev, 0x68);
 	mv_print_info(host);

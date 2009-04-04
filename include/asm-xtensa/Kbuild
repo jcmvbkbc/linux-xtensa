@@ -1,8 +1,0 @@
-# User exported xtensa header files
-
-include include/asm-generic/Kbuild.asm
-
-header-y += elf.h
-header-y += user.h
-header-y += coprocessor.h
-

@@ -18,15 +18,8 @@
 #ifndef _LINUX_NET_H
 #define _LINUX_NET_H
 
-#include <linux/wait.h>
 #include <linux/socket.h>
-#include <linux/fcntl.h>	/* For O_CLOEXEC and O_NONBLOCK */
 #include <asm/socket.h>
-
-struct poll_table_struct;
-struct pipe_inode_info;
-struct inode;
-struct net;
 
 #define NPROTO		AF_MAX
 
@@ -47,7 +40,7 @@ struct net;
 #define SYS_GETSOCKOPT	15		/* sys_getsockopt(2)		*/
 #define SYS_SENDMSG	16		/* sys_sendmsg(2)		*/
 #define SYS_RECVMSG	17		/* sys_recvmsg(2)		*/
-#define SYS_PACCEPT	18		/* sys_paccept(2)		*/
+#define SYS_ACCEPT4	18		/* sys_accept4(2)		*/
 
 typedef enum {
 	SS_FREE = 0,			/* not allocated		*/
@@ -62,6 +55,13 @@ typedef enum {
 #ifdef __KERNEL__
 #include <linux/stringify.h>
 #include <linux/random.h>
+#include <linux/wait.h>
+#include <linux/fcntl.h>	/* For O_CLOEXEC and O_NONBLOCK */
+
+struct poll_table_struct;
+struct pipe_inode_info;
+struct inode;
+struct net;
 
 #define SOCK_ASYNC_NOSPACE	0
 #define SOCK_ASYNC_WAITDATA	1
@@ -100,7 +100,7 @@ enum sock_type {
  * remaining bits are used as flags. */
 #define SOCK_TYPE_MASK 0xf
 
-/* Flags for socket, socketpair, paccept */
+/* Flags for socket, socketpair, accept4 */
 #define SOCK_CLOEXEC	O_CLOEXEC
 #ifndef SOCK_NONBLOCK
 #define SOCK_NONBLOCK	O_NONBLOCK
@@ -223,8 +223,6 @@ extern int 	     sock_map_fd(struct socket *sock, int flags);
 extern struct socket *sockfd_lookup(int fd, int *err);
 #define		     sockfd_put(sock) fput(sock->file)
 extern int	     net_ratelimit(void);
-extern long	     do_accept(int fd, struct sockaddr __user *upeer_sockaddr,
-			       int __user *upeer_addrlen, int flags);
 
 #define net_random()		random32()
 #define net_srandom(seed)	srandom32((__force u32)seed)

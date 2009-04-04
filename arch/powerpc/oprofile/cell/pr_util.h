@@ -24,6 +24,15 @@
 #define SKIP_GENERIC_SYNC 0
 #define SYNC_START_ERROR -1
 #define DO_GENERIC_SYNC 1
+#define SPUS_PER_NODE   8
+#define DEFAULT_TIMER_EXPIRE  (HZ / 10)
+
+extern struct delayed_work spu_work;
+extern int spu_prof_running;
+
+#define TRACE_ARRAY_SIZE 1024
+
+extern spinlock_t oprof_spu_smpl_arry_lck;
 
 struct spu_overlay_info {	/* map of sections within an SPU overlay */
 	unsigned int vma;	/* SPU virtual memory address from elf */
@@ -62,11 +71,19 @@ struct vma_to_fileoffset_map {	/* map of sections within an SPU program */
 
 };
 
+struct spu_buffer {
+	int last_guard_val;
+	int ctx_sw_seen;
+	unsigned long *buff;
+	unsigned int head, tail;
+};
+
+
 /* The three functions below are for maintaining and accessing
  * the vma-to-fileoffset map.
  */
 struct vma_to_fileoffset_map *create_vma_map(const struct spu *spu,
-					     u64 objectid);
+					     unsigned long objectid);
 unsigned int vma_map_lookup(struct vma_to_fileoffset_map *map,
 			    unsigned int vma, const struct spu *aSpu,
 			    int *grd_val);
@@ -76,10 +93,11 @@ void vma_map_free(struct vma_to_fileoffset_map *map);
  * Entry point for SPU profiling.
  * cycles_reset is the SPU_CYCLES count value specified by the user.
  */
-int start_spu_profiling(unsigned int cycles_reset);
+int start_spu_profiling_cycles(unsigned int cycles_reset);
+void start_spu_profiling_events(void);
 
-void stop_spu_profiling(void);
-
+void stop_spu_profiling_cycles(void);
+void stop_spu_profiling_events(void);
 
 /* add the necessary profiling hooks */
 int spu_sync_start(void);

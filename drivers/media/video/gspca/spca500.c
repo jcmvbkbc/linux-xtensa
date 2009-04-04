@@ -111,7 +111,7 @@ static struct ctrl sd_ctrls[] = {
 	},
 };
 
-static struct v4l2_pix_format vga_mode[] = {
+static const struct v4l2_pix_format vga_mode[] = {
 	{320, 240, V4L2_PIX_FMT_JPEG, V4L2_FIELD_NONE,
 		.bytesperline = 320,
 		.sizeimage = 320 * 240 * 3 / 8 + 590,
@@ -124,7 +124,7 @@ static struct v4l2_pix_format vga_mode[] = {
 		.priv = 0},
 };
 
-static struct v4l2_pix_format sif_mode[] = {
+static const struct v4l2_pix_format sif_mode[] = {
 	{176, 144, V4L2_PIX_FMT_JPEG, V4L2_FIELD_NONE,
 		.bytesperline = 176,
 		.sizeimage = 176 * 144 * 3 / 8 + 590,
@@ -633,10 +633,10 @@ static int sd_config(struct gspca_dev *gspca_dev,
 	sd->subtype = id->driver_info;
 	if (sd->subtype != LogitechClickSmart310) {
 		cam->cam_mode = vga_mode;
-		cam->nmodes = sizeof vga_mode / sizeof vga_mode[0];
+		cam->nmodes = ARRAY_SIZE(vga_mode);
 	} else {
 		cam->cam_mode = sif_mode;
-		cam->nmodes = sizeof sif_mode / sizeof sif_mode[0];
+		cam->nmodes = ARRAY_SIZE(sif_mode);
 	}
 	sd->qindex = 5;
 	sd->brightness = BRIGHTNESS_DEF;
@@ -645,8 +645,8 @@ static int sd_config(struct gspca_dev *gspca_dev,
 	return 0;
 }
 
-/* this function is called at open time */
-static int sd_open(struct gspca_dev *gspca_dev)
+/* this function is called at probe and resume time */
+static int sd_init(struct gspca_dev *gspca_dev)
 {
 	struct sd *sd = (struct sd *) gspca_dev;
 
@@ -660,7 +660,7 @@ static int sd_open(struct gspca_dev *gspca_dev)
 	return 0;
 }
 
-static void sd_start(struct gspca_dev *gspca_dev)
+static int sd_start(struct gspca_dev *gspca_dev)
 {
 	struct sd *sd = (struct sd *) gspca_dev;
 	int err;
@@ -867,6 +867,7 @@ static void sd_start(struct gspca_dev *gspca_dev)
 		write_vector(gspca_dev, Clicksmart510_defaults);
 		break;
 	}
+	return 0;
 }
 
 static void sd_stopN(struct gspca_dev *gspca_dev)
@@ -878,14 +879,6 @@ static void sd_stopN(struct gspca_dev *gspca_dev)
 	reg_r(gspca_dev, 0x8000, 1);
 	PDEBUG(D_STREAM, "stop SPCA500 done reg8000: 0x%2x",
 		gspca_dev->usb_buf[0]);
-}
-
-static void sd_stop0(struct gspca_dev *gspca_dev)
-{
-}
-
-static void sd_close(struct gspca_dev *gspca_dev)
-{
 }
 
 static void sd_pkt_scan(struct gspca_dev *gspca_dev,
@@ -1051,11 +1044,9 @@ static struct sd_desc sd_desc = {
 	.ctrls = sd_ctrls,
 	.nctrls = ARRAY_SIZE(sd_ctrls),
 	.config = sd_config,
-	.open = sd_open,
+	.init = sd_init,
 	.start = sd_start,
 	.stopN = sd_stopN,
-	.stop0 = sd_stop0,
-	.close = sd_close,
 	.pkt_scan = sd_pkt_scan,
 };
 
@@ -1093,6 +1084,10 @@ static struct usb_driver sd_driver = {
 	.id_table = device_table,
 	.probe = sd_probe,
 	.disconnect = gspca_disconnect,
+#ifdef CONFIG_PM
+	.suspend = gspca_suspend,
+	.resume = gspca_resume,
+#endif
 };
 
 /* -- module insert / remove -- */

@@ -51,6 +51,14 @@ config SECURITY
 
 	  If you are unsure how to answer this question, answer N.
 
+config SECURITYFS
+	bool "Enable the securityfs filesystem"
+	help
+	  This will build the securityfs filesystem.  It is currently used by
+	  the TPM bios character driver.  It is not used by SELinux or SMACK.
+
+	  If you are unsure how to answer this question, answer N.
+
 config SECURITY_NETWORK
 	bool "Socket and Networking Security Hooks"
 	depends on SECURITY
@@ -71,6 +79,15 @@ config SECURITY_NETWORK_XFRM
 	  designated as unlabelled, and only sockets authorized
 	  to communicate unlabelled data can send without using
 	  IPSec.
+	  If you are unsure how to answer this question, answer N.
+
+config SECURITY_PATH
+	bool "Security hooks for pathname based access control"
+	depends on SECURITY
+	help
+	  This enables the security hooks for pathname based access control.
+	  If enabled, a security module can use these hooks to
+	  implement pathname based access controls.
 	  If you are unsure how to answer this question, answer N.
 
 config SECURITY_FILE_CAPABILITIES

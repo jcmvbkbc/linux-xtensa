@@ -157,10 +157,16 @@ static int update_filter(struct tap_filter *filter, void __user *arg)
 
 	nexact = n;
 
-	/* The rest is hashed */
+	/* Remaining multicast addresses are hashed,
+	 * unicast will leave the filter disabled. */
 	memset(filter->mask, 0, sizeof(filter->mask));
-	for (; n < uf.count; n++)
+	for (; n < uf.count; n++) {
+		if (!is_multicast_ether_addr(addr[n].u)) {
+			err = 0; /* no filter */
+			goto done;
+		}
 		addr_hash_set(filter->mask, addr[n].u);
+	}
 
 	/* For ALLMULTI just set the mask to all ones.
 	 * This overrides the mask populated above. */
@@ -213,7 +219,7 @@ static int check_filter(struct tap_filter *filter, const struct sk_buff *skb)
 
 /* Network device part of the driver */
 
-static unsigned int tun_net_id;
+static int tun_net_id;
 struct tun_net {
 	struct list_head dev_list;
 };
@@ -305,6 +311,23 @@ tun_net_change_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
+static const struct net_device_ops tun_netdev_ops = {
+	.ndo_open		= tun_net_open,
+	.ndo_stop		= tun_net_close,
+	.ndo_start_xmit		= tun_net_xmit,
+	.ndo_change_mtu		= tun_net_change_mtu,
+};
+
+static const struct net_device_ops tap_netdev_ops = {
+	.ndo_open		= tun_net_open,
+	.ndo_stop		= tun_net_close,
+	.ndo_start_xmit		= tun_net_xmit,
+	.ndo_change_mtu		= tun_net_change_mtu,
+	.ndo_set_multicast_list	= tun_net_mclist,
+	.ndo_set_mac_address	= eth_mac_addr,
+	.ndo_validate_addr	= eth_validate_addr,
+};
+
 /* Initialize net device. */
 static void tun_net_init(struct net_device *dev)
 {
@@ -312,11 +335,12 @@ static void tun_net_init(struct net_device *dev)
 
 	switch (tun->flags & TUN_TYPE_MASK) {
 	case TUN_TUN_DEV:
+		dev->netdev_ops = &tun_netdev_ops;
+
 		/* Point-to-Point TUN Device */
 		dev->hard_header_len = 0;
 		dev->addr_len = 0;
 		dev->mtu = 1500;
-		dev->change_mtu = tun_net_change_mtu;
 
 		/* Zero header length */
 		dev->type = ARPHRD_NONE;
@@ -325,10 +349,9 @@ static void tun_net_init(struct net_device *dev)
 		break;
 
 	case TUN_TAP_DEV:
+		dev->netdev_ops = &tap_netdev_ops;
 		/* Ethernet TAP Device */
 		ether_setup(dev);
-		dev->change_mtu         = tun_net_change_mtu;
-		dev->set_multicast_list = tun_net_mclist;
 
 		random_ether_addr(dev->dev_addr);
 
@@ -356,6 +379,66 @@ static unsigned int tun_chr_poll(struct file *file, poll_table * wait)
 		mask |= POLLIN | POLLRDNORM;
 
 	return mask;
+}
+
+/* prepad is the amount to reserve at front.  len is length after that.
+ * linear is a hint as to how much to copy (usually headers). */
+static struct sk_buff *tun_alloc_skb(size_t prepad, size_t len, size_t linear,
+				     gfp_t gfp)
+{
+	struct sk_buff *skb;
+	unsigned int i;
+
+	skb = alloc_skb(prepad + len, gfp|__GFP_NOWARN);
+	if (skb) {
+		skb_reserve(skb, prepad);
+		skb_put(skb, len);
+		return skb;
+	}
+
+	/* Under a page?  Don't bother with paged skb. */
+	if (prepad + len < PAGE_SIZE)
+		return NULL;
+
+	/* Start with a normal skb, and add pages. */
+	skb = alloc_skb(prepad + linear, gfp);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, prepad);
+	skb_put(skb, linear);
+
+	len -= linear;
+
+	for (i = 0; i < MAX_SKB_FRAGS; i++) {
+		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
+
+		f->page = alloc_page(gfp|__GFP_ZERO);
+		if (!f->page)
+			break;
+
+		f->page_offset = 0;
+		f->size = PAGE_SIZE;
+
+		skb->data_len += PAGE_SIZE;
+		skb->len += PAGE_SIZE;
+		skb->truesize += PAGE_SIZE;
+		skb_shinfo(skb)->nr_frags++;
+
+		if (len < PAGE_SIZE) {
+			len = 0;
+			break;
+		}
+		len -= PAGE_SIZE;
+	}
+
+	/* Too large, or alloc fail? */
+	if (unlikely(len)) {
+		kfree_skb(skb);
+		skb = NULL;
+	}
+
+	return skb;
 }
 
 /* Get packet from user space buffer */
@@ -391,14 +474,12 @@ static __inline__ ssize_t tun_get_user(struct tun_struct *tun, struct iovec *iv,
 			return -EINVAL;
 	}
 
-	if (!(skb = alloc_skb(len + align, GFP_KERNEL))) {
+	if (!(skb = tun_alloc_skb(align, len, gso.hdr_len, GFP_KERNEL))) {
 		tun->dev->stats.rx_dropped++;
 		return -ENOMEM;
 	}
 
-	if (align)
-		skb_reserve(skb, align);
-	if (memcpy_fromiovec(skb_put(skb, len), iv, len)) {
+	if (skb_copy_datagram_from_iovec(skb, 0, iv, len)) {
 		tun->dev->stats.rx_dropped++;
 		kfree_skb(skb);
 		return -EFAULT;
@@ -471,7 +552,6 @@ static __inline__ ssize_t tun_get_user(struct tun_struct *tun, struct iovec *iv,
 	}
 
 	netif_rx_ni(skb);
-	tun->dev->last_rx = jiffies;
 
 	tun->dev->stats.rx_packets++;
 	tun->dev->stats.rx_bytes += len;
@@ -618,9 +698,6 @@ static void tun_setup(struct net_device *dev)
 	tun->owner = -1;
 	tun->group = -1;
 
-	dev->open = tun_net_open;
-	dev->hard_start_xmit = tun_net_xmit;
-	dev->stop = tun_net_close;
 	dev->ethtool_ops = &tun_ethtool_ops;
 	dev->destructor = free_netdev;
 	dev->features |= NETIF_F_NETNS_LOCAL;
@@ -644,6 +721,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 	struct tun_net *tn;
 	struct tun_struct *tun;
 	struct net_device *dev;
+	const struct cred *cred = current_cred();
 	int err;
 
 	tn = net_generic(net, tun_net_id);
@@ -654,11 +732,12 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 
 		/* Check permissions */
 		if (((tun->owner != -1 &&
-		      current->euid != tun->owner) ||
+		      cred->euid != tun->owner) ||
 		     (tun->group != -1 &&
-		      current->egid != tun->group)) &&
-		     !capable(CAP_NET_ADMIN))
+		      cred->egid != tun->group)) &&
+		    !capable(CAP_NET_ADMIN)) {
 			return -EPERM;
+		}
 	}
 	else if (__dev_get_by_name(net, ifr->ifr_name))
 		return -EINVAL;
@@ -692,6 +771,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 			return -ENOMEM;
 
 		dev_net_set(dev, net);
+
 		tun = netdev_priv(dev);
 		tun->dev = dev;
 		tun->flags = flags;
@@ -748,6 +828,36 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 	return err;
 }
 
+static int tun_get_iff(struct net *net, struct file *file, struct ifreq *ifr)
+{
+	struct tun_struct *tun = file->private_data;
+
+	if (!tun)
+		return -EBADFD;
+
+	DBG(KERN_INFO "%s: tun_get_iff\n", tun->dev->name);
+
+	strcpy(ifr->ifr_name, tun->dev->name);
+
+	ifr->ifr_flags = 0;
+
+	if (ifr->ifr_flags & TUN_TUN_DEV)
+		ifr->ifr_flags |= IFF_TUN;
+	else
+		ifr->ifr_flags |= IFF_TAP;
+
+	if (tun->flags & TUN_NO_PI)
+		ifr->ifr_flags |= IFF_NO_PI;
+
+	if (tun->flags & TUN_ONE_QUEUE)
+		ifr->ifr_flags |= IFF_ONE_QUEUE;
+
+	if (tun->flags & TUN_VNET_HDR)
+		ifr->ifr_flags |= IFF_VNET_HDR;
+
+	return 0;
+}
+
 /* This is like a cut-down ethtool ops, except done via tun fd so no
  * privs required. */
 static int set_offload(struct net_device *dev, unsigned long arg)
@@ -795,7 +905,6 @@ static int tun_chr_ioctl(struct inode *inode, struct file *file,
 	void __user* argp = (void __user*)arg;
 	struct ifreq ifr;
 	int ret;
-	DECLARE_MAC_BUF(mac);
 
 	if (cmd == TUNSETIFF || _IOC_TYPE(cmd) == 0x89)
 		if (copy_from_user(&ifr, argp, sizeof ifr))
@@ -833,6 +942,15 @@ static int tun_chr_ioctl(struct inode *inode, struct file *file,
 	DBG(KERN_INFO "%s: tun_chr_ioctl cmd %d\n", tun->dev->name, cmd);
 
 	switch (cmd) {
+	case TUNGETIFF:
+		ret = tun_get_iff(current->nsproxy->net_ns, file, &ifr);
+		if (ret)
+			return ret;
+
+		if (copy_to_user(argp, &ifr, sizeof(ifr)))
+			return -EFAULT;
+		break;
+
 	case TUNSETNOCSUM:
 		/* Disable/Enable checksum */
 		if (arg)
@@ -914,8 +1032,8 @@ static int tun_chr_ioctl(struct inode *inode, struct file *file,
 
 	case SIOCSIFHWADDR:
 		/* Set hw address */
-		DBG(KERN_DEBUG "%s: set hw address: %s\n",
-			tun->dev->name, print_mac(mac, ifr.ifr_hwaddr.sa_data));
+		DBG(KERN_DEBUG "%s: set hw address: %pM\n",
+			tun->dev->name, ifr.ifr_hwaddr.sa_data);
 
 		rtnl_lock();
 		ret = dev_set_mac_address(tun->dev, &ifr.ifr_hwaddr);
@@ -972,8 +1090,6 @@ static int tun_chr_close(struct inode *inode, struct file *file)
 		return 0;
 
 	DBG(KERN_INFO "%s: tun_chr_close\n", tun->dev->name);
-
-	tun_chr_fasync(-1, file, 0);
 
 	rtnl_lock();
 

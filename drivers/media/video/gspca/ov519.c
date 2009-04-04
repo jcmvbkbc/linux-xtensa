@@ -3,7 +3,18 @@
  *
  * Copyright (C) 2008 Jean-Francois Moine (http://moinejf.free.fr)
  *
- * (This module is adapted from the ov51x-jpeg package)
+ * This module is adapted from the ov51x-jpeg package, which itself
+ * was adapted from the ov511 driver.
+ *
+ * Original copyright for the ov511 driver is:
+ *
+ * Copyright (c) 1999-2004 Mark W. McClelland
+ * Support for OV519, OV8610 Copyright (c) 2003 Joerg Heckenbach
+ *
+ * ov51x-jpeg original copyright is:
+ *
+ * Copyright (c) 2004-2007 Romain Beauxis <toots@rastageeks.org>
+ * Support for OV7670 sensors was contributed by Sam Skipsey <aoanla@yahoo.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,22 +51,18 @@ struct sd {
 	struct gspca_dev gspca_dev;		/* !! must be the first item */
 
 	/* Determined by sensor type */
-	char sif;
+	__u8 sif;
 
-	unsigned char primary_i2c_slave;	/* I2C write id of sensor */
-
-	unsigned char brightness;
-	unsigned char contrast;
-	unsigned char colors;
+	__u8 brightness;
+	__u8 contrast;
+	__u8 colors;
 	__u8 hflip;
 	__u8 vflip;
 
-	char compress;		/* Should the next frame be compressed? */
-	char compress_inited;	/* Are compression params uploaded? */
-	char stopped;		/* Streaming is temporarily paused */
+	__u8 stopped;		/* Streaming is temporarily paused */
 
-	char frame_rate;	/* current Framerate (OV519 only) */
-	char clockdiv;		/* clockdiv override for OV519 only */
+	__u8 frame_rate;	/* current Framerate (OV519 only) */
+	__u8 clockdiv;		/* clockdiv override for OV519 only */
 
 	char sensor;		/* Type of image sensor chip (SEN_*) */
 #define SEN_UNKNOWN 0
@@ -63,12 +70,10 @@ struct sd {
 #define SEN_OV6630 2
 #define SEN_OV7610 3
 #define SEN_OV7620 4
-#define SEN_OV7630 5
-#define SEN_OV7640 6
-#define SEN_OV7670 7
-#define SEN_OV76BE 8
-#define SEN_OV8610 9
-
+#define SEN_OV7640 5
+#define SEN_OV7670 6
+#define SEN_OV76BE 7
+#define SEN_OV8610 8
 };
 
 /* V4L2 controls supported by the driver */
@@ -127,6 +132,7 @@ static struct ctrl sd_ctrls[] = {
 	    .get = sd_getcolors,
 	},
 /* next controls work with ov7670 only */
+#define HFLIP_IDX 3
 	{
 	    {
 		.id      = V4L2_CID_HFLIP,
@@ -141,6 +147,7 @@ static struct ctrl sd_ctrls[] = {
 	    .set = sd_sethflip,
 	    .get = sd_gethflip,
 	},
+#define VFLIP_IDX 4
 	{
 	    {
 		.id      = V4L2_CID_VFLIP,
@@ -157,7 +164,7 @@ static struct ctrl sd_ctrls[] = {
 	},
 };
 
-static struct v4l2_pix_format vga_mode[] = {
+static const struct v4l2_pix_format vga_mode[] = {
 	{320, 240, V4L2_PIX_FMT_JPEG, V4L2_FIELD_NONE,
 		.bytesperline = 320,
 		.sizeimage = 320 * 240 * 3 / 8 + 590,
@@ -169,7 +176,7 @@ static struct v4l2_pix_format vga_mode[] = {
 		.colorspace = V4L2_COLORSPACE_JPEG,
 		.priv = 0},
 };
-static struct v4l2_pix_format sif_mode[] = {
+static const struct v4l2_pix_format sif_mode[] = {
 	{176, 144, V4L2_PIX_FMT_JPEG, V4L2_FIELD_NONE,
 		.bytesperline = 176,
 		.sizeimage = 176 * 144 * 3 / 8 + 590,
@@ -183,15 +190,15 @@ static struct v4l2_pix_format sif_mode[] = {
 };
 
 /* OV519 Camera interface register numbers */
-#define OV519_CAM_H_SIZE		0x10
-#define OV519_CAM_V_SIZE		0x11
-#define OV519_CAM_X_OFFSETL		0x12
-#define OV519_CAM_X_OFFSETH		0x13
-#define OV519_CAM_Y_OFFSETL		0x14
-#define OV519_CAM_Y_OFFSETH		0x15
-#define OV519_CAM_DIVIDER		0x16
-#define OV519_CAM_DFR			0x20
-#define OV519_CAM_FORMAT		0x25
+#define OV519_R10_H_SIZE		0x10
+#define OV519_R11_V_SIZE		0x11
+#define OV519_R12_X_OFFSETL		0x12
+#define OV519_R13_X_OFFSETH		0x13
+#define OV519_R14_Y_OFFSETL		0x14
+#define OV519_R15_Y_OFFSETH		0x15
+#define OV519_R16_DIVIDER		0x16
+#define OV519_R20_DFR			0x20
+#define OV519_R25_FORMAT		0x25
 
 /* OV519 System Controller register numbers */
 #define OV519_SYS_RESET1 0x51
@@ -292,6 +299,541 @@ static struct v4l2_pix_format sif_mode[] = {
 #define OV7670_REG_HAECC6      0xa9    /* Hist AEC/AGC control 6 */
 #define OV7670_REG_HAECC7      0xaa    /* Hist AEC/AGC control 7 */
 #define OV7670_REG_BD60MAX     0xab    /* 60hz banding step limit */
+
+struct ov_regvals {
+	__u8 reg;
+	__u8 val;
+};
+struct ov_i2c_regvals {
+	__u8 reg;
+	__u8 val;
+};
+
+static const struct ov_i2c_regvals norm_6x20[] = {
+	{ 0x12, 0x80 }, /* reset */
+	{ 0x11, 0x01 },
+	{ 0x03, 0x60 },
+	{ 0x05, 0x7f }, /* For when autoadjust is off */
+	{ 0x07, 0xa8 },
+	/* The ratio of 0x0c and 0x0d  controls the white point */
+	{ 0x0c, 0x24 },
+	{ 0x0d, 0x24 },
+	{ 0x0f, 0x15 }, /* COMS */
+	{ 0x10, 0x75 }, /* AEC Exposure time */
+	{ 0x12, 0x24 }, /* Enable AGC */
+	{ 0x14, 0x04 },
+	/* 0x16: 0x06 helps frame stability with moving objects */
+	{ 0x16, 0x06 },
+/*	{ 0x20, 0x30 },  * Aperture correction enable */
+	{ 0x26, 0xb2 }, /* BLC enable */
+	/* 0x28: 0x05 Selects RGB format if RGB on */
+	{ 0x28, 0x05 },
+	{ 0x2a, 0x04 }, /* Disable framerate adjust */
+/*	{ 0x2b, 0xac },  * Framerate; Set 2a[7] first */
+	{ 0x2d, 0x99 },
+	{ 0x33, 0xa0 }, /* Color Processing Parameter */
+	{ 0x34, 0xd2 }, /* Max A/D range */
+	{ 0x38, 0x8b },
+	{ 0x39, 0x40 },
+
+	{ 0x3c, 0x39 }, /* Enable AEC mode changing */
+	{ 0x3c, 0x3c }, /* Change AEC mode */
+	{ 0x3c, 0x24 }, /* Disable AEC mode changing */
+
+	{ 0x3d, 0x80 },
+	/* These next two registers (0x4a, 0x4b) are undocumented.
+	 * They control the color balance */
+	{ 0x4a, 0x80 },
+	{ 0x4b, 0x80 },
+	{ 0x4d, 0xd2 }, /* This reduces noise a bit */
+	{ 0x4e, 0xc1 },
+	{ 0x4f, 0x04 },
+/* Do 50-53 have any effect? */
+/* Toggle 0x12[2] off and on here? */
+};
+
+static const struct ov_i2c_regvals norm_6x30[] = {
+	{ 0x12, 0x80 }, /* Reset */
+	{ 0x00, 0x1f }, /* Gain */
+	{ 0x01, 0x99 }, /* Blue gain */
+	{ 0x02, 0x7c }, /* Red gain */
+	{ 0x03, 0xc0 }, /* Saturation */
+	{ 0x05, 0x0a }, /* Contrast */
+	{ 0x06, 0x95 }, /* Brightness */
+	{ 0x07, 0x2d }, /* Sharpness */
+	{ 0x0c, 0x20 },
+	{ 0x0d, 0x20 },
+	{ 0x0e, 0x20 },
+	{ 0x0f, 0x05 },
+	{ 0x10, 0x9a },
+	{ 0x11, 0x00 }, /* Pixel clock = fastest */
+	{ 0x12, 0x24 }, /* Enable AGC and AWB */
+	{ 0x13, 0x21 },
+	{ 0x14, 0x80 },
+	{ 0x15, 0x01 },
+	{ 0x16, 0x03 },
+	{ 0x17, 0x38 },
+	{ 0x18, 0xea },
+	{ 0x19, 0x04 },
+	{ 0x1a, 0x93 },
+	{ 0x1b, 0x00 },
+	{ 0x1e, 0xc4 },
+	{ 0x1f, 0x04 },
+	{ 0x20, 0x20 },
+	{ 0x21, 0x10 },
+	{ 0x22, 0x88 },
+	{ 0x23, 0xc0 }, /* Crystal circuit power level */
+	{ 0x25, 0x9a }, /* Increase AEC black ratio */
+	{ 0x26, 0xb2 }, /* BLC enable */
+	{ 0x27, 0xa2 },
+	{ 0x28, 0x00 },
+	{ 0x29, 0x00 },
+	{ 0x2a, 0x84 }, /* 60 Hz power */
+	{ 0x2b, 0xa8 }, /* 60 Hz power */
+	{ 0x2c, 0xa0 },
+	{ 0x2d, 0x95 }, /* Enable auto-brightness */
+	{ 0x2e, 0x88 },
+	{ 0x33, 0x26 },
+	{ 0x34, 0x03 },
+	{ 0x36, 0x8f },
+	{ 0x37, 0x80 },
+	{ 0x38, 0x83 },
+	{ 0x39, 0x80 },
+	{ 0x3a, 0x0f },
+	{ 0x3b, 0x3c },
+	{ 0x3c, 0x1a },
+	{ 0x3d, 0x80 },
+	{ 0x3e, 0x80 },
+	{ 0x3f, 0x0e },
+	{ 0x40, 0x00 }, /* White bal */
+	{ 0x41, 0x00 }, /* White bal */
+	{ 0x42, 0x80 },
+	{ 0x43, 0x3f }, /* White bal */
+	{ 0x44, 0x80 },
+	{ 0x45, 0x20 },
+	{ 0x46, 0x20 },
+	{ 0x47, 0x80 },
+	{ 0x48, 0x7f },
+	{ 0x49, 0x00 },
+	{ 0x4a, 0x00 },
+	{ 0x4b, 0x80 },
+	{ 0x4c, 0xd0 },
+	{ 0x4d, 0x10 }, /* U = 0.563u, V = 0.714v */
+	{ 0x4e, 0x40 },
+	{ 0x4f, 0x07 }, /* UV avg., col. killer: max */
+	{ 0x50, 0xff },
+	{ 0x54, 0x23 }, /* Max AGC gain: 18dB */
+	{ 0x55, 0xff },
+	{ 0x56, 0x12 },
+	{ 0x57, 0x81 },
+	{ 0x58, 0x75 },
+	{ 0x59, 0x01 }, /* AGC dark current comp.: +1 */
+	{ 0x5a, 0x2c },
+	{ 0x5b, 0x0f }, /* AWB chrominance levels */
+	{ 0x5c, 0x10 },
+	{ 0x3d, 0x80 },
+	{ 0x27, 0xa6 },
+	{ 0x12, 0x20 }, /* Toggle AWB */
+	{ 0x12, 0x24 },
+};
+
+/* Lawrence Glaister <lg@jfm.bc.ca> reports:
+ *
+ * Register 0x0f in the 7610 has the following effects:
+ *
+ * 0x85 (AEC method 1): Best overall, good contrast range
+ * 0x45 (AEC method 2): Very overexposed
+ * 0xa5 (spec sheet default): Ok, but the black level is
+ *	shifted resulting in loss of contrast
+ * 0x05 (old driver setting): very overexposed, too much
+ *	contrast
+ */
+static const struct ov_i2c_regvals norm_7610[] = {
+	{ 0x10, 0xff },
+	{ 0x16, 0x06 },
+	{ 0x28, 0x24 },
+	{ 0x2b, 0xac },
+	{ 0x12, 0x00 },
+	{ 0x38, 0x81 },
+	{ 0x28, 0x24 },	/* 0c */
+	{ 0x0f, 0x85 },	/* lg's setting */
+	{ 0x15, 0x01 },
+	{ 0x20, 0x1c },
+	{ 0x23, 0x2a },
+	{ 0x24, 0x10 },
+	{ 0x25, 0x8a },
+	{ 0x26, 0xa2 },
+	{ 0x27, 0xc2 },
+	{ 0x2a, 0x04 },
+	{ 0x2c, 0xfe },
+	{ 0x2d, 0x93 },
+	{ 0x30, 0x71 },
+	{ 0x31, 0x60 },
+	{ 0x32, 0x26 },
+	{ 0x33, 0x20 },
+	{ 0x34, 0x48 },
+	{ 0x12, 0x24 },
+	{ 0x11, 0x01 },
+	{ 0x0c, 0x24 },
+	{ 0x0d, 0x24 },
+};
+
+static const struct ov_i2c_regvals norm_7620[] = {
+	{ 0x00, 0x00 },		/* gain */
+	{ 0x01, 0x80 },		/* blue gain */
+	{ 0x02, 0x80 },		/* red gain */
+	{ 0x03, 0xc0 },		/* OV7670_REG_VREF */
+	{ 0x06, 0x60 },
+	{ 0x07, 0x00 },
+	{ 0x0c, 0x24 },
+	{ 0x0c, 0x24 },
+	{ 0x0d, 0x24 },
+	{ 0x11, 0x01 },
+	{ 0x12, 0x24 },
+	{ 0x13, 0x01 },
+	{ 0x14, 0x84 },
+	{ 0x15, 0x01 },
+	{ 0x16, 0x03 },
+	{ 0x17, 0x2f },
+	{ 0x18, 0xcf },
+	{ 0x19, 0x06 },
+	{ 0x1a, 0xf5 },
+	{ 0x1b, 0x00 },
+	{ 0x20, 0x18 },
+	{ 0x21, 0x80 },
+	{ 0x22, 0x80 },
+	{ 0x23, 0x00 },
+	{ 0x26, 0xa2 },
+	{ 0x27, 0xea },
+	{ 0x28, 0x20 },
+	{ 0x29, 0x00 },
+	{ 0x2a, 0x10 },
+	{ 0x2b, 0x00 },
+	{ 0x2c, 0x88 },
+	{ 0x2d, 0x91 },
+	{ 0x2e, 0x80 },
+	{ 0x2f, 0x44 },
+	{ 0x60, 0x27 },
+	{ 0x61, 0x02 },
+	{ 0x62, 0x5f },
+	{ 0x63, 0xd5 },
+	{ 0x64, 0x57 },
+	{ 0x65, 0x83 },
+	{ 0x66, 0x55 },
+	{ 0x67, 0x92 },
+	{ 0x68, 0xcf },
+	{ 0x69, 0x76 },
+	{ 0x6a, 0x22 },
+	{ 0x6b, 0x00 },
+	{ 0x6c, 0x02 },
+	{ 0x6d, 0x44 },
+	{ 0x6e, 0x80 },
+	{ 0x6f, 0x1d },
+	{ 0x70, 0x8b },
+	{ 0x71, 0x00 },
+	{ 0x72, 0x14 },
+	{ 0x73, 0x54 },
+	{ 0x74, 0x00 },
+	{ 0x75, 0x8e },
+	{ 0x76, 0x00 },
+	{ 0x77, 0xff },
+	{ 0x78, 0x80 },
+	{ 0x79, 0x80 },
+	{ 0x7a, 0x80 },
+	{ 0x7b, 0xe2 },
+	{ 0x7c, 0x00 },
+};
+
+/* 7640 and 7648. The defaults should be OK for most registers. */
+static const struct ov_i2c_regvals norm_7640[] = {
+	{ 0x12, 0x80 },
+	{ 0x12, 0x14 },
+};
+
+/* 7670. Defaults taken from OmniVision provided data,
+*  as provided by Jonathan Corbet of OLPC		*/
+static const struct ov_i2c_regvals norm_7670[] = {
+	{ OV7670_REG_COM7, OV7670_COM7_RESET },
+	{ OV7670_REG_TSLB, 0x04 },		/* OV */
+	{ OV7670_REG_COM7, OV7670_COM7_FMT_VGA }, /* VGA */
+	{ OV7670_REG_CLKRC, 0x01 },
+/*
+ * Set the hardware window.  These values from OV don't entirely
+ * make sense - hstop is less than hstart.  But they work...
+ */
+	{ OV7670_REG_HSTART, 0x13 },
+	{ OV7670_REG_HSTOP, 0x01 },
+	{ OV7670_REG_HREF, 0xb6 },
+	{ OV7670_REG_VSTART, 0x02 },
+	{ OV7670_REG_VSTOP, 0x7a },
+	{ OV7670_REG_VREF, 0x0a },
+
+	{ OV7670_REG_COM3, 0x00 },
+	{ OV7670_REG_COM14, 0x00 },
+/* Mystery scaling numbers */
+	{ 0x70, 0x3a },
+	{ 0x71, 0x35 },
+	{ 0x72, 0x11 },
+	{ 0x73, 0xf0 },
+	{ 0xa2, 0x02 },
+/*	{ OV7670_REG_COM10, 0x0 }, */
+
+/* Gamma curve values */
+	{ 0x7a, 0x20 },
+	{ 0x7b, 0x10 },
+	{ 0x7c, 0x1e },
+	{ 0x7d, 0x35 },
+	{ 0x7e, 0x5a },
+	{ 0x7f, 0x69 },
+	{ 0x80, 0x76 },
+	{ 0x81, 0x80 },
+	{ 0x82, 0x88 },
+	{ 0x83, 0x8f },
+	{ 0x84, 0x96 },
+	{ 0x85, 0xa3 },
+	{ 0x86, 0xaf },
+	{ 0x87, 0xc4 },
+	{ 0x88, 0xd7 },
+	{ 0x89, 0xe8 },
+
+/* AGC and AEC parameters.  Note we start by disabling those features,
+   then turn them only after tweaking the values. */
+	{ OV7670_REG_COM8, OV7670_COM8_FASTAEC
+			 | OV7670_COM8_AECSTEP
+			 | OV7670_COM8_BFILT },
+	{ OV7670_REG_GAIN, 0x00 },
+	{ OV7670_REG_AECH, 0x00 },
+	{ OV7670_REG_COM4, 0x40 }, /* magic reserved bit */
+	{ OV7670_REG_COM9, 0x18 }, /* 4x gain + magic rsvd bit */
+	{ OV7670_REG_BD50MAX, 0x05 },
+	{ OV7670_REG_BD60MAX, 0x07 },
+	{ OV7670_REG_AEW, 0x95 },
+	{ OV7670_REG_AEB, 0x33 },
+	{ OV7670_REG_VPT, 0xe3 },
+	{ OV7670_REG_HAECC1, 0x78 },
+	{ OV7670_REG_HAECC2, 0x68 },
+	{ 0xa1, 0x03 }, /* magic */
+	{ OV7670_REG_HAECC3, 0xd8 },
+	{ OV7670_REG_HAECC4, 0xd8 },
+	{ OV7670_REG_HAECC5, 0xf0 },
+	{ OV7670_REG_HAECC6, 0x90 },
+	{ OV7670_REG_HAECC7, 0x94 },
+	{ OV7670_REG_COM8, OV7670_COM8_FASTAEC
+			| OV7670_COM8_AECSTEP
+			| OV7670_COM8_BFILT
+			| OV7670_COM8_AGC
+			| OV7670_COM8_AEC },
+
+/* Almost all of these are magic "reserved" values.  */
+	{ OV7670_REG_COM5, 0x61 },
+	{ OV7670_REG_COM6, 0x4b },
+	{ 0x16, 0x02 },
+	{ OV7670_REG_MVFP, 0x07 },
+	{ 0x21, 0x02 },
+	{ 0x22, 0x91 },
+	{ 0x29, 0x07 },
+	{ 0x33, 0x0b },
+	{ 0x35, 0x0b },
+	{ 0x37, 0x1d },
+	{ 0x38, 0x71 },
+	{ 0x39, 0x2a },
+	{ OV7670_REG_COM12, 0x78 },
+	{ 0x4d, 0x40 },
+	{ 0x4e, 0x20 },
+	{ OV7670_REG_GFIX, 0x00 },
+	{ 0x6b, 0x4a },
+	{ 0x74, 0x10 },
+	{ 0x8d, 0x4f },
+	{ 0x8e, 0x00 },
+	{ 0x8f, 0x00 },
+	{ 0x90, 0x00 },
+	{ 0x91, 0x00 },
+	{ 0x96, 0x00 },
+	{ 0x9a, 0x00 },
+	{ 0xb0, 0x84 },
+	{ 0xb1, 0x0c },
+	{ 0xb2, 0x0e },
+	{ 0xb3, 0x82 },
+	{ 0xb8, 0x0a },
+
+/* More reserved magic, some of which tweaks white balance */
+	{ 0x43, 0x0a },
+	{ 0x44, 0xf0 },
+	{ 0x45, 0x34 },
+	{ 0x46, 0x58 },
+	{ 0x47, 0x28 },
+	{ 0x48, 0x3a },
+	{ 0x59, 0x88 },
+	{ 0x5a, 0x88 },
+	{ 0x5b, 0x44 },
+	{ 0x5c, 0x67 },
+	{ 0x5d, 0x49 },
+	{ 0x5e, 0x0e },
+	{ 0x6c, 0x0a },
+	{ 0x6d, 0x55 },
+	{ 0x6e, 0x11 },
+	{ 0x6f, 0x9f },
+					/* "9e for advance AWB" */
+	{ 0x6a, 0x40 },
+	{ OV7670_REG_BLUE, 0x40 },
+	{ OV7670_REG_RED, 0x60 },
+	{ OV7670_REG_COM8, OV7670_COM8_FASTAEC
+			| OV7670_COM8_AECSTEP
+			| OV7670_COM8_BFILT
+			| OV7670_COM8_AGC
+			| OV7670_COM8_AEC
+			| OV7670_COM8_AWB },
+
+/* Matrix coefficients */
+	{ 0x4f, 0x80 },
+	{ 0x50, 0x80 },
+	{ 0x51, 0x00 },
+	{ 0x52, 0x22 },
+	{ 0x53, 0x5e },
+	{ 0x54, 0x80 },
+	{ 0x58, 0x9e },
+
+	{ OV7670_REG_COM16, OV7670_COM16_AWBGAIN },
+	{ OV7670_REG_EDGE, 0x00 },
+	{ 0x75, 0x05 },
+	{ 0x76, 0xe1 },
+	{ 0x4c, 0x00 },
+	{ 0x77, 0x01 },
+	{ OV7670_REG_COM13, OV7670_COM13_GAMMA
+			  | OV7670_COM13_UVSAT
+			  | 2},		/* was 3 */
+	{ 0x4b, 0x09 },
+	{ 0xc9, 0x60 },
+	{ OV7670_REG_COM16, 0x38 },
+	{ 0x56, 0x40 },
+
+	{ 0x34, 0x11 },
+	{ OV7670_REG_COM11, OV7670_COM11_EXP|OV7670_COM11_HZAUTO },
+	{ 0xa4, 0x88 },
+	{ 0x96, 0x00 },
+	{ 0x97, 0x30 },
+	{ 0x98, 0x20 },
+	{ 0x99, 0x30 },
+	{ 0x9a, 0x84 },
+	{ 0x9b, 0x29 },
+	{ 0x9c, 0x03 },
+	{ 0x9d, 0x4c },
+	{ 0x9e, 0x3f },
+	{ 0x78, 0x04 },
+
+/* Extra-weird stuff.  Some sort of multiplexor register */
+	{ 0x79, 0x01 },
+	{ 0xc8, 0xf0 },
+	{ 0x79, 0x0f },
+	{ 0xc8, 0x00 },
+	{ 0x79, 0x10 },
+	{ 0xc8, 0x7e },
+	{ 0x79, 0x0a },
+	{ 0xc8, 0x80 },
+	{ 0x79, 0x0b },
+	{ 0xc8, 0x01 },
+	{ 0x79, 0x0c },
+	{ 0xc8, 0x0f },
+	{ 0x79, 0x0d },
+	{ 0xc8, 0x20 },
+	{ 0x79, 0x09 },
+	{ 0xc8, 0x80 },
+	{ 0x79, 0x02 },
+	{ 0xc8, 0xc0 },
+	{ 0x79, 0x03 },
+	{ 0xc8, 0x40 },
+	{ 0x79, 0x05 },
+	{ 0xc8, 0x30 },
+	{ 0x79, 0x26 },
+};
+
+static const struct ov_i2c_regvals norm_8610[] = {
+	{ 0x12, 0x80 },
+	{ 0x00, 0x00 },
+	{ 0x01, 0x80 },
+	{ 0x02, 0x80 },
+	{ 0x03, 0xc0 },
+	{ 0x04, 0x30 },
+	{ 0x05, 0x30 }, /* was 0x10, new from windrv 090403 */
+	{ 0x06, 0x70 }, /* was 0x80, new from windrv 090403 */
+	{ 0x0a, 0x86 },
+	{ 0x0b, 0xb0 },
+	{ 0x0c, 0x20 },
+	{ 0x0d, 0x20 },
+	{ 0x11, 0x01 },
+	{ 0x12, 0x25 },
+	{ 0x13, 0x01 },
+	{ 0x14, 0x04 },
+	{ 0x15, 0x01 }, /* Lin and Win think different about UV order */
+	{ 0x16, 0x03 },
+	{ 0x17, 0x38 }, /* was 0x2f, new from windrv 090403 */
+	{ 0x18, 0xea }, /* was 0xcf, new from windrv 090403 */
+	{ 0x19, 0x02 }, /* was 0x06, new from windrv 090403 */
+	{ 0x1a, 0xf5 },
+	{ 0x1b, 0x00 },
+	{ 0x20, 0xd0 }, /* was 0x90, new from windrv 090403 */
+	{ 0x23, 0xc0 }, /* was 0x00, new from windrv 090403 */
+	{ 0x24, 0x30 }, /* was 0x1d, new from windrv 090403 */
+	{ 0x25, 0x50 }, /* was 0x57, new from windrv 090403 */
+	{ 0x26, 0xa2 },
+	{ 0x27, 0xea },
+	{ 0x28, 0x00 },
+	{ 0x29, 0x00 },
+	{ 0x2a, 0x80 },
+	{ 0x2b, 0xc8 }, /* was 0xcc, new from windrv 090403 */
+	{ 0x2c, 0xac },
+	{ 0x2d, 0x45 }, /* was 0xd5, new from windrv 090403 */
+	{ 0x2e, 0x80 },
+	{ 0x2f, 0x14 }, /* was 0x01, new from windrv 090403 */
+	{ 0x4c, 0x00 },
+	{ 0x4d, 0x30 }, /* was 0x10, new from windrv 090403 */
+	{ 0x60, 0x02 }, /* was 0x01, new from windrv 090403 */
+	{ 0x61, 0x00 }, /* was 0x09, new from windrv 090403 */
+	{ 0x62, 0x5f }, /* was 0xd7, new from windrv 090403 */
+	{ 0x63, 0xff },
+	{ 0x64, 0x53 }, /* new windrv 090403 says 0x57,
+			 * maybe thats wrong */
+	{ 0x65, 0x00 },
+	{ 0x66, 0x55 },
+	{ 0x67, 0xb0 },
+	{ 0x68, 0xc0 }, /* was 0xaf, new from windrv 090403 */
+	{ 0x69, 0x02 },
+	{ 0x6a, 0x22 },
+	{ 0x6b, 0x00 },
+	{ 0x6c, 0x99 }, /* was 0x80, old windrv says 0x00, but
+			 * deleting bit7 colors the first images red */
+	{ 0x6d, 0x11 }, /* was 0x00, new from windrv 090403 */
+	{ 0x6e, 0x11 }, /* was 0x00, new from windrv 090403 */
+	{ 0x6f, 0x01 },
+	{ 0x70, 0x8b },
+	{ 0x71, 0x00 },
+	{ 0x72, 0x14 },
+	{ 0x73, 0x54 },
+	{ 0x74, 0x00 },/* 0x60? - was 0x00, new from windrv 090403 */
+	{ 0x75, 0x0e },
+	{ 0x76, 0x02 }, /* was 0x02, new from windrv 090403 */
+	{ 0x77, 0xff },
+	{ 0x78, 0x80 },
+	{ 0x79, 0x80 },
+	{ 0x7a, 0x80 },
+	{ 0x7b, 0x10 }, /* was 0x13, new from windrv 090403 */
+	{ 0x7c, 0x00 },
+	{ 0x7d, 0x08 }, /* was 0x09, new from windrv 090403 */
+	{ 0x7e, 0x08 }, /* was 0xc0, new from windrv 090403 */
+	{ 0x7f, 0xfb },
+	{ 0x80, 0x28 },
+	{ 0x81, 0x00 },
+	{ 0x82, 0x23 },
+	{ 0x83, 0x0b },
+	{ 0x84, 0x00 },
+	{ 0x85, 0x62 }, /* was 0x61, new from windrv 090403 */
+	{ 0x86, 0xc9 },
+	{ 0x87, 0x00 },
+	{ 0x88, 0x00 },
+	{ 0x89, 0x01 },
+	{ 0x12, 0x20 },
+	{ 0x12, 0x25 }, /* was 0x24, new from windrv 090403 */
+};
 
 static unsigned char ov7670_abs_to_sm(unsigned char v)
 {
@@ -406,11 +948,11 @@ static int i2c_w(struct sd *sd,
 
 	/* Initiate 3-byte write cycle */
 	rc = reg_w(sd, R518_I2C_CTL, 0x01);
+	if (rc < 0)
+		return rc;
 
 	/* wait for write complete */
 	msleep(4);
-	if (rc < 0)
-		return rc;
 	return reg_r8(sd, R518_I2C_CTL);
 }
 
@@ -493,7 +1035,7 @@ static inline int ov51x_restart(struct sd *sd)
  */
 static int init_ov_sensor(struct sd *sd)
 {
-	int i, success;
+	int i;
 
 	/* Reset the sensor */
 	if (i2c_w(sd, 0x12, 0x80) < 0)
@@ -502,11 +1044,11 @@ static int init_ov_sensor(struct sd *sd)
 	/* Wait for it to initialize */
 	msleep(150);
 
-	for (i = 0, success = 0; i < i2c_detect_tries && !success; i++) {
+	for (i = 0; i < i2c_detect_tries; i++) {
 		if (i2c_r(sd, OV7610_REG_ID_HIGH) == 0x7f &&
 		    i2c_r(sd, OV7610_REG_ID_LOW) == 0xa2) {
-			success = 1;
-			continue;
+			PDEBUG(D_PROBE, "I2C synced in %d attempt(s)", i);
+			return 0;
 		}
 
 		/* Reset the sensor */
@@ -518,10 +1060,7 @@ static int init_ov_sensor(struct sd *sd)
 		if (i2c_r(sd, 0x00) < 0)
 			return -EIO;
 	}
-	if (!success)
-		return -EIO;
-	PDEBUG(D_PROBE, "I2C synced in %d attempt(s)", i);
-	return 0;
+	return -EIO;
 }
 
 /* Set the read and write slave IDs. The "slave" argument is the write slave,
@@ -539,15 +1078,6 @@ static int ov51x_set_slave_ids(struct sd *sd,
 		return rc;
 	return reg_w(sd, R51x_I2C_R_SID, slave + 1);
 }
-
-struct ov_regvals {
-	__u8 reg;
-	__u8 val;
-};
-struct ov_i2c_regvals {
-	__u8 reg;
-	__u8 val;
-};
 
 static int write_regvals(struct sd *sd,
 			 const struct ov_regvals *regvals,
@@ -591,100 +1121,8 @@ static int write_i2c_regvals(struct sd *sd,
 static int ov8xx0_configure(struct sd *sd)
 {
 	int rc;
-	static const struct ov_i2c_regvals norm_8610[] = {
-		{ 0x12, 0x80 },
-		{ 0x00, 0x00 },
-		{ 0x01, 0x80 },
-		{ 0x02, 0x80 },
-		{ 0x03, 0xc0 },
-		{ 0x04, 0x30 },
-		{ 0x05, 0x30 }, /* was 0x10, new from windrv 090403 */
-		{ 0x06, 0x70 }, /* was 0x80, new from windrv 090403 */
-		{ 0x0a, 0x86 },
-		{ 0x0b, 0xb0 },
-		{ 0x0c, 0x20 },
-		{ 0x0d, 0x20 },
-		{ 0x11, 0x01 },
-		{ 0x12, 0x25 },
-		{ 0x13, 0x01 },
-		{ 0x14, 0x04 },
-		{ 0x15, 0x01 }, /* Lin and Win think different about UV order */
-		{ 0x16, 0x03 },
-		{ 0x17, 0x38 }, /* was 0x2f, new from windrv 090403 */
-		{ 0x18, 0xea }, /* was 0xcf, new from windrv 090403 */
-		{ 0x19, 0x02 }, /* was 0x06, new from windrv 090403 */
-		{ 0x1a, 0xf5 },
-		{ 0x1b, 0x00 },
-		{ 0x20, 0xd0 }, /* was 0x90, new from windrv 090403 */
-		{ 0x23, 0xc0 }, /* was 0x00, new from windrv 090403 */
-		{ 0x24, 0x30 }, /* was 0x1d, new from windrv 090403 */
-		{ 0x25, 0x50 }, /* was 0x57, new from windrv 090403 */
-		{ 0x26, 0xa2 },
-		{ 0x27, 0xea },
-		{ 0x28, 0x00 },
-		{ 0x29, 0x00 },
-		{ 0x2a, 0x80 },
-		{ 0x2b, 0xc8 }, /* was 0xcc, new from windrv 090403 */
-		{ 0x2c, 0xac },
-		{ 0x2d, 0x45 }, /* was 0xd5, new from windrv 090403 */
-		{ 0x2e, 0x80 },
-		{ 0x2f, 0x14 }, /* was 0x01, new from windrv 090403 */
-		{ 0x4c, 0x00 },
-		{ 0x4d, 0x30 }, /* was 0x10, new from windrv 090403 */
-		{ 0x60, 0x02 }, /* was 0x01, new from windrv 090403 */
-		{ 0x61, 0x00 }, /* was 0x09, new from windrv 090403 */
-		{ 0x62, 0x5f }, /* was 0xd7, new from windrv 090403 */
-		{ 0x63, 0xff },
-		{ 0x64, 0x53 }, /* new windrv 090403 says 0x57,
-				 * maybe thats wrong */
-		{ 0x65, 0x00 },
-		{ 0x66, 0x55 },
-		{ 0x67, 0xb0 },
-		{ 0x68, 0xc0 }, /* was 0xaf, new from windrv 090403 */
-		{ 0x69, 0x02 },
-		{ 0x6a, 0x22 },
-		{ 0x6b, 0x00 },
-		{ 0x6c, 0x99 }, /* was 0x80, old windrv says 0x00, but
-				   deleting bit7 colors the first images red */
-		{ 0x6d, 0x11 }, /* was 0x00, new from windrv 090403 */
-		{ 0x6e, 0x11 }, /* was 0x00, new from windrv 090403 */
-		{ 0x6f, 0x01 },
-		{ 0x70, 0x8b },
-		{ 0x71, 0x00 },
-		{ 0x72, 0x14 },
-		{ 0x73, 0x54 },
-		{ 0x74, 0x00 },/* 0x60? - was 0x00, new from windrv 090403 */
-		{ 0x75, 0x0e },
-		{ 0x76, 0x02 }, /* was 0x02, new from windrv 090403 */
-		{ 0x77, 0xff },
-		{ 0x78, 0x80 },
-		{ 0x79, 0x80 },
-		{ 0x7a, 0x80 },
-		{ 0x7b, 0x10 }, /* was 0x13, new from windrv 090403 */
-		{ 0x7c, 0x00 },
-		{ 0x7d, 0x08 }, /* was 0x09, new from windrv 090403 */
-		{ 0x7e, 0x08 }, /* was 0xc0, new from windrv 090403 */
-		{ 0x7f, 0xfb },
-		{ 0x80, 0x28 },
-		{ 0x81, 0x00 },
-		{ 0x82, 0x23 },
-		{ 0x83, 0x0b },
-		{ 0x84, 0x00 },
-		{ 0x85, 0x62 }, /* was 0x61, new from windrv 090403 */
-		{ 0x86, 0xc9 },
-		{ 0x87, 0x00 },
-		{ 0x88, 0x00 },
-		{ 0x89, 0x01 },
-		{ 0x12, 0x20 },
-		{ 0x12, 0x25 }, /* was 0x24, new from windrv 090403 */
-	};
 
 	PDEBUG(D_PROBE, "starting ov8xx0 configuration");
-
-	if (init_ov_sensor(sd) < 0)
-		PDEBUG(D_ERR|D_PROBE, "Failed to read sensor ID");
-	else
-		PDEBUG(D_PROBE, "OV86x0 initialized");
 
 	/* Detect sensor (sub)type */
 	rc = i2c_r(sd, OV7610_REG_COM_I);
@@ -698,9 +1136,6 @@ static int ov8xx0_configure(struct sd *sd)
 		PDEBUG(D_ERR, "Unknown image sensor version: %d", rc & 3);
 		return -1;
 	}
-	PDEBUG(D_PROBE, "Writing 8610 registers");
-	if (write_i2c_regvals(sd, norm_8610, ARRAY_SIZE(norm_8610)))
-		return -1;
 
 	/* Set sensor-specific vars */
 /*	sd->sif = 0;		already done */
@@ -714,252 +1149,6 @@ static int ov7xx0_configure(struct sd *sd)
 {
 	int rc, high, low;
 
-	/* Lawrence Glaister <lg@jfm.bc.ca> reports:
-	 *
-	 * Register 0x0f in the 7610 has the following effects:
-	 *
-	 * 0x85 (AEC method 1): Best overall, good contrast range
-	 * 0x45 (AEC method 2): Very overexposed
-	 * 0xa5 (spec sheet default): Ok, but the black level is
-	 *	shifted resulting in loss of contrast
-	 * 0x05 (old driver setting): very overexposed, too much
-	 *	contrast
-	 */
-	static const struct ov_i2c_regvals norm_7610[] = {
-		{ 0x10, 0xff },
-		{ 0x16, 0x06 },
-		{ 0x28, 0x24 },
-		{ 0x2b, 0xac },
-		{ 0x12, 0x00 },
-		{ 0x38, 0x81 },
-		{ 0x28, 0x24 },	/* 0c */
-		{ 0x0f, 0x85 },	/* lg's setting */
-		{ 0x15, 0x01 },
-		{ 0x20, 0x1c },
-		{ 0x23, 0x2a },
-		{ 0x24, 0x10 },
-		{ 0x25, 0x8a },
-		{ 0x26, 0xa2 },
-		{ 0x27, 0xc2 },
-		{ 0x2a, 0x04 },
-		{ 0x2c, 0xfe },
-		{ 0x2d, 0x93 },
-		{ 0x30, 0x71 },
-		{ 0x31, 0x60 },
-		{ 0x32, 0x26 },
-		{ 0x33, 0x20 },
-		{ 0x34, 0x48 },
-		{ 0x12, 0x24 },
-		{ 0x11, 0x01 },
-		{ 0x0c, 0x24 },
-		{ 0x0d, 0x24 },
-	};
-
-	static const struct ov_i2c_regvals norm_7620[] = {
-		{ 0x00, 0x00 },		/* gain */
-		{ 0x01, 0x80 },		/* blue gain */
-		{ 0x02, 0x80 },		/* red gain */
-		{ 0x03, 0xc0 },		/* OV7670_REG_VREF */
-		{ 0x06, 0x60 },
-		{ 0x07, 0x00 },
-		{ 0x0c, 0x24 },
-		{ 0x0c, 0x24 },
-		{ 0x0d, 0x24 },
-		{ 0x11, 0x01 },
-		{ 0x12, 0x24 },
-		{ 0x13, 0x01 },
-		{ 0x14, 0x84 },
-		{ 0x15, 0x01 },
-		{ 0x16, 0x03 },
-		{ 0x17, 0x2f },
-		{ 0x18, 0xcf },
-		{ 0x19, 0x06 },
-		{ 0x1a, 0xf5 },
-		{ 0x1b, 0x00 },
-		{ 0x20, 0x18 },
-		{ 0x21, 0x80 },
-		{ 0x22, 0x80 },
-		{ 0x23, 0x00 },
-		{ 0x26, 0xa2 },
-		{ 0x27, 0xea },
-		{ 0x28, 0x20 },
-		{ 0x29, 0x00 },
-		{ 0x2a, 0x10 },
-		{ 0x2b, 0x00 },
-		{ 0x2c, 0x88 },
-		{ 0x2d, 0x91 },
-		{ 0x2e, 0x80 },
-		{ 0x2f, 0x44 },
-		{ 0x60, 0x27 },
-		{ 0x61, 0x02 },
-		{ 0x62, 0x5f },
-		{ 0x63, 0xd5 },
-		{ 0x64, 0x57 },
-		{ 0x65, 0x83 },
-		{ 0x66, 0x55 },
-		{ 0x67, 0x92 },
-		{ 0x68, 0xcf },
-		{ 0x69, 0x76 },
-		{ 0x6a, 0x22 },
-		{ 0x6b, 0x00 },
-		{ 0x6c, 0x02 },
-		{ 0x6d, 0x44 },
-		{ 0x6e, 0x80 },
-		{ 0x6f, 0x1d },
-		{ 0x70, 0x8b },
-		{ 0x71, 0x00 },
-		{ 0x72, 0x14 },
-		{ 0x73, 0x54 },
-		{ 0x74, 0x00 },
-		{ 0x75, 0x8e },
-		{ 0x76, 0x00 },
-		{ 0x77, 0xff },
-		{ 0x78, 0x80 },
-		{ 0x79, 0x80 },
-		{ 0x7a, 0x80 },
-		{ 0x7b, 0xe2 },
-		{ 0x7c, 0x00 },
-	};
-
-	/* 7640 and 7648. The defaults should be OK for most registers. */
-	static const struct ov_i2c_regvals norm_7640[] = {
-		{ 0x12, 0x80 },
-		{ 0x12, 0x14 },
-	};
-
-	/* 7670. Defaults taken from OmniVision provided data,
-	*  as provided by Jonathan Corbet of OLPC		*/
-	static const struct ov_i2c_regvals norm_7670[] = {
-		{ OV7670_REG_COM7, OV7670_COM7_RESET },
-		{ OV7670_REG_TSLB, 0x04 },		/* OV */
-		{ OV7670_REG_COM7, OV7670_COM7_FMT_VGA }, /* VGA */
-		{ OV7670_REG_CLKRC, 0x01 },
-	/*
-	 * Set the hardware window.  These values from OV don't entirely
-	 * make sense - hstop is less than hstart.  But they work...
-	 */
-		{ OV7670_REG_HSTART, 0x13 },	{ OV7670_REG_HSTOP, 0x01 },
-		{ OV7670_REG_HREF, 0xb6 },	{ OV7670_REG_VSTART, 0x02 },
-		{ OV7670_REG_VSTOP, 0x7a },	{ OV7670_REG_VREF, 0x0a },
-
-		{ OV7670_REG_COM3, 0 },	{ OV7670_REG_COM14, 0 },
-	/* Mystery scaling numbers */
-		{ 0x70, 0x3a },		{ 0x71, 0x35 },
-		{ 0x72, 0x11 },		{ 0x73, 0xf0 },
-		{ 0xa2, 0x02 },
-/*		{ OV7670_REG_COM10, 0x0 }, */
-
-	/* Gamma curve values */
-		{ 0x7a, 0x20 },
-		{ 0x7b, 0x10 },
-		{ 0x7c, 0x1e },
-		{ 0x7d, 0x35 },
-		{ 0x7e, 0x5a },		{ 0x7f, 0x69 },
-		{ 0x80, 0x76 },		{ 0x81, 0x80 },
-		{ 0x82, 0x88 },		{ 0x83, 0x8f },
-		{ 0x84, 0x96 },		{ 0x85, 0xa3 },
-		{ 0x86, 0xaf },		{ 0x87, 0xc4 },
-		{ 0x88, 0xd7 },		{ 0x89, 0xe8 },
-
-	/* AGC and AEC parameters.  Note we start by disabling those features,
-	   then turn them only after tweaking the values. */
-		{ OV7670_REG_COM8, OV7670_COM8_FASTAEC
-				 | OV7670_COM8_AECSTEP
-				 | OV7670_COM8_BFILT },
-		{ OV7670_REG_GAIN, 0 },	{ OV7670_REG_AECH, 0 },
-		{ OV7670_REG_COM4, 0x40 }, /* magic reserved bit */
-		{ OV7670_REG_COM9, 0x18 }, /* 4x gain + magic rsvd bit */
-		{ OV7670_REG_BD50MAX, 0x05 },	{ OV7670_REG_BD60MAX, 0x07 },
-		{ OV7670_REG_AEW, 0x95 },	{ OV7670_REG_AEB, 0x33 },
-		{ OV7670_REG_VPT, 0xe3 },	{ OV7670_REG_HAECC1, 0x78 },
-		{ OV7670_REG_HAECC2, 0x68 },
-		{ 0xa1, 0x03 }, /* magic */
-		{ OV7670_REG_HAECC3, 0xd8 },	{ OV7670_REG_HAECC4, 0xd8 },
-		{ OV7670_REG_HAECC5, 0xf0 },	{ OV7670_REG_HAECC6, 0x90 },
-		{ OV7670_REG_HAECC7, 0x94 },
-		{ OV7670_REG_COM8, OV7670_COM8_FASTAEC
-				| OV7670_COM8_AECSTEP
-				| OV7670_COM8_BFILT
-				| OV7670_COM8_AGC
-				| OV7670_COM8_AEC },
-
-	/* Almost all of these are magic "reserved" values.  */
-		{ OV7670_REG_COM5, 0x61 },	{ OV7670_REG_COM6, 0x4b },
-		{ 0x16, 0x02 },
-		{ OV7670_REG_MVFP, 0x07 },
-		{ 0x21, 0x02 },		{ 0x22, 0x91 },
-		{ 0x29, 0x07 },		{ 0x33, 0x0b },
-		{ 0x35, 0x0b },		{ 0x37, 0x1d },
-		{ 0x38, 0x71 },		{ 0x39, 0x2a },
-		{ OV7670_REG_COM12, 0x78 },	{ 0x4d, 0x40 },
-		{ 0x4e, 0x20 },		{ OV7670_REG_GFIX, 0 },
-		{ 0x6b, 0x4a },		{ 0x74, 0x10 },
-		{ 0x8d, 0x4f },		{ 0x8e, 0 },
-		{ 0x8f, 0 },		{ 0x90, 0 },
-		{ 0x91, 0 },		{ 0x96, 0 },
-		{ 0x9a, 0 },		{ 0xb0, 0x84 },
-		{ 0xb1, 0x0c },		{ 0xb2, 0x0e },
-		{ 0xb3, 0x82 },		{ 0xb8, 0x0a },
-
-	/* More reserved magic, some of which tweaks white balance */
-		{ 0x43, 0x0a },		{ 0x44, 0xf0 },
-		{ 0x45, 0x34 },		{ 0x46, 0x58 },
-		{ 0x47, 0x28 },		{ 0x48, 0x3a },
-		{ 0x59, 0x88 },		{ 0x5a, 0x88 },
-		{ 0x5b, 0x44 },		{ 0x5c, 0x67 },
-		{ 0x5d, 0x49 },		{ 0x5e, 0x0e },
-		{ 0x6c, 0x0a },		{ 0x6d, 0x55 },
-		{ 0x6e, 0x11 },		{ 0x6f, 0x9f },
-						/* "9e for advance AWB" */
-		{ 0x6a, 0x40 },		{ OV7670_REG_BLUE, 0x40 },
-		{ OV7670_REG_RED, 0x60 },
-		{ OV7670_REG_COM8, OV7670_COM8_FASTAEC
-				| OV7670_COM8_AECSTEP
-				| OV7670_COM8_BFILT
-				| OV7670_COM8_AGC
-				| OV7670_COM8_AEC
-				| OV7670_COM8_AWB },
-
-	/* Matrix coefficients */
-		{ 0x4f, 0x80 },		{ 0x50, 0x80 },
-		{ 0x51, 0 },		{ 0x52, 0x22 },
-		{ 0x53, 0x5e },		{ 0x54, 0x80 },
-		{ 0x58, 0x9e },
-
-		{ OV7670_REG_COM16, OV7670_COM16_AWBGAIN },
-		{ OV7670_REG_EDGE, 0 },
-		{ 0x75, 0x05 },		{ 0x76, 0xe1 },
-		{ 0x4c, 0 },		{ 0x77, 0x01 },
-		{ OV7670_REG_COM13, OV7670_COM13_GAMMA
-				  | OV7670_COM13_UVSAT
-				  | 2},		/* was 3 */
-		{ 0x4b, 0x09 },
-		{ 0xc9, 0x60 },		{ OV7670_REG_COM16, 0x38 },
-		{ 0x56, 0x40 },
-
-		{ 0x34, 0x11 },
-		{ OV7670_REG_COM11, OV7670_COM11_EXP|OV7670_COM11_HZAUTO },
-		{ 0xa4, 0x88 },		{ 0x96, 0 },
-		{ 0x97, 0x30 },		{ 0x98, 0x20 },
-		{ 0x99, 0x30 },		{ 0x9a, 0x84 },
-		{ 0x9b, 0x29 },		{ 0x9c, 0x03 },
-		{ 0x9d, 0x4c },		{ 0x9e, 0x3f },
-		{ 0x78, 0x04 },
-
-	/* Extra-weird stuff.  Some sort of multiplexor register */
-		{ 0x79, 0x01 },		{ 0xc8, 0xf0 },
-		{ 0x79, 0x0f },		{ 0xc8, 0x00 },
-		{ 0x79, 0x10 },		{ 0xc8, 0x7e },
-		{ 0x79, 0x0a },		{ 0xc8, 0x80 },
-		{ 0x79, 0x0b },		{ 0xc8, 0x01 },
-		{ 0x79, 0x0c },		{ 0xc8, 0x0f },
-		{ 0x79, 0x0d },		{ 0xc8, 0x20 },
-		{ 0x79, 0x09 },		{ 0xc8, 0x80 },
-		{ 0x79, 0x02 },		{ 0xc8, 0xc0 },
-		{ 0x79, 0x03 },		{ 0xc8, 0x40 },
-		{ 0x79, 0x05 },		{ 0xc8, 0x30 },
-		{ 0x79, 0x26 },
-	};
 
 	PDEBUG(D_PROBE, "starting OV7xx0 configuration");
 
@@ -1011,8 +1200,9 @@ static int ov7xx0_configure(struct sd *sd)
 			switch (low) {
 			case 0x30:
 				PDEBUG(D_PROBE, "Sensor is an OV7630/OV7635");
-				sd->sensor = SEN_OV7630;
-				break;
+				PDEBUG(D_ERR,
+				      "7630 is not supported by this driver");
+				return -1;
 			case 0x40:
 				PDEBUG(D_PROBE, "Sensor is an OV7645");
 				sd->sensor = SEN_OV7640; /* FIXME */
@@ -1038,32 +1228,6 @@ static int ov7xx0_configure(struct sd *sd)
 		return -1;
 	}
 
-	switch (sd->sensor) {
-	case SEN_OV7620:
-		PDEBUG(D_PROBE, "Writing 7620 registers");
-		if (write_i2c_regvals(sd, norm_7620, ARRAY_SIZE(norm_7620)))
-			return -1;
-		break;
-	case SEN_OV7630:
-		PDEBUG(D_ERR, "7630 is not supported by this driver version");
-		return -1;
-	case SEN_OV7640:
-		PDEBUG(D_PROBE, "Writing 7640 registers");
-		if (write_i2c_regvals(sd, norm_7640, ARRAY_SIZE(norm_7640)))
-			return -1;
-		break;
-	case SEN_OV7670:
-		PDEBUG(D_PROBE, "Writing 7670 registers");
-		if (write_i2c_regvals(sd, norm_7670, ARRAY_SIZE(norm_7670)))
-			return -1;
-		break;
-	default:
-		PDEBUG(D_PROBE, "Writing 7610 registers");
-		if (write_i2c_regvals(sd, norm_7610, ARRAY_SIZE(norm_7610)))
-			return -1;
-		break;
-	}
-
 	/* Set sensor-specific vars */
 /*	sd->sif = 0;		already done */
 	return 0;
@@ -1073,141 +1237,7 @@ static int ov7xx0_configure(struct sd *sd)
 static int ov6xx0_configure(struct sd *sd)
 {
 	int rc;
-	static const struct ov_i2c_regvals norm_6x20[] = {
-		{ 0x12, 0x80 }, /* reset */
-		{ 0x11, 0x01 },
-		{ 0x03, 0x60 },
-		{ 0x05, 0x7f }, /* For when autoadjust is off */
-		{ 0x07, 0xa8 },
-		/* The ratio of 0x0c and 0x0d  controls the white point */
-		{ 0x0c, 0x24 },
-		{ 0x0d, 0x24 },
-		{ 0x0f, 0x15 }, /* COMS */
-		{ 0x10, 0x75 }, /* AEC Exposure time */
-		{ 0x12, 0x24 }, /* Enable AGC */
-		{ 0x14, 0x04 },
-		/* 0x16: 0x06 helps frame stability with moving objects */
-		{ 0x16, 0x06 },
-/*		{ 0x20, 0x30 },  * Aperture correction enable */
-		{ 0x26, 0xb2 }, /* BLC enable */
-		/* 0x28: 0x05 Selects RGB format if RGB on */
-		{ 0x28, 0x05 },
-		{ 0x2a, 0x04 }, /* Disable framerate adjust */
-/*		{ 0x2b, 0xac },  * Framerate; Set 2a[7] first */
-		{ 0x2d, 0x99 },
-		{ 0x33, 0xa0 }, /* Color Processing Parameter */
-		{ 0x34, 0xd2 }, /* Max A/D range */
-		{ 0x38, 0x8b },
-		{ 0x39, 0x40 },
-
-		{ 0x3c, 0x39 }, /* Enable AEC mode changing */
-		{ 0x3c, 0x3c }, /* Change AEC mode */
-		{ 0x3c, 0x24 }, /* Disable AEC mode changing */
-
-		{ 0x3d, 0x80 },
-		/* These next two registers (0x4a, 0x4b) are undocumented.
-		 * They control the color balance */
-		{ 0x4a, 0x80 },
-		{ 0x4b, 0x80 },
-		{ 0x4d, 0xd2 }, /* This reduces noise a bit */
-		{ 0x4e, 0xc1 },
-		{ 0x4f, 0x04 },
-/* Do 50-53 have any effect? */
-/* Toggle 0x12[2] off and on here? */
-	};
-
-	static const struct ov_i2c_regvals norm_6x30[] = {
-		{ 0x12, 0x80 }, /* Reset */
-		{ 0x00, 0x1f }, /* Gain */
-		{ 0x01, 0x99 }, /* Blue gain */
-		{ 0x02, 0x7c }, /* Red gain */
-		{ 0x03, 0xc0 }, /* Saturation */
-		{ 0x05, 0x0a }, /* Contrast */
-		{ 0x06, 0x95 }, /* Brightness */
-		{ 0x07, 0x2d }, /* Sharpness */
-		{ 0x0c, 0x20 },
-		{ 0x0d, 0x20 },
-		{ 0x0e, 0x20 },
-		{ 0x0f, 0x05 },
-		{ 0x10, 0x9a },
-		{ 0x11, 0x00 }, /* Pixel clock = fastest */
-		{ 0x12, 0x24 }, /* Enable AGC and AWB */
-		{ 0x13, 0x21 },
-		{ 0x14, 0x80 },
-		{ 0x15, 0x01 },
-		{ 0x16, 0x03 },
-		{ 0x17, 0x38 },
-		{ 0x18, 0xea },
-		{ 0x19, 0x04 },
-		{ 0x1a, 0x93 },
-		{ 0x1b, 0x00 },
-		{ 0x1e, 0xc4 },
-		{ 0x1f, 0x04 },
-		{ 0x20, 0x20 },
-		{ 0x21, 0x10 },
-		{ 0x22, 0x88 },
-		{ 0x23, 0xc0 }, /* Crystal circuit power level */
-		{ 0x25, 0x9a }, /* Increase AEC black ratio */
-		{ 0x26, 0xb2 }, /* BLC enable */
-		{ 0x27, 0xa2 },
-		{ 0x28, 0x00 },
-		{ 0x29, 0x00 },
-		{ 0x2a, 0x84 }, /* 60 Hz power */
-		{ 0x2b, 0xa8 }, /* 60 Hz power */
-		{ 0x2c, 0xa0 },
-		{ 0x2d, 0x95 }, /* Enable auto-brightness */
-		{ 0x2e, 0x88 },
-		{ 0x33, 0x26 },
-		{ 0x34, 0x03 },
-		{ 0x36, 0x8f },
-		{ 0x37, 0x80 },
-		{ 0x38, 0x83 },
-		{ 0x39, 0x80 },
-		{ 0x3a, 0x0f },
-		{ 0x3b, 0x3c },
-		{ 0x3c, 0x1a },
-		{ 0x3d, 0x80 },
-		{ 0x3e, 0x80 },
-		{ 0x3f, 0x0e },
-		{ 0x40, 0x00 }, /* White bal */
-		{ 0x41, 0x00 }, /* White bal */
-		{ 0x42, 0x80 },
-		{ 0x43, 0x3f }, /* White bal */
-		{ 0x44, 0x80 },
-		{ 0x45, 0x20 },
-		{ 0x46, 0x20 },
-		{ 0x47, 0x80 },
-		{ 0x48, 0x7f },
-		{ 0x49, 0x00 },
-		{ 0x4a, 0x00 },
-		{ 0x4b, 0x80 },
-		{ 0x4c, 0xd0 },
-		{ 0x4d, 0x10 }, /* U = 0.563u, V = 0.714v */
-		{ 0x4e, 0x40 },
-		{ 0x4f, 0x07 }, /* UV avg., col. killer: max */
-		{ 0x50, 0xff },
-		{ 0x54, 0x23 }, /* Max AGC gain: 18dB */
-		{ 0x55, 0xff },
-		{ 0x56, 0x12 },
-		{ 0x57, 0x81 },
-		{ 0x58, 0x75 },
-		{ 0x59, 0x01 }, /* AGC dark current comp.: +1 */
-		{ 0x5a, 0x2c },
-		{ 0x5b, 0x0f }, /* AWB chrominance levels */
-		{ 0x5c, 0x10 },
-		{ 0x3d, 0x80 },
-		{ 0x27, 0xa6 },
-		{ 0x12, 0x20 }, /* Toggle AWB */
-		{ 0x12, 0x24 },
-	};
-
-	PDEBUG(D_PROBE, "starting sensor configuration");
-
-	if (init_ov_sensor(sd) < 0) {
-		PDEBUG(D_ERR, "Failed to read sensor ID.");
-		return -1;
-	}
-	PDEBUG(D_PROBE, "OV6xx0 sensor detected");
+	PDEBUG(D_PROBE, "starting OV6xx0 configuration");
 
 	/* Detect sensor (sub)type */
 	rc = i2c_r(sd, OV7610_REG_COM_I);
@@ -1251,22 +1281,12 @@ static int ov6xx0_configure(struct sd *sd)
 	/* Set sensor-specific vars */
 	sd->sif = 1;
 
-	if (sd->sensor == SEN_OV6620) {
-		PDEBUG(D_PROBE, "Writing 6x20 registers");
-		if (write_i2c_regvals(sd, norm_6x20, ARRAY_SIZE(norm_6x20)))
-			return -1;
-	} else {
-		PDEBUG(D_PROBE, "Writing 6x30 registers");
-		if (write_i2c_regvals(sd, norm_6x30, ARRAY_SIZE(norm_6x30)))
-			return -1;
-	}
 	return 0;
 }
 
 /* Turns on or off the LED. Only has an effect with OV511+/OV518(+)/OV519 */
 static void ov51x_led_control(struct sd *sd, int on)
 {
-/*	PDEBUG(D_STREAM, "LED (%s)", on ? "on" : "off"); */
 	reg_w_mask(sd, OV519_GPIO_DATA_OUT0, !on, 1);	/* 0 / 1 */
 }
 
@@ -1298,22 +1318,31 @@ static int sd_config(struct gspca_dev *gspca_dev,
 	ov51x_led_control(sd, 0);	/* turn LED off */
 
 	/* Test for 76xx */
-	sd->primary_i2c_slave = OV7xx0_SID;
 	if (ov51x_set_slave_ids(sd, OV7xx0_SID) < 0)
 		goto error;
 
 	/* The OV519 must be more aggressive about sensor detection since
 	 * I2C write will never fail if the sensor is not present. We have
 	 * to try to initialize the sensor to detect its presence */
-	if (init_ov_sensor(sd) < 0) {
+	if (init_ov_sensor(sd) >= 0) {
+		if (ov7xx0_configure(sd) < 0) {
+			PDEBUG(D_ERR, "Failed to configure OV7xx0");
+			goto error;
+		}
+	} else {
+
 		/* Test for 6xx0 */
-		sd->primary_i2c_slave = OV6xx0_SID;
 		if (ov51x_set_slave_ids(sd, OV6xx0_SID) < 0)
 			goto error;
 
-		if (init_ov_sensor(sd) < 0) {
+		if (init_ov_sensor(sd) >= 0) {
+			if (ov6xx0_configure(sd) < 0) {
+				PDEBUG(D_ERR, "Failed to configure OV6xx0");
+				goto error;
+			}
+		} else {
+
 			/* Test for 8xx0 */
-			sd->primary_i2c_slave = OV8xx0_SID;
 			if (ov51x_set_slave_ids(sd, OV8xx0_SID) < 0)
 				goto error;
 
@@ -1321,23 +1350,12 @@ static int sd_config(struct gspca_dev *gspca_dev,
 				PDEBUG(D_ERR,
 					"Can't determine sensor slave IDs");
 				goto error;
-			} else {
-				if (ov8xx0_configure(sd) < 0) {
-					PDEBUG(D_ERR,
-					   "Failed to configure OV8xx0 sensor");
-					goto error;
-				}
 			}
-		} else {
-			if (ov6xx0_configure(sd) < 0) {
-				PDEBUG(D_ERR, "Failed to configure OV6xx0");
+			if (ov8xx0_configure(sd) < 0) {
+				PDEBUG(D_ERR,
+					"Failed to configure OV8xx0 sensor");
 				goto error;
 			}
-		}
-	} else {
-		if (ov7xx0_configure(sd) < 0) {
-			PDEBUG(D_ERR, "Failed to configure OV7xx0");
-			goto error;
 		}
 	}
 
@@ -1355,15 +1373,53 @@ static int sd_config(struct gspca_dev *gspca_dev,
 	sd->colors = COLOR_DEF;
 	sd->hflip = HFLIP_DEF;
 	sd->vflip = VFLIP_DEF;
+	if (sd->sensor != SEN_OV7670)
+		gspca_dev->ctrl_dis = (1 << HFLIP_IDX)
+					| (1 << VFLIP_IDX);
 	return 0;
 error:
 	PDEBUG(D_ERR, "OV519 Config failed");
 	return -EBUSY;
 }
 
-/* this function is called at open time */
-static int sd_open(struct gspca_dev *gspca_dev)
+/* this function is called at probe and resume time */
+static int sd_init(struct gspca_dev *gspca_dev)
 {
+	struct sd *sd = (struct sd *) gspca_dev;
+
+	/* initialize the sensor */
+	switch (sd->sensor) {
+	case SEN_OV6620:
+		if (write_i2c_regvals(sd, norm_6x20, ARRAY_SIZE(norm_6x20)))
+			return -EIO;
+		break;
+	case SEN_OV6630:
+		if (write_i2c_regvals(sd, norm_6x30, ARRAY_SIZE(norm_6x30)))
+			return -EIO;
+		break;
+	default:
+/*	case SEN_OV7610: */
+/*	case SEN_OV76BE: */
+		if (write_i2c_regvals(sd, norm_7610, ARRAY_SIZE(norm_7610)))
+			return -EIO;
+		break;
+	case SEN_OV7620:
+		if (write_i2c_regvals(sd, norm_7620, ARRAY_SIZE(norm_7620)))
+			return -EIO;
+		break;
+	case SEN_OV7640:
+		if (write_i2c_regvals(sd, norm_7640, ARRAY_SIZE(norm_7640)))
+			return -EIO;
+		break;
+	case SEN_OV7670:
+		if (write_i2c_regvals(sd, norm_7670, ARRAY_SIZE(norm_7670)))
+			return -EIO;
+		break;
+	case SEN_OV8610:
+		if (write_i2c_regvals(sd, norm_8610, ARRAY_SIZE(norm_8610)))
+			return -EIO;
+		break;
+	}
 	return 0;
 }
 
@@ -1427,7 +1483,7 @@ static int ov519_mode_init_regs(struct sd *sd)
 			return -EIO;
 		if (sd->sensor == SEN_OV7640) {
 			/* Select 8-bit input mode */
-			reg_w_mask(sd, OV519_CAM_DFR, 0x10, 0x10);
+			reg_w_mask(sd, OV519_R20_DFR, 0x10, 0x10);
 		}
 	} else {
 		if (write_regvals(sd, mode_init_519_ov7670,
@@ -1435,14 +1491,14 @@ static int ov519_mode_init_regs(struct sd *sd)
 			return -EIO;
 	}
 
-	reg_w(sd, OV519_CAM_H_SIZE,	sd->gspca_dev.width >> 4);
-	reg_w(sd, OV519_CAM_V_SIZE,	sd->gspca_dev.height >> 3);
-	reg_w(sd, OV519_CAM_X_OFFSETL,	0x00);
-	reg_w(sd, OV519_CAM_X_OFFSETH,	0x00);
-	reg_w(sd, OV519_CAM_Y_OFFSETL,	0x00);
-	reg_w(sd, OV519_CAM_Y_OFFSETH,	0x00);
-	reg_w(sd, OV519_CAM_DIVIDER,	0x00);
-	reg_w(sd, OV519_CAM_FORMAT,	0x03); /* YUV422 */
+	reg_w(sd, OV519_R10_H_SIZE,	sd->gspca_dev.width >> 4);
+	reg_w(sd, OV519_R11_V_SIZE,	sd->gspca_dev.height >> 3);
+	reg_w(sd, OV519_R12_X_OFFSETL,	0x00);
+	reg_w(sd, OV519_R13_X_OFFSETH,	0x00);
+	reg_w(sd, OV519_R14_Y_OFFSETL,	0x00);
+	reg_w(sd, OV519_R15_Y_OFFSETH,	0x00);
+	reg_w(sd, OV519_R16_DIVIDER,	0x00);
+	reg_w(sd, OV519_R25_FORMAT,	0x03); /* YUV422 */
 	reg_w(sd, 0x26,			0x00); /* Undocumented */
 
 	/******** Set the framerate ********/
@@ -1454,8 +1510,8 @@ static int ov519_mode_init_regs(struct sd *sd)
 	switch (sd->sensor) {
 	case SEN_OV7640:
 		switch (sd->frame_rate) {
-/*fixme: default was 30 fps */
-		case 30:
+		default:
+/*		case 30: */
 			reg_w(sd, 0xa4, 0x0c);
 			reg_w(sd, 0x23, 0xff);
 			break;
@@ -1467,8 +1523,7 @@ static int ov519_mode_init_regs(struct sd *sd)
 			reg_w(sd, 0xa4, 0x0c);
 			reg_w(sd, 0x23, 0x1b);
 			break;
-		default:
-/*		case 15: */
+		case 15:
 			reg_w(sd, 0xa4, 0x04);
 			reg_w(sd, 0x23, 0xff);
 			sd->clockdiv = 1;
@@ -1521,7 +1576,6 @@ static int ov519_mode_init_regs(struct sd *sd)
 		}
 		break;
 	}
-
 	return 0;
 }
 
@@ -1612,7 +1666,7 @@ static int mode_init_ov_sensor_regs(struct sd *sd)
 		 * the gain or the contrast. The "reserved" bits seem
 		 * to have some effect in this case. */
 		i2c_w(sd, 0x2d, 0x85);
-	} else if (sd->clockdiv >= 0) {
+	} else {
 		i2c_w(sd, 0x11, sd->clockdiv);
 	}
 
@@ -1799,7 +1853,7 @@ static int set_ov_sensor_window(struct sd *sd)
 }
 
 /* -- start the camera -- */
-static void sd_start(struct gspca_dev *gspca_dev)
+static int sd_start(struct gspca_dev *gspca_dev)
 {
 	struct sd *sd = (struct sd *) gspca_dev;
 	int ret;
@@ -1814,25 +1868,19 @@ static void sd_start(struct gspca_dev *gspca_dev)
 	ret = ov51x_restart(sd);
 	if (ret < 0)
 		goto out;
-	PDEBUG(D_STREAM, "camera started alt: 0x%02x", gspca_dev->alt);
 	ov51x_led_control(sd, 1);
-	return;
+	return 0;
 out:
 	PDEBUG(D_ERR, "camera start error:%d", ret);
+	return ret;
 }
 
 static void sd_stopN(struct gspca_dev *gspca_dev)
 {
-	ov51x_stop((struct sd *) gspca_dev);
-	ov51x_led_control((struct sd *) gspca_dev, 0);
-}
+	struct sd *sd = (struct sd *) gspca_dev;
 
-static void sd_stop0(struct gspca_dev *gspca_dev)
-{
-}
-
-static void sd_close(struct gspca_dev *gspca_dev)
-{
+	ov51x_stop(sd);
+	ov51x_led_control(sd, 0);
 }
 
 static void sd_pkt_scan(struct gspca_dev *gspca_dev,
@@ -1887,9 +1935,6 @@ static void setbrightness(struct gspca_dev *gspca_dev)
 	int val;
 
 	val = sd->brightness;
-	PDEBUG(D_CONF, "brightness:%d", val);
-/*	if (gspca_dev->streaming)
- *		ov51x_stop(sd); */
 	switch (sd->sensor) {
 	case SEN_OV8610:
 	case SEN_OV7610:
@@ -1911,8 +1956,6 @@ static void setbrightness(struct gspca_dev *gspca_dev)
 		i2c_w(sd, OV7670_REG_BRIGHT, ov7670_abs_to_sm(val));
 		break;
 	}
-/*	if (gspca_dev->streaming)
- *		ov51x_restart(sd); */
 }
 
 static void setcontrast(struct gspca_dev *gspca_dev)
@@ -1921,9 +1964,6 @@ static void setcontrast(struct gspca_dev *gspca_dev)
 	int val;
 
 	val = sd->contrast;
-	PDEBUG(D_CONF, "contrast:%d", val);
-/*	if (gspca_dev->streaming)
-		ov51x_stop(sd); */
 	switch (sd->sensor) {
 	case SEN_OV7610:
 	case SEN_OV6620:
@@ -1959,8 +1999,6 @@ static void setcontrast(struct gspca_dev *gspca_dev)
 		i2c_w(sd, OV7670_REG_CONTRAS, val >> 1);
 		break;
 	}
-/*	if (gspca_dev->streaming)
-		ov51x_restart(sd); */
 }
 
 static void setcolors(struct gspca_dev *gspca_dev)
@@ -1969,9 +2007,6 @@ static void setcolors(struct gspca_dev *gspca_dev)
 	int val;
 
 	val = sd->colors;
-	PDEBUG(D_CONF, "saturation:%d", val);
-/*	if (gspca_dev->streaming)
-		ov51x_stop(sd); */
 	switch (sd->sensor) {
 	case SEN_OV8610:
 	case SEN_OV7610:
@@ -1996,8 +2031,6 @@ static void setcolors(struct gspca_dev *gspca_dev)
 		/* set REG_COM13 values for UV sat auto mode */
 		break;
 	}
-/*	if (gspca_dev->streaming)
-		ov51x_restart(sd); */
 }
 
 static int sd_setbrightness(struct gspca_dev *gspca_dev, __s32 val)
@@ -2005,7 +2038,8 @@ static int sd_setbrightness(struct gspca_dev *gspca_dev, __s32 val)
 	struct sd *sd = (struct sd *) gspca_dev;
 
 	sd->brightness = val;
-	setbrightness(gspca_dev);
+	if (gspca_dev->streaming)
+		setbrightness(gspca_dev);
 	return 0;
 }
 
@@ -2022,7 +2056,8 @@ static int sd_setcontrast(struct gspca_dev *gspca_dev, __s32 val)
 	struct sd *sd = (struct sd *) gspca_dev;
 
 	sd->contrast = val;
-	setcontrast(gspca_dev);
+	if (gspca_dev->streaming)
+		setcontrast(gspca_dev);
 	return 0;
 }
 
@@ -2039,7 +2074,8 @@ static int sd_setcolors(struct gspca_dev *gspca_dev, __s32 val)
 	struct sd *sd = (struct sd *) gspca_dev;
 
 	sd->colors = val;
-	setcolors(gspca_dev);
+	if (gspca_dev->streaming)
+		setcolors(gspca_dev);
 	return 0;
 }
 
@@ -2056,7 +2092,8 @@ static int sd_sethflip(struct gspca_dev *gspca_dev, __s32 val)
 	struct sd *sd = (struct sd *) gspca_dev;
 
 	sd->hflip = val;
-	sethvflip(sd);
+	if (gspca_dev->streaming)
+		sethvflip(sd);
 	return 0;
 }
 
@@ -2073,7 +2110,8 @@ static int sd_setvflip(struct gspca_dev *gspca_dev, __s32 val)
 	struct sd *sd = (struct sd *) gspca_dev;
 
 	sd->vflip = val;
-	sethvflip(sd);
+	if (gspca_dev->streaming)
+		sethvflip(sd);
 	return 0;
 }
 
@@ -2091,11 +2129,9 @@ static const struct sd_desc sd_desc = {
 	.ctrls = sd_ctrls,
 	.nctrls = ARRAY_SIZE(sd_ctrls),
 	.config = sd_config,
-	.open = sd_open,
+	.init = sd_init,
 	.start = sd_start,
 	.stopN = sd_stopN,
-	.stop0 = sd_stop0,
-	.close = sd_close,
 	.pkt_scan = sd_pkt_scan,
 };
 
@@ -2116,7 +2152,7 @@ static const __devinitdata struct usb_device_id device_table[] = {
 	{USB_DEVICE(0x05a9, 0x8519)},
 	{}
 };
-#undef DVNAME
+
 MODULE_DEVICE_TABLE(usb, device_table);
 
 /* -- device connect -- */
@@ -2132,6 +2168,10 @@ static struct usb_driver sd_driver = {
 	.id_table = device_table,
 	.probe = sd_probe,
 	.disconnect = gspca_disconnect,
+#ifdef CONFIG_PM
+	.suspend = gspca_suspend,
+	.resume = gspca_resume,
+#endif
 };
 
 /* -- module insert / remove -- */

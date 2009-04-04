@@ -182,11 +182,6 @@ static int synaptics_identify(struct psmouse *psmouse)
 
 static int synaptics_query_hardware(struct psmouse *psmouse)
 {
-	int retries = 0;
-
-	while ((retries++ < 3) && psmouse_reset(psmouse))
-		/* empty */;
-
 	if (synaptics_identify(psmouse))
 		return -1;
 	if (synaptics_model_id(psmouse))
@@ -445,11 +440,13 @@ static void synaptics_process_packet(struct psmouse *psmouse)
 
 	input_report_abs(dev, ABS_TOOL_WIDTH, finger_width);
 	input_report_key(dev, BTN_TOOL_FINGER, num_fingers == 1);
-	input_report_key(dev, BTN_TOOL_DOUBLETAP, num_fingers == 2);
-	input_report_key(dev, BTN_TOOL_TRIPLETAP, num_fingers == 3);
-
 	input_report_key(dev, BTN_LEFT, hw.left);
 	input_report_key(dev, BTN_RIGHT, hw.right);
+
+	if (SYN_CAP_MULTIFINGER(priv->capabilities)) {
+		input_report_key(dev, BTN_TOOL_DOUBLETAP, num_fingers == 2);
+		input_report_key(dev, BTN_TOOL_TRIPLETAP, num_fingers == 3);
+	}
 
 	if (SYN_CAP_MIDDLE_BUTTON(priv->capabilities))
 		input_report_key(dev, BTN_MIDDLE, hw.middle);
@@ -543,11 +540,13 @@ static void set_input_params(struct input_dev *dev, struct synaptics_data *priv)
 	set_bit(EV_KEY, dev->evbit);
 	set_bit(BTN_TOUCH, dev->keybit);
 	set_bit(BTN_TOOL_FINGER, dev->keybit);
-	set_bit(BTN_TOOL_DOUBLETAP, dev->keybit);
-	set_bit(BTN_TOOL_TRIPLETAP, dev->keybit);
-
 	set_bit(BTN_LEFT, dev->keybit);
 	set_bit(BTN_RIGHT, dev->keybit);
+
+	if (SYN_CAP_MULTIFINGER(priv->capabilities)) {
+		set_bit(BTN_TOOL_DOUBLETAP, dev->keybit);
+		set_bit(BTN_TOOL_TRIPLETAP, dev->keybit);
+	}
 
 	if (SYN_CAP_MIDDLE_BUTTON(priv->capabilities))
 		set_bit(BTN_MIDDLE, dev->keybit);
@@ -577,6 +576,8 @@ static int synaptics_reconnect(struct psmouse *psmouse)
 {
 	struct synaptics_data *priv = psmouse->private;
 	struct synaptics_data old_priv = *priv;
+
+	psmouse_reset(psmouse);
 
 	if (synaptics_detect(psmouse, 0))
 		return -1;
@@ -635,6 +636,8 @@ int synaptics_init(struct psmouse *psmouse)
 	psmouse->private = priv = kzalloc(sizeof(struct synaptics_data), GFP_KERNEL);
 	if (!priv)
 		return -1;
+
+	psmouse_reset(psmouse);
 
 	if (synaptics_query_hardware(psmouse)) {
 		printk(KERN_ERR "Unable to query Synaptics hardware.\n");

@@ -92,10 +92,10 @@ static void rtc_uie_timer(unsigned long data)
 	spin_unlock_irqrestore(&rtc->irq_lock, flags);
 }
 
-static void clear_uie(struct rtc_device *rtc)
+static int clear_uie(struct rtc_device *rtc)
 {
 	spin_lock_irq(&rtc->irq_lock);
-	if (rtc->irq_active) {
+	if (rtc->uie_irq_active) {
 		rtc->stop_uie_polling = 1;
 		if (rtc->uie_timer_active) {
 			spin_unlock_irq(&rtc->irq_lock);
@@ -108,9 +108,10 @@ static void clear_uie(struct rtc_device *rtc)
 			flush_scheduled_work();
 			spin_lock_irq(&rtc->irq_lock);
 		}
-		rtc->irq_active = 0;
+		rtc->uie_irq_active = 0;
 	}
 	spin_unlock_irq(&rtc->irq_lock);
+	return 0;
 }
 
 static int set_uie(struct rtc_device *rtc)
@@ -122,8 +123,8 @@ static int set_uie(struct rtc_device *rtc)
 	if (err)
 		return err;
 	spin_lock_irq(&rtc->irq_lock);
-	if (!rtc->irq_active) {
-		rtc->irq_active = 1;
+	if (!rtc->uie_irq_active) {
+		rtc->uie_irq_active = 1;
 		rtc->stop_uie_polling = 0;
 		rtc->oldsecs = tm.tm_sec;
 		rtc->uie_task_active = 1;
@@ -134,6 +135,16 @@ static int set_uie(struct rtc_device *rtc)
 	spin_unlock_irq(&rtc->irq_lock);
 	return 0;
 }
+
+int rtc_dev_update_irq_enable_emul(struct rtc_device *rtc, unsigned int enabled)
+{
+	if (enabled)
+		return set_uie(rtc);
+	else
+		return clear_uie(rtc);
+}
+EXPORT_SYMBOL(rtc_dev_update_irq_enable_emul);
+
 #endif /* CONFIG_RTC_INTF_DEV_UIE_EMUL */
 
 static ssize_t
@@ -357,6 +368,22 @@ static long rtc_dev_ioctl(struct file *file,
 		err = rtc_irq_set_state(rtc, NULL, 0);
 		break;
 
+	case RTC_AIE_ON:
+		mutex_unlock(&rtc->ops_lock);
+		return rtc_alarm_irq_enable(rtc, 1);
+
+	case RTC_AIE_OFF:
+		mutex_unlock(&rtc->ops_lock);
+		return rtc_alarm_irq_enable(rtc, 0);
+
+	case RTC_UIE_ON:
+		mutex_unlock(&rtc->ops_lock);
+		return rtc_update_irq_enable(rtc, 1);
+
+	case RTC_UIE_OFF:
+		mutex_unlock(&rtc->ops_lock);
+		return rtc_update_irq_enable(rtc, 0);
+
 	case RTC_IRQP_SET:
 		err = rtc_irq_set_freq(rtc, NULL, arg);
 		break;
@@ -401,14 +428,6 @@ static long rtc_dev_ioctl(struct file *file,
 			err = -EFAULT;
 		return err;
 
-#ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
-	case RTC_UIE_OFF:
-		clear_uie(rtc);
-		break;
-
-	case RTC_UIE_ON:
-		err = set_uie(rtc);
-#endif
 	default:
 		err = -ENOTTY;
 		break;
@@ -419,13 +438,28 @@ done:
 	return err;
 }
 
+static int rtc_dev_fasync(int fd, struct file *file, int on)
+{
+	struct rtc_device *rtc = file->private_data;
+	return fasync_helper(fd, file, on, &rtc->async_queue);
+}
+
 static int rtc_dev_release(struct inode *inode, struct file *file)
 {
 	struct rtc_device *rtc = file->private_data;
 
-#ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
-	clear_uie(rtc);
-#endif
+	/* We shut down the repeating IRQs that userspace enabled,
+	 * since nothing is listening to them.
+	 *  - Update (UIE) ... currently only managed through ioctls
+	 *  - Periodic (PIE) ... also used through rtc_*() interface calls
+	 *
+	 * Leave the alarm alone; it may be set to trigger a system wakeup
+	 * later, or be used by kernel code, and is a one-shot event anyway.
+	 */
+
+	/* Keep ioctl until all drivers are converted */
+	rtc_dev_ioctl(file, RTC_UIE_OFF, 0);
+	rtc_update_irq_enable(rtc, 0);
 	rtc_irq_set_state(rtc, NULL, 0);
 
 	if (rtc->ops->release)
@@ -433,12 +467,6 @@ static int rtc_dev_release(struct inode *inode, struct file *file)
 
 	clear_bit_unlock(RTC_DEV_BUSY, &rtc->flags);
 	return 0;
-}
-
-static int rtc_dev_fasync(int fd, struct file *file, int on)
-{
-	struct rtc_device *rtc = file->private_data;
-	return fasync_helper(fd, file, on, &rtc->async_queue);
 }
 
 static const struct file_operations rtc_dev_fops = {

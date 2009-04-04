@@ -28,8 +28,8 @@
  */
 
 #include <asm/fixed_code.h>
-#include <asm/mach/anomaly.h>
-#include <asm/mach-common/clocks.h>
+#include <mach/anomaly.h>
+#include <asm/clocks.h>
 
 #ifdef CONFIG_BFIN_KERNEL_CLOCK
 
@@ -61,4 +61,13 @@
 
 #if (CONFIG_BOOT_LOAD & 0x3)
 # error "The kernel load address must be 4 byte aligned"
+#endif
+
+/* The entire kernel must be able to make a 24bit pcrel call to start of L1 */
+#if ((0xffffffff - L1_CODE_START + 1) + CONFIG_BOOT_LOAD) > 0x1000000
+# error "The kernel load address is too high; keep it below 10meg for safety"
+#endif
+
+#if ANOMALY_05000448
+# error You are using a part with anomaly 05000448, this issue causes random memory read/write failures - that means random crashes.
 #endif

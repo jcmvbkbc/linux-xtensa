@@ -36,6 +36,8 @@
 #define XEN_ENTER_SWITCH_CODE		10
 #define SPU_PROFILING_CODE		11
 #define SPU_CTX_SWITCH_CODE		12
+#define IBS_FETCH_CODE			13
+#define IBS_OP_CODE			14
 
 struct super_block;
 struct dentry;
@@ -84,15 +86,7 @@ int oprofile_arch_init(struct oprofile_operations * ops);
 void oprofile_arch_exit(void);
 
 /**
- * Add data to the event buffer.
- * The data passed is free-form, but typically consists of
- * file offsets, dcookies, context information, and ESCAPE codes.
- */
-void add_event_entry(unsigned long data);
-
-/**
- * Add a sample. This may be called from any context. Pass
- * smp_processor_id() as cpu.
+ * Add a sample. This may be called from any context.
  */
 void oprofile_add_sample(struct pt_regs * const regs, unsigned long event);
 
@@ -160,5 +154,32 @@ int oprofilefs_ulong_from_user(unsigned long * val, char const __user * buf, siz
 
 /** lock for read/write safety */
 extern spinlock_t oprofilefs_lock;
+
+/**
+ * Add the contents of a circular buffer to the event buffer.
+ */
+void oprofile_put_buff(unsigned long *buf, unsigned int start,
+			unsigned int stop, unsigned int max);
+
+unsigned long oprofile_get_cpu_buffer_size(void);
+void oprofile_cpu_buffer_inc_smpl_lost(void);
  
+/* cpu buffer functions */
+
+struct op_sample;
+
+struct op_entry {
+	struct ring_buffer_event *event;
+	struct op_sample *sample;
+	unsigned long irq_flags;
+	unsigned long size;
+	unsigned long *data;
+};
+
+void oprofile_write_reserve(struct op_entry *entry,
+			    struct pt_regs * const regs,
+			    unsigned long pc, int code, int size);
+int oprofile_add_data(struct op_entry *entry, unsigned long val);
+int oprofile_write_commit(struct op_entry *entry);
+
 #endif /* OPROFILE_H */

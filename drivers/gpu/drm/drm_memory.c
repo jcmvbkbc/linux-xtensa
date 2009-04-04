@@ -133,6 +133,7 @@ int drm_free_agp(DRM_AGP_MEM * handle, int pages)
 {
 	return drm_agp_free_memory(handle) ? 0 : -EINVAL;
 }
+EXPORT_SYMBOL(drm_free_agp);
 
 /** Wrapper around agp_bind_memory() */
 int drm_bind_agp(DRM_AGP_MEM * handle, unsigned int start)
@@ -145,6 +146,7 @@ int drm_unbind_agp(DRM_AGP_MEM * handle)
 {
 	return drm_agp_unbind_memory(handle);
 }
+EXPORT_SYMBOL(drm_unbind_agp);
 
 #else  /*  __OS_HAS_AGP  */
 static inline void *agp_remap(unsigned long offset, unsigned long size,
@@ -169,9 +171,14 @@ EXPORT_SYMBOL(drm_core_ioremap);
 
 void drm_core_ioremap_wc(struct drm_map *map, struct drm_device *dev)
 {
-	map->handle = ioremap_wc(map->offset, map->size);
+	if (drm_core_has_AGP(dev) &&
+	    dev->agp && dev->agp->cant_use_aperture && map->type == _DRM_AGP)
+		map->handle = agp_remap(map->offset, map->size, dev);
+	else
+		map->handle = ioremap_wc(map->offset, map->size);
 }
 EXPORT_SYMBOL(drm_core_ioremap_wc);
+
 void drm_core_ioremapfree(struct drm_map *map, struct drm_device *dev)
 {
 	if (!map->handle || !map->size)

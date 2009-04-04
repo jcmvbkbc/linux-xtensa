@@ -39,6 +39,7 @@ static int cfq_slice_idle = HZ / 125;
 #define CFQ_MIN_TT		(2)
 
 #define CFQ_SLICE_SCALE		(5)
+#define CFQ_HW_QUEUE_MIN	(5)
 
 #define RQ_CIC(rq)		\
 	((struct cfq_io_context *) (rq)->elevator_private)
@@ -83,10 +84,22 @@ struct cfq_data {
 	 */
 	struct cfq_rb_root service_tree;
 	unsigned int busy_queues;
+	/*
+	 * Used to track any pending rt requests so we can pre-empt current
+	 * non-RT cfqq in service when this value is non-zero.
+	 */
+	unsigned int busy_rt_queues;
 
 	int rq_in_driver;
 	int sync_flight;
+
+	/*
+	 * queue-depth detection
+	 */
+	int rq_queued;
 	int hw_tag;
+	int hw_tag_samples;
+	int rq_in_driver_peak;
 
 	/*
 	 * idle window management
@@ -244,7 +257,7 @@ static inline void cfq_schedule_dispatch(struct cfq_data *cfqd)
 {
 	if (cfqd->busy_queues) {
 		cfq_log(cfqd, "schedule dispatch");
-		kblockd_schedule_work(&cfqd->unplug_work);
+		kblockd_schedule_work(cfqd->queue, &cfqd->unplug_work);
 	}
 }
 
@@ -554,6 +567,8 @@ static void cfq_add_cfqq_rr(struct cfq_data *cfqd, struct cfq_queue *cfqq)
 	BUG_ON(cfq_cfqq_on_rr(cfqq));
 	cfq_mark_cfqq_on_rr(cfqq);
 	cfqd->busy_queues++;
+	if (cfq_class_rt(cfqq))
+		cfqd->busy_rt_queues++;
 
 	cfq_resort_rr_list(cfqd, cfqq);
 }
@@ -573,6 +588,8 @@ static void cfq_del_cfqq_rr(struct cfq_data *cfqd, struct cfq_queue *cfqq)
 
 	BUG_ON(!cfqd->busy_queues);
 	cfqd->busy_queues--;
+	if (cfq_class_rt(cfqq))
+		cfqd->busy_rt_queues--;
 }
 
 /*
@@ -654,15 +671,6 @@ static void cfq_activate_request(struct request_queue *q, struct request *rq)
 	cfq_log_cfqq(cfqd, RQ_CFQQ(rq), "activate rq, drv=%d",
 						cfqd->rq_in_driver);
 
-	/*
-	 * If the depth is larger 1, it really could be queueing. But lets
-	 * make the mark a little higher - idling could still be good for
-	 * low queueing, and a low queueing number could also just indicate
-	 * a SCSI mid layer like behaviour where limit+1 is often seen.
-	 */
-	if (!cfqd->hw_tag && cfqd->rq_in_driver > 4)
-		cfqd->hw_tag = 1;
-
 	cfqd->last_position = rq->hard_sector + rq->hard_nr_sectors;
 }
 
@@ -686,6 +694,7 @@ static void cfq_remove_request(struct request *rq)
 	list_del_init(&rq->queuelist);
 	cfq_del_rq_rb(rq);
 
+	cfqq->cfqd->rq_queued--;
 	if (rq_is_meta(rq)) {
 		WARN_ON(!cfqq->meta_pending);
 		cfqq->meta_pending--;
@@ -878,6 +887,14 @@ static void cfq_arm_slice_timer(struct cfq_data *cfqd)
 	struct cfq_io_context *cic;
 	unsigned long sl;
 
+	/*
+	 * SSD device without seek penalty, disable idling. But only do so
+	 * for devices that support queuing, otherwise we still have a problem
+	 * with sync vs async workloads.
+	 */
+	if (blk_queue_nonrot(cfqd->queue) && cfqd->hw_tag)
+		return;
+
 	WARN_ON(!RB_EMPTY_ROOT(&cfqq->sort_list));
 	WARN_ON(cfq_cfqq_slice_new(cfqq));
 
@@ -997,6 +1014,20 @@ static struct cfq_queue *cfq_select_queue(struct cfq_data *cfqd)
 		goto expire;
 
 	/*
+	 * If we have a RT cfqq waiting, then we pre-empt the current non-rt
+	 * cfqq.
+	 */
+	if (!cfq_class_rt(cfqq) && cfqd->busy_rt_queues) {
+		/*
+		 * We simulate this as cfqq timed out so that it gets to bank
+		 * the remaining of its time slice.
+		 */
+		cfq_log_cfqq(cfqd, cfqq, "preempt");
+		cfq_slice_expired(cfqd, 1);
+		goto new_queue;
+	}
+
+	/*
 	 * The active queue has requests and isn't expired, allow it to
 	 * dispatch.
 	 */
@@ -1057,6 +1088,13 @@ __cfq_dispatch_requests(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 		}
 
 		if (RB_EMPTY_ROOT(&cfqq->sort_list))
+			break;
+
+		/*
+		 * If there is a non-empty RT cfqq waiting for current
+		 * cfqq's timeslice to complete, pre-empt this cfqq
+		 */
+		if (!cfq_class_rt(cfqq) && cfqd->busy_rt_queues)
 			break;
 
 	} while (dispatched < max_dispatch);
@@ -1128,12 +1166,8 @@ static int cfq_dispatch_requests(struct request_queue *q, int force)
 		if (cfq_class_idle(cfqq))
 			max_dispatch = 1;
 
-		if (cfqq->dispatched >= max_dispatch) {
-			if (cfqd->busy_queues > 1)
-				break;
-			if (cfqq->dispatched >= 4 * max_dispatch)
-				break;
-		}
+		if (cfqq->dispatched >= max_dispatch && cfqd->busy_queues > 1)
+			break;
 
 		if (cfqd->sync_flight && !cfq_cfqq_sync(cfqq))
 			break;
@@ -1310,7 +1344,15 @@ static void cfq_exit_single_io_context(struct io_context *ioc,
 		unsigned long flags;
 
 		spin_lock_irqsave(q->queue_lock, flags);
-		__cfq_exit_single_io_context(cfqd, cic);
+
+		/*
+		 * Ensure we get a fresh copy of the ->key to prevent
+		 * race between exiting task and queue
+		 */
+		smp_read_barrier_depends();
+		if (cic->key)
+			__cfq_exit_single_io_context(cfqd, cic);
+
 		spin_unlock_irqrestore(q->queue_lock, flags);
 	}
 }
@@ -1789,6 +1831,12 @@ cfq_should_preempt(struct cfq_data *cfqd, struct cfq_queue *new_cfqq,
 	if (rq_is_meta(rq) && !cfqq->meta_pending)
 		return 1;
 
+	/*
+	 * Allow an RT request to pre-empt an ongoing non-RT cfqq timeslice.
+	 */
+	if (cfq_class_rt(new_cfqq) && !cfq_class_rt(cfqq))
+		return 1;
+
 	if (!cfqd->active_cic || !cfq_cfqq_wait_request(cfqq))
 		return 0;
 
@@ -1833,6 +1881,7 @@ cfq_rq_enqueued(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 {
 	struct cfq_io_context *cic = RQ_CIC(rq);
 
+	cfqd->rq_queued++;
 	if (rq_is_meta(rq))
 		cfqq->meta_pending++;
 
@@ -1857,7 +1906,8 @@ cfq_rq_enqueued(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 		/*
 		 * not the active queue - expire current slice if it is
 		 * idle and has expired it's mean thinktime or this new queue
-		 * has some old slice time left and is of higher priority
+		 * has some old slice time left and is of higher priority or
+		 * this new queue is RT and the current one is BE
 		 */
 		cfq_preempt_queue(cfqd, cfqq);
 		cfq_mark_cfqq_must_dispatch(cfqq);
@@ -1880,6 +1930,31 @@ static void cfq_insert_request(struct request_queue *q, struct request *rq)
 	cfq_rq_enqueued(cfqd, cfqq, rq);
 }
 
+/*
+ * Update hw_tag based on peak queue depth over 50 samples under
+ * sufficient load.
+ */
+static void cfq_update_hw_tag(struct cfq_data *cfqd)
+{
+	if (cfqd->rq_in_driver > cfqd->rq_in_driver_peak)
+		cfqd->rq_in_driver_peak = cfqd->rq_in_driver;
+
+	if (cfqd->rq_queued <= CFQ_HW_QUEUE_MIN &&
+	    cfqd->rq_in_driver <= CFQ_HW_QUEUE_MIN)
+		return;
+
+	if (cfqd->hw_tag_samples++ < 50)
+		return;
+
+	if (cfqd->rq_in_driver_peak >= CFQ_HW_QUEUE_MIN)
+		cfqd->hw_tag = 1;
+	else
+		cfqd->hw_tag = 0;
+
+	cfqd->hw_tag_samples = 0;
+	cfqd->rq_in_driver_peak = 0;
+}
+
 static void cfq_completed_request(struct request_queue *q, struct request *rq)
 {
 	struct cfq_queue *cfqq = RQ_CFQQ(rq);
@@ -1889,6 +1964,8 @@ static void cfq_completed_request(struct request_queue *q, struct request *rq)
 
 	now = jiffies;
 	cfq_log_cfqq(cfqd, cfqq, "complete");
+
+	cfq_update_hw_tag(cfqd);
 
 	WARN_ON(!cfqd->rq_in_driver);
 	WARN_ON(!cfqq->dispatched);
@@ -2124,7 +2201,7 @@ out_cont:
 static void cfq_shutdown_timer_wq(struct cfq_data *cfqd)
 {
 	del_timer_sync(&cfqd->idle_slice_timer);
-	kblockd_flush_work(&cfqd->unplug_work);
+	cancel_work_sync(&cfqd->unplug_work);
 }
 
 static void cfq_put_async_queues(struct cfq_data *cfqd)
@@ -2142,7 +2219,7 @@ static void cfq_put_async_queues(struct cfq_data *cfqd)
 		cfq_put_queue(cfqd->async_idle_cfqq);
 }
 
-static void cfq_exit_queue(elevator_t *e)
+static void cfq_exit_queue(struct elevator_queue *e)
 {
 	struct cfq_data *cfqd = e->elevator_data;
 	struct request_queue *q = cfqd->queue;
@@ -2200,6 +2277,7 @@ static void *cfq_init_queue(struct request_queue *q)
 	cfqd->cfq_slice[1] = cfq_slice_sync;
 	cfqd->cfq_slice_async_rq = cfq_slice_async_rq;
 	cfqd->cfq_slice_idle = cfq_slice_idle;
+	cfqd->hw_tag = 1;
 
 	return cfqd;
 }
@@ -2251,7 +2329,7 @@ cfq_var_store(unsigned int *var, const char *page, size_t count)
 }
 
 #define SHOW_FUNCTION(__FUNC, __VAR, __CONV)				\
-static ssize_t __FUNC(elevator_t *e, char *page)			\
+static ssize_t __FUNC(struct elevator_queue *e, char *page)		\
 {									\
 	struct cfq_data *cfqd = e->elevator_data;			\
 	unsigned int __data = __VAR;					\
@@ -2271,7 +2349,7 @@ SHOW_FUNCTION(cfq_slice_async_rq_show, cfqd->cfq_slice_async_rq, 0);
 #undef SHOW_FUNCTION
 
 #define STORE_FUNCTION(__FUNC, __PTR, MIN, MAX, __CONV)			\
-static ssize_t __FUNC(elevator_t *e, const char *page, size_t count)	\
+static ssize_t __FUNC(struct elevator_queue *e, const char *page, size_t count)	\
 {									\
 	struct cfq_data *cfqd = e->elevator_data;			\
 	unsigned int __data;						\

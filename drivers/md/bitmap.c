@@ -208,26 +208,30 @@ static void bitmap_checkfree(struct bitmap *bitmap, unsigned long page)
  */
 
 /* IO operations when bitmap is stored near all superblocks */
-static struct page *read_sb_page(mddev_t *mddev, long offset, unsigned long index)
+static struct page *read_sb_page(mddev_t *mddev, long offset,
+				 struct page *page,
+				 unsigned long index, int size)
 {
 	/* choose a good rdev and read the page from there */
 
 	mdk_rdev_t *rdev;
-	struct list_head *tmp;
-	struct page *page = alloc_page(GFP_KERNEL);
 	sector_t target;
 
 	if (!page)
+		page = alloc_page(GFP_KERNEL);
+	if (!page)
 		return ERR_PTR(-ENOMEM);
 
-	rdev_for_each(rdev, tmp, mddev) {
+	list_for_each_entry(rdev, &mddev->disks, same_set) {
 		if (! test_bit(In_sync, &rdev->flags)
 		    || test_bit(Faulty, &rdev->flags))
 			continue;
 
 		target = rdev->sb_start + offset + index * (PAGE_SIZE/512);
 
-		if (sync_page_io(rdev->bdev, target, PAGE_SIZE, page, READ)) {
+		if (sync_page_io(rdev->bdev, target,
+				 roundup(size, bdev_hardsect_size(rdev->bdev)),
+				 page, READ)) {
 			page->index = index;
 			attach_page_buffers(page, NULL); /* so that free_buffer will
 							  * quietly no-op */
@@ -238,15 +242,47 @@ static struct page *read_sb_page(mddev_t *mddev, long offset, unsigned long inde
 
 }
 
+static mdk_rdev_t *next_active_rdev(mdk_rdev_t *rdev, mddev_t *mddev)
+{
+	/* Iterate the disks of an mddev, using rcu to protect access to the
+	 * linked list, and raising the refcount of devices we return to ensure
+	 * they don't disappear while in use.
+	 * As devices are only added or removed when raid_disk is < 0 and
+	 * nr_pending is 0 and In_sync is clear, the entries we return will
+	 * still be in the same position on the list when we re-enter
+	 * list_for_each_continue_rcu.
+	 */
+	struct list_head *pos;
+	rcu_read_lock();
+	if (rdev == NULL)
+		/* start at the beginning */
+		pos = &mddev->disks;
+	else {
+		/* release the previous rdev and start from there. */
+		rdev_dec_pending(rdev, mddev);
+		pos = &rdev->same_set;
+	}
+	list_for_each_continue_rcu(pos, &mddev->disks) {
+		rdev = list_entry(pos, mdk_rdev_t, same_set);
+		if (rdev->raid_disk >= 0 &&
+		    test_bit(In_sync, &rdev->flags) &&
+		    !test_bit(Faulty, &rdev->flags)) {
+			/* this is a usable devices */
+			atomic_inc(&rdev->nr_pending);
+			rcu_read_unlock();
+			return rdev;
+		}
+	}
+	rcu_read_unlock();
+	return NULL;
+}
+
 static int write_sb_page(struct bitmap *bitmap, struct page *page, int wait)
 {
-	mdk_rdev_t *rdev;
+	mdk_rdev_t *rdev = NULL;
 	mddev_t *mddev = bitmap->mddev;
 
-	rcu_read_lock();
-	rdev_for_each_rcu(rdev, mddev)
-		if (test_bit(In_sync, &rdev->flags)
-		    && !test_bit(Faulty, &rdev->flags)) {
+	while ((rdev = next_active_rdev(rdev, mddev)) != NULL) {
 			int size = PAGE_SIZE;
 			if (page->index == bitmap->file_pages-1)
 				size = roundup(bitmap->last_page_size,
@@ -281,8 +317,7 @@ static int write_sb_page(struct bitmap *bitmap, struct page *page, int wait)
 				       + page->index * (PAGE_SIZE/512),
 				       size,
 				       page);
-		}
-	rcu_read_unlock();
+	}
 
 	if (wait)
 		md_super_wait(mddev);
@@ -513,7 +548,9 @@ static int bitmap_read_sb(struct bitmap *bitmap)
 
 		bitmap->sb_page = read_page(bitmap->file, 0, bitmap, bytes);
 	} else {
-		bitmap->sb_page = read_sb_page(bitmap->mddev, bitmap->offset, 0);
+		bitmap->sb_page = read_sb_page(bitmap->mddev, bitmap->offset,
+					       NULL,
+					       0, sizeof(bitmap_super_t));
 	}
 	if (IS_ERR(bitmap->sb_page)) {
 		err = PTR_ERR(bitmap->sb_page);
@@ -926,11 +963,18 @@ static int bitmap_init_from_disk(struct bitmap *bitmap, sector_t start)
 				 */
 				page = bitmap->sb_page;
 				offset = sizeof(bitmap_super_t);
+				if (!file)
+					read_sb_page(bitmap->mddev,
+						     bitmap->offset,
+						     page,
+						     index, count);
 			} else if (file) {
 				page = read_page(file, index, bitmap, count);
 				offset = 0;
 			} else {
-				page = read_sb_page(bitmap->mddev, bitmap->offset, index);
+				page = read_sb_page(bitmap->mddev, bitmap->offset,
+						    NULL,
+						    index, count);
 				offset = 0;
 			}
 			if (IS_ERR(page)) { /* read error */

@@ -47,7 +47,8 @@ MODULE_PARM_DESC(i2c_debug, "enable debug messages [i2c]");
 
 #define PDEBUG(level, fmt, args...) { \
 		if (i2c_debug & (level)) \
-			info("[%s:%d] " fmt, __func__, __LINE__ , ## args); \
+			printk(KERN_INFO KBUILD_MODNAME ":[%s:%d] " fmt, \
+				__func__, __LINE__ , ## args); \
 	}
 
 static int usbvision_i2c_write(struct usb_usbvision *usbvision, unsigned char addr, char *buf,
@@ -156,7 +157,7 @@ usbvision_i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg msgs[], int num)
 	struct i2c_msg *pmsg;
 	struct usb_usbvision *usbvision;
 	int i, ret;
-	unsigned char addr;
+	unsigned char addr = 0;
 
 	usbvision = (struct usb_usbvision *)i2c_get_adapdata(i2c_adap);
 
@@ -235,7 +236,7 @@ int usbvision_i2c_register(struct usb_usbvision *usbvision)
 	       sizeof(struct i2c_client));
 
 	sprintf(usbvision->i2c_adap.name + strlen(usbvision->i2c_adap.name),
-		" #%d", usbvision->vdev->minor & 0x1f);
+		" #%d", usbvision->vdev->num);
 	PDEBUG(DBG_I2C,"Adaptername: %s", usbvision->i2c_adap.name);
 	usbvision->i2c_adap.dev.parent = &usbvision->dev->dev;
 

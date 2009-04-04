@@ -295,11 +295,11 @@ void do_machine_check(struct pt_regs * regs, long error_code)
 		 * If we know that the error was in user space, send a
 		 * SIGBUS.  Otherwise, panic if tolerance is low.
 		 *
-		 * do_exit() takes an awful lot of locks and has a slight
+		 * force_sig() takes an awful lot of locks and has a slight
 		 * risk of deadlocking.
 		 */
 		if (user_space) {
-			do_exit(SIGBUS);
+			force_sig(SIGBUS, current);
 		} else if (panic_on_oops || tolerant < 2) {
 			mce_panic("Uncorrected machine check",
 				&panicm, mcestart);
@@ -490,7 +490,7 @@ static void __cpuinit mce_cpu_quirks(struct cpuinfo_x86 *c)
 
 }
 
-static void __cpuinit mce_cpu_features(struct cpuinfo_x86 *c)
+static void mce_cpu_features(struct cpuinfo_x86 *c)
 {
 	switch (c->x86_vendor) {
 	case X86_VENDOR_INTEL:
@@ -510,12 +510,9 @@ static void __cpuinit mce_cpu_features(struct cpuinfo_x86 *c)
  */
 void __cpuinit mcheck_init(struct cpuinfo_x86 *c)
 {
-	static cpumask_t mce_cpus = CPU_MASK_NONE;
-
 	mce_cpu_quirks(c);
 
 	if (mce_dont_init ||
-	    cpu_test_and_set(smp_processor_id(), mce_cpus) ||
 	    !mce_available(c))
 		return;
 
@@ -737,6 +734,7 @@ __setup("mce=", mcheck_enable);
 static int mce_resume(struct sys_device *dev)
 {
 	mce_init(NULL);
+	mce_cpu_features(&current_cpu_data);
 	return 0;
 }
 
@@ -759,6 +757,7 @@ static struct sysdev_class mce_sysclass = {
 };
 
 DEFINE_PER_CPU(struct sys_device, device_mce);
+void (*threshold_cpu_callback)(unsigned long action, unsigned int cpu) __cpuinitdata;
 
 /* Why are there no generic functions for this? */
 #define ACCESSOR(name, var, start) \
@@ -859,7 +858,7 @@ error:
 	return err;
 }
 
-static void mce_remove_device(unsigned int cpu)
+static __cpuinit void mce_remove_device(unsigned int cpu)
 {
 	int i;
 
@@ -883,9 +882,13 @@ static int __cpuinit mce_cpu_callback(struct notifier_block *nfb,
 	case CPU_ONLINE:
 	case CPU_ONLINE_FROZEN:
 		mce_create_device(cpu);
+		if (threshold_cpu_callback)
+			threshold_cpu_callback(action, cpu);
 		break;
 	case CPU_DEAD:
 	case CPU_DEAD_FROZEN:
+		if (threshold_cpu_callback)
+			threshold_cpu_callback(action, cpu);
 		mce_remove_device(cpu);
 		break;
 	}

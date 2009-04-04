@@ -48,136 +48,19 @@ int seq_open(struct file *file, const struct seq_operations *op)
 	 */
 	file->f_version = 0;
 
-	/* SEQ files support lseek, but not pread/pwrite */
-	file->f_mode &= ~(FMODE_PREAD | FMODE_PWRITE);
+	/*
+	 * seq_files support lseek() and pread().  They do not implement
+	 * write() at all, but we clear FMODE_PWRITE here for historical
+	 * reasons.
+	 *
+	 * If a client of seq_files a) implements file.write() and b) wishes to
+	 * support pwrite() then that client will need to implement its own
+	 * file.open() which calls seq_open() and then sets FMODE_PWRITE.
+	 */
+	file->f_mode &= ~FMODE_PWRITE;
 	return 0;
 }
 EXPORT_SYMBOL(seq_open);
-
-/**
- *	seq_read -	->read() method for sequential files.
- *	@file: the file to read from
- *	@buf: the buffer to read to
- *	@size: the maximum number of bytes to read
- *	@ppos: the current position in the file
- *
- *	Ready-made ->f_op->read()
- */
-ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
-{
-	struct seq_file *m = (struct seq_file *)file->private_data;
-	size_t copied = 0;
-	loff_t pos;
-	size_t n;
-	void *p;
-	int err = 0;
-
-	mutex_lock(&m->lock);
-	/*
-	 * seq_file->op->..m_start/m_stop/m_next may do special actions
-	 * or optimisations based on the file->f_version, so we want to
-	 * pass the file->f_version to those methods.
-	 *
-	 * seq_file->version is just copy of f_version, and seq_file
-	 * methods can treat it simply as file version.
-	 * It is copied in first and copied out after all operations.
-	 * It is convenient to have it as  part of structure to avoid the
-	 * need of passing another argument to all the seq_file methods.
-	 */
-	m->version = file->f_version;
-	/* grab buffer if we didn't have one */
-	if (!m->buf) {
-		m->buf = kmalloc(m->size = PAGE_SIZE, GFP_KERNEL);
-		if (!m->buf)
-			goto Enomem;
-	}
-	/* if not empty - flush it first */
-	if (m->count) {
-		n = min(m->count, size);
-		err = copy_to_user(buf, m->buf + m->from, n);
-		if (err)
-			goto Efault;
-		m->count -= n;
-		m->from += n;
-		size -= n;
-		buf += n;
-		copied += n;
-		if (!m->count)
-			m->index++;
-		if (!size)
-			goto Done;
-	}
-	/* we need at least one record in buffer */
-	while (1) {
-		pos = m->index;
-		p = m->op->start(m, &pos);
-		err = PTR_ERR(p);
-		if (!p || IS_ERR(p))
-			break;
-		err = m->op->show(m, p);
-		if (err < 0)
-			break;
-		if (unlikely(err))
-			m->count = 0;
-		if (m->count < m->size)
-			goto Fill;
-		m->op->stop(m, p);
-		kfree(m->buf);
-		m->buf = kmalloc(m->size <<= 1, GFP_KERNEL);
-		if (!m->buf)
-			goto Enomem;
-		m->count = 0;
-		m->version = 0;
-	}
-	m->op->stop(m, p);
-	m->count = 0;
-	goto Done;
-Fill:
-	/* they want more? let's try to get some more */
-	while (m->count < size) {
-		size_t offs = m->count;
-		loff_t next = pos;
-		p = m->op->next(m, p, &next);
-		if (!p || IS_ERR(p)) {
-			err = PTR_ERR(p);
-			break;
-		}
-		err = m->op->show(m, p);
-		if (m->count == m->size || err) {
-			m->count = offs;
-			if (likely(err <= 0))
-				break;
-		}
-		pos = next;
-	}
-	m->op->stop(m, p);
-	n = min(m->count, size);
-	err = copy_to_user(buf, m->buf, n);
-	if (err)
-		goto Efault;
-	copied += n;
-	m->count -= n;
-	if (m->count)
-		m->from = n;
-	else
-		pos++;
-	m->index = pos;
-Done:
-	if (!copied)
-		copied = err;
-	else
-		*ppos += copied;
-	file->f_version = m->version;
-	mutex_unlock(&m->lock);
-	return copied;
-Enomem:
-	err = -ENOMEM;
-	goto Done;
-Efault:
-	err = -EFAULT;
-	goto Done;
-}
-EXPORT_SYMBOL(seq_read);
 
 static int traverse(struct seq_file *m, loff_t offset)
 {
@@ -227,6 +110,7 @@ static int traverse(struct seq_file *m, loff_t offset)
 		p = m->op->next(m, p, &index);
 	}
 	m->op->stop(m, p);
+	m->index = index;
 	return error;
 
 Eoverflow:
@@ -235,6 +119,156 @@ Eoverflow:
 	m->buf = kmalloc(m->size <<= 1, GFP_KERNEL);
 	return !m->buf ? -ENOMEM : -EAGAIN;
 }
+
+/**
+ *	seq_read -	->read() method for sequential files.
+ *	@file: the file to read from
+ *	@buf: the buffer to read to
+ *	@size: the maximum number of bytes to read
+ *	@ppos: the current position in the file
+ *
+ *	Ready-made ->f_op->read()
+ */
+ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+	struct seq_file *m = (struct seq_file *)file->private_data;
+	size_t copied = 0;
+	loff_t pos;
+	size_t n;
+	void *p;
+	int err = 0;
+
+	mutex_lock(&m->lock);
+
+	/* Don't assume *ppos is where we left it */
+	if (unlikely(*ppos != m->read_pos)) {
+		m->read_pos = *ppos;
+		while ((err = traverse(m, *ppos)) == -EAGAIN)
+			;
+		if (err) {
+			/* With prejudice... */
+			m->read_pos = 0;
+			m->version = 0;
+			m->index = 0;
+			m->count = 0;
+			goto Done;
+		}
+	}
+
+	/*
+	 * seq_file->op->..m_start/m_stop/m_next may do special actions
+	 * or optimisations based on the file->f_version, so we want to
+	 * pass the file->f_version to those methods.
+	 *
+	 * seq_file->version is just copy of f_version, and seq_file
+	 * methods can treat it simply as file version.
+	 * It is copied in first and copied out after all operations.
+	 * It is convenient to have it as  part of structure to avoid the
+	 * need of passing another argument to all the seq_file methods.
+	 */
+	m->version = file->f_version;
+	/* grab buffer if we didn't have one */
+	if (!m->buf) {
+		m->buf = kmalloc(m->size = PAGE_SIZE, GFP_KERNEL);
+		if (!m->buf)
+			goto Enomem;
+	}
+	/* if not empty - flush it first */
+	if (m->count) {
+		n = min(m->count, size);
+		err = copy_to_user(buf, m->buf + m->from, n);
+		if (err)
+			goto Efault;
+		m->count -= n;
+		m->from += n;
+		size -= n;
+		buf += n;
+		copied += n;
+		if (!m->count)
+			m->index++;
+		if (!size)
+			goto Done;
+	}
+	/* we need at least one record in buffer */
+	pos = m->index;
+	p = m->op->start(m, &pos);
+	while (1) {
+		err = PTR_ERR(p);
+		if (!p || IS_ERR(p))
+			break;
+		err = m->op->show(m, p);
+		if (err < 0)
+			break;
+		if (unlikely(err))
+			m->count = 0;
+		if (unlikely(!m->count)) {
+			p = m->op->next(m, p, &pos);
+			m->index = pos;
+			continue;
+		}
+		if (m->count < m->size)
+			goto Fill;
+		m->op->stop(m, p);
+		kfree(m->buf);
+		m->buf = kmalloc(m->size <<= 1, GFP_KERNEL);
+		if (!m->buf)
+			goto Enomem;
+		m->count = 0;
+		m->version = 0;
+		pos = m->index;
+		p = m->op->start(m, &pos);
+	}
+	m->op->stop(m, p);
+	m->count = 0;
+	goto Done;
+Fill:
+	/* they want more? let's try to get some more */
+	while (m->count < size) {
+		size_t offs = m->count;
+		loff_t next = pos;
+		p = m->op->next(m, p, &next);
+		if (!p || IS_ERR(p)) {
+			err = PTR_ERR(p);
+			break;
+		}
+		err = m->op->show(m, p);
+		if (m->count == m->size || err) {
+			m->count = offs;
+			if (likely(err <= 0))
+				break;
+		}
+		pos = next;
+	}
+	m->op->stop(m, p);
+	n = min(m->count, size);
+	err = copy_to_user(buf, m->buf, n);
+	if (err)
+		goto Efault;
+	copied += n;
+	m->count -= n;
+	if (m->count)
+		m->from = n;
+	else
+		pos++;
+	m->index = pos;
+Done:
+	if (!copied)
+		copied = err;
+	else {
+		*ppos += copied;
+		m->read_pos += copied;
+	}
+	file->f_version = m->version;
+	mutex_unlock(&m->lock);
+	return copied;
+Enomem:
+	err = -ENOMEM;
+	goto Done;
+Efault:
+	err = -EFAULT;
+	goto Done;
+}
+EXPORT_SYMBOL(seq_read);
 
 /**
  *	seq_lseek -	->llseek() method for sequential files.
@@ -258,16 +292,18 @@ loff_t seq_lseek(struct file *file, loff_t offset, int origin)
 			if (offset < 0)
 				break;
 			retval = offset;
-			if (offset != file->f_pos) {
+			if (offset != m->read_pos) {
 				while ((retval=traverse(m, offset)) == -EAGAIN)
 					;
 				if (retval) {
 					/* with extreme prejudice... */
 					file->f_pos = 0;
+					m->read_pos = 0;
 					m->version = 0;
 					m->index = 0;
 					m->count = 0;
 				} else {
+					m->read_pos = offset;
 					retval = file->f_pos = offset;
 				}
 			}
@@ -350,7 +386,18 @@ int seq_printf(struct seq_file *m, const char *f, ...)
 }
 EXPORT_SYMBOL(seq_printf);
 
-static char *mangle_path(char *s, char *p, char *esc)
+/**
+ *	mangle_path -	mangle and copy path to buffer beginning
+ *	@s: buffer start
+ *	@p: beginning of path in above buffer
+ *	@esc: set of characters that need escaping
+ *
+ *      Copy the path from @p to @s, replacing each occurrence of character from
+ *      @esc with usual octal escape.
+ *      Returns pointer past last written character in @s, or NULL in case of
+ *      failure.
+ */
+char *mangle_path(char *s, char *p, char *esc)
 {
 	while (s <= p) {
 		char c = *p++;
@@ -369,9 +416,16 @@ static char *mangle_path(char *s, char *p, char *esc)
 	}
 	return NULL;
 }
+EXPORT_SYMBOL(mangle_path);
 
-/*
- * return the absolute path of 'dentry' residing in mount 'mnt'.
+/**
+ * seq_path - seq_file interface to print a pathname
+ * @m: the seq_file handle
+ * @path: the struct path to print
+ * @esc: set of characters to escape in the output
+ *
+ * return the absolute path of 'path', as represented by the
+ * dentry / mnt pair in the path parameter.
  */
 int seq_path(struct seq_file *m, struct path *path, char *esc)
 {
@@ -443,19 +497,37 @@ int seq_dentry(struct seq_file *m, struct dentry *dentry, char *esc)
 	return -1;
 }
 
-int seq_bitmap(struct seq_file *m, unsigned long *bits, unsigned int nr_bits)
+int seq_bitmap(struct seq_file *m, const unsigned long *bits,
+				   unsigned int nr_bits)
 {
-	size_t len = bitmap_scnprintf_len(nr_bits);
-
-	if (m->count + len < m->size) {
-		bitmap_scnprintf(m->buf + m->count, m->size - m->count,
-				 bits, nr_bits);
-		m->count += len;
-		return 0;
+	if (m->count < m->size) {
+		int len = bitmap_scnprintf(m->buf + m->count,
+				m->size - m->count, bits, nr_bits);
+		if (m->count + len < m->size) {
+			m->count += len;
+			return 0;
+		}
 	}
 	m->count = m->size;
 	return -1;
 }
+EXPORT_SYMBOL(seq_bitmap);
+
+int seq_bitmap_list(struct seq_file *m, unsigned long *bits,
+		unsigned int nr_bits)
+{
+	if (m->count < m->size) {
+		int len = bitmap_scnlistprintf(m->buf + m->count,
+				m->size - m->count, bits, nr_bits);
+		if (m->count + len < m->size) {
+			m->count += len;
+			return 0;
+		}
+	}
+	m->count = m->size;
+	return -1;
+}
+EXPORT_SYMBOL(seq_bitmap_list);
 
 static void *single_start(struct seq_file *p, loff_t *pos)
 {

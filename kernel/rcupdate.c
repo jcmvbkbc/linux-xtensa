@@ -44,6 +44,7 @@
 #include <linux/cpu.h>
 #include <linux/mutex.h>
 #include <linux/module.h>
+#include <linux/kernel_stat.h>
 
 enum rcu_barrier {
 	RCU_BARRIER_STD,
@@ -55,6 +56,7 @@ static DEFINE_PER_CPU(struct rcu_head, rcu_barrier_head) = {NULL};
 static atomic_t rcu_barrier_cpu_count;
 static DEFINE_MUTEX(rcu_barrier_mutex);
 static struct completion rcu_barrier_completion;
+int rcu_scheduler_active __read_mostly;
 
 /*
  * Awaken the corresponding synchronize_rcu() instance now that a
@@ -77,7 +79,19 @@ void wakeme_after_rcu(struct rcu_head  *head)
  * sections are delimited by rcu_read_lock() and rcu_read_unlock(),
  * and may be nested.
  */
-synchronize_rcu_xxx(synchronize_rcu, call_rcu)
+void synchronize_rcu(void)
+{
+	struct rcu_synchronize rcu;
+
+	if (rcu_blocking_is_gp())
+		return;
+
+	init_completion(&rcu.completion);
+	/* Will wake me after RCU finished. */
+	call_rcu(&rcu.head, wakeme_after_rcu);
+	/* Wait for it. */
+	wait_for_completion(&rcu.completion);
+}
 EXPORT_SYMBOL_GPL(synchronize_rcu);
 
 static void rcu_barrier_callback(struct rcu_head *notused)
@@ -118,18 +132,19 @@ static void _rcu_barrier(enum rcu_barrier type)
 	/* Take cpucontrol mutex to protect against CPU hotplug */
 	mutex_lock(&rcu_barrier_mutex);
 	init_completion(&rcu_barrier_completion);
-	atomic_set(&rcu_barrier_cpu_count, 0);
 	/*
-	 * The queueing of callbacks in all CPUs must be atomic with
-	 * respect to RCU, otherwise one CPU may queue a callback,
-	 * wait for a grace period, decrement barrier count and call
-	 * complete(), while other CPUs have not yet queued anything.
-	 * So, we need to make sure that grace periods cannot complete
-	 * until all the callbacks are queued.
+	 * Initialize rcu_barrier_cpu_count to 1, then invoke
+	 * rcu_barrier_func() on each CPU, so that each CPU also has
+	 * incremented rcu_barrier_cpu_count.  Only then is it safe to
+	 * decrement rcu_barrier_cpu_count -- otherwise the first CPU
+	 * might complete its grace period before all of the other CPUs
+	 * did their increment, causing this function to return too
+	 * early.
 	 */
-	rcu_read_lock();
+	atomic_set(&rcu_barrier_cpu_count, 1);
 	on_each_cpu(rcu_barrier_func, (void *)type, 1);
-	rcu_read_unlock();
+	if (atomic_dec_and_test(&rcu_barrier_cpu_count))
+		complete(&rcu_barrier_completion);
 	wait_for_completion(&rcu_barrier_completion);
 	mutex_unlock(&rcu_barrier_mutex);
 }
@@ -166,3 +181,9 @@ void __init rcu_init(void)
 	__rcu_init();
 }
 
+void rcu_scheduler_starting(void)
+{
+	WARN_ON(num_online_cpus() != 1);
+	WARN_ON(nr_context_switches() > 0);
+	rcu_scheduler_active = 1;
+}

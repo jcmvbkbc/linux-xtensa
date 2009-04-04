@@ -12,7 +12,8 @@
  * Chris Zankel	<chris@zankel.net>
  * Joe Taylor	<joe@tensilica.com>
  * Marc Gauthier <marc@tensilica.com>
- * Piet Delaney <piet@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
+ * Johannes Weiner <jw@emlix.com>
  * Kevin Chea
  */
 
@@ -27,24 +28,9 @@
 
 #include <asm/pgtable.h>
 #include <asm/bootparam.h>
-#include <asm/mmu_context.h>
-#include <asm/tlb.h>
 #include <asm/page.h>
-#include <asm/pgalloc.h>
 #include <asm/setup.h>
 
-#if 0
-int tlbtemp_base_1 = TLBTEMP_BASE_1;
-int tlbtemp_base_2 = TLBTEMP_BASE_2;
-int tlbtemp_base_end = TLBTEMP_BASE_END;
-int dcache_way_size = DCACHE_WAY_SIZE;
-int icache_way_size = ICACHE_WAY_SIZE;
-int max_cache_way_size = MAX_CACHE_WAY_SIZE;
-int max_cache_way_shift = MAX_CACHE_WAY_SHIFT;
-#endif
-
-
-DEFINE_PER_CPU(struct mmu_gather, mmu_gathers);
 
 /* References to section boundaries */
 
@@ -114,6 +100,17 @@ int __init mem_reserve(unsigned long start, unsigned long end, int must_exist)
 
 /*
  * Initialize the bootmem system and give it all the memory we have available.
+ *
+ *   +----------+--+----------------------+----------------+
+ *   |          |  |                      |                |
+ *   |          |  |         RAM          |                |
+ *   |          |  |                      |                |
+ *   +----------+--+----------------------+----------------+
+ *   |          |  |                      |                |
+ *   +- PFN 0   |  +- min_low_pfn         +- max_low_pfn   +- max_pfn
+ *              |
+ *              +- ARCH_PFN_OFFSET
+ *              +- PLATFORM_DEFAULT_MEM_START >> PAGE_SIZE
  */
 
 void __init bootmem_init(void)
@@ -142,7 +139,8 @@ void __init bootmem_init(void)
 
 	/* Find an area to use for the bootmem bitmap. */
 
-	bootmap_size = bootmem_bootmap_pages(max_low_pfn) << PAGE_SHIFT;
+	bootmap_size = bootmem_bootmap_pages(max_low_pfn - min_low_pfn);
+	bootmap_size <<= PAGE_SHIFT;
 	bootmap_start = ~0;
 
 	for (i=0; i<sysmem.nr_banks; i++)
@@ -157,8 +155,9 @@ void __init bootmem_init(void)
 	/* Reserve the bootmem bitmap area */
 
 	mem_reserve(bootmap_start, bootmap_start + bootmap_size, 1);
-	bootmap_size = init_bootmem_node(NODE_DATA(0), min_low_pfn,
+	bootmap_size = init_bootmem_node(NODE_DATA(0),
 					 bootmap_start >> PAGE_SHIFT,
+					 min_low_pfn,
 					 max_low_pfn);
 
 	/* Add all remaining memory pieces into the bootmem map */
@@ -170,14 +169,14 @@ void __init bootmem_init(void)
 }
 
 
-void __init paging_init(void)
+void __init zones_init(void)
 {
 	unsigned long zones_size[MAX_NR_ZONES];
 	int i;
 
 	/* All pages are DMA-able, so we put them all in the DMA zone. */
 
-	zones_size[ZONE_DMA] = max_low_pfn;
+	zones_size[ZONE_DMA] = max_low_pfn - ARCH_PFN_OFFSET;
 	for (i = 1; i < MAX_NR_ZONES; i++)
 		zones_size[i] = 0;
 
@@ -185,84 +184,7 @@ void __init paging_init(void)
 	zones_size[ZONE_HIGHMEM] = max_pfn - max_low_pfn;
 #endif
 
-	/* Initialize the kernel's page tables. */
-
-	memset(swapper_pg_dir, 0, PAGE_SIZE);
-
-	free_area_init(zones_size);
-}
-
-/*
- * Flush the mmu and reset associated register to default values.
- */
-
-void __init init_mmu (void)
-{
-
-#if XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
-	/* 
-	 * We have a V3 MMU, the TLB was initialized with  virtual == physical 
-	 * mappings on a hardware reset. This was done by the hardware by 
-	 * presetting idenity mapping in Way 6:
-	 *
-         *  vaddr=0x00000000 asid=0x01  paddr=0x00000000  ca=3  ITLB way 6 (512 MB)
-         *  vaddr=0x20000000 asid=0x01  paddr=0x20000000  ca=3  ITLB way 6 (512 MB)
-         *  vaddr=0x40000000 asid=0x01  paddr=0x40000000  ca=3  ITLB way 6 (512 MB)
-         *  vaddr=0x60000000 asid=0x01  paddr=0x60000000  ca=3  ITLB way 6 (512 MB)
-         *  vaddr=0x80000000 asid=0x01  paddr=0x80000000  ca=3  ITLB way 6 (512 MB)
-         *  vaddr=0xa0000000 asid=0x01  paddr=0xa0000000  ca=3  ITLB way 6 (512 MB)
-         *  vaddr=0xc0000000 asid=0x01  paddr=0xc0000000  ca=3  ITLB way 6 (512 MB)
-         *  vaddr=0xe0000000 asid=0x01  paddr=0xe0000000  ca=4  ITLB way 6 (512 MB)
-	 * 
-	 * The reset vector code remapped KSEG (0xD000000) to map physical memory 
-	 * in way 5 and changed the page size to in way 6 to 256 MB by setting the 
-	 * TLB config register, It removed the (virtual == physical) mappings
-	 * by setting the ASID fields to zero in way 6 and set up the KIO mappings;
-	 * Un-Cached at 0xF0000000 and Cached at 0xE000000.
-	 *
-	 * Way 5
-	 *   vaddr=0x40000000 asid=0x00  paddr=0xf8000000  ca=3  ITLB way 5 (128 MB)
-	 *   vaddr=0x08000000 asid=0x00  paddr=0x00000000  ca=0  ITLB way 5 (128 MB)
-	 *   vaddr=0xd0000000 asid=0x01  paddr=0x00000000  ca=7  ITLB way 5 (128 MB)
-	 *   vaddr=0xd8000000 asid=0x01  paddr=0x00000000  ca=3  ITLB way 5 (128 MB)
-	 *
-	 * Way 6
-	 *   vaddr=0x00000000 asid=0x00  paddr=0x00000000  ca=3  ITLB way 6 (256 MB)
-	 *   vaddr=0x10000000 asid=0x00  paddr=0x20000000  ca=3  ITLB way 6 (256 MB)
-	 *   vaddr=0x20000000 asid=0x00  paddr=0x40000000  ca=3  ITLB way 6 (256 MB)
-	 *   vaddr=0x30000000 asid=0x00  paddr=0x60000000  ca=3  ITLB way 6 (256 MB)
-	 *   vaddr=0x40000000 asid=0x00  paddr=0x80000000  ca=3  ITLB way 6 (256 MB)
-	 *   vaddr=0x50000000 asid=0x00  paddr=0xa0000000  ca=3  ITLB way 6 (256 MB)
-	 *   vaddr=0xe0000000 asid=0x01  paddr=0xf0000000  ca=7  ITLB way 6 (256 MB)
-	 *   vaddr=0xf0000000 asid=0x01  paddr=0xf0000000  ca=3  ITLB way 6 (256 MB)
-	 * 
-	 *   See arch/xtensa/boot/boot-elf/bootstrap for details.
-	 */
-#else
-	/* 
-	 * Writing zeros to the instruction and data TLBCFG special 
-	 * registers ensure that valid values exist in the register.  
-	 *
-	 * For existing PGSZID<w> fields, zero selects the first element 
-	 * of the page-size array.  For nonexistent PGSZID<w> fields, 
-	 * zero is the best value to write.  Also, when changing PGSZID<w>
-	 * fields, the corresponding TLB must be flushed.
-	 */
-	set_itlbcfg_register (0);
-	set_dtlbcfg_register (0);
-#endif
-	local_flush_tlb_all ();		/* Flush the Auto-Refill TLB Ways (0...3) */
-
-	/* Set rasid register to a known value. */
-
-	set_rasid_register (ASID_INSERT(ASID_USER_FIRST));
-
-	/* Set PTEVADDR special register to the start of the page
-	 * table, which is in kernel mappable space (ie. not
-	 * statically mapped).  This register's value is undefined on
-	 * reset.
-	 */
-	set_ptevaddr_register (PGTABLE_START);
+	free_area_init_node(0, zones_size, ARCH_PFN_OFFSET, NULL);
 }
 
 /*
@@ -274,8 +196,8 @@ void __init mem_init(void)
 	unsigned long codesize, reservedpages, datasize, initsize;
 	unsigned long highmemsize, tmp, ram;
 
-	max_mapnr = num_physpages = max_low_pfn;
-	high_memory = (void *) __va(max_mapnr << PAGE_SHIFT);
+	max_mapnr = num_physpages = max_low_pfn - ARCH_PFN_OFFSET;
+	high_memory = (void *) __va(max_low_pfn << PAGE_SHIFT);
 	highmemsize = 0;
 
 #ifdef CONFIG_HIGHMEM
@@ -285,7 +207,7 @@ void __init mem_init(void)
 	totalram_pages += free_all_bootmem();
 
 	reservedpages = ram = 0;
-	for (tmp = 0; tmp < max_low_pfn; tmp++) {
+	for (tmp = 0; tmp < max_mapnr; tmp++) {
 		ram++;
 		if (PageReserved(mem_map+tmp))
 			reservedpages++;
@@ -331,32 +253,7 @@ void free_initrd_mem(unsigned long start, unsigned long end)
 
 void free_initmem(void)
 {
-#if 1
 	free_reserved_mem(&__init_begin, &__init_end);
 	printk("Freeing unused kernel memory: %dk freed\n",
-	       (&__init_end - &__init_begin) >> 10);
-#else
-	printk("SKIPPED Freeing unused kernel memory: %dk freed\n",
-	       (&__init_end - &__init_begin) >> 10);
-#endif
-}
-
-struct kmem_cache *pgtable_cache __read_mostly;
-
-static void pgd_ctor(void* addr)
-{
-	pte_t* ptep = (pte_t*)addr;
-	int i;
-
-	for (i = 0; i < 1024; i++, ptep++)
-		pte_clear(NULL, 0, ptep);
-
-}
-
-void __init pgtable_cache_init(void)
-{
-	pgtable_cache = kmem_cache_create("pgd",
-			PAGE_SIZE, PAGE_SIZE,
-			SLAB_HWCACHE_ALIGN,
-			pgd_ctor);
+	       (&__init_end - &__init_begin) >> 10); 
 }

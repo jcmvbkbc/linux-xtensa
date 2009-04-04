@@ -113,7 +113,7 @@ static int gru_file_mmap(struct file *file, struct vm_area_struct *vma)
 		return -EPERM;
 
 	if (vma->vm_start & (GRU_GSEG_PAGESIZE - 1) ||
-			vma->vm_end & (GRU_GSEG_PAGESIZE - 1))
+	    			vma->vm_end & (GRU_GSEG_PAGESIZE - 1))
 		return -EINVAL;
 
 	vma->vm_flags |=
@@ -398,6 +398,12 @@ static int __init gru_init(void)
 	irq = get_base_irq();
 	for (chip = 0; chip < GRU_CHIPLETS_PER_BLADE; chip++) {
 		ret = request_irq(irq + chip, gru_intr, 0, id, NULL);
+		/* TODO: fix irq handling on x86. For now ignore failures because
+		 * interrupts are not required & not yet fully supported */
+		if (ret) {
+			printk("!!!WARNING: GRU ignoring request failure!!!\n");
+			ret = 0;
+		}
 		if (ret) {
 			printk(KERN_ERR "%s: request_irq failed\n",
 			       GRU_DRIVER_ID_STR);
@@ -445,6 +451,9 @@ static void __exit gru_exit(void)
 	int order = get_order(sizeof(struct gru_state) *
 			      GRU_CHIPLETS_PER_BLADE);
 
+	if (!IS_UV())
+		return;
+
 	for (i = 0; i < GRU_CHIPLETS_PER_BLADE; i++)
 		free_irq(IRQ_GRU + i, NULL);
 
@@ -472,7 +481,7 @@ struct vm_operations_struct gru_vm_ops = {
 	.fault		= gru_fault,
 };
 
-module_init(gru_init);
+fs_initcall(gru_init);
 module_exit(gru_exit);
 
 module_param(gru_options, ulong, 0644);

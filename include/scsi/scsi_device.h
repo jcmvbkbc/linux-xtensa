@@ -6,6 +6,7 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 #include <linux/blkdev.h>
+#include <scsi/scsi.h>
 #include <asm/atomic.h>
 
 struct request_queue;
@@ -41,9 +42,11 @@ enum scsi_device_state {
 				 * originate in the mid-layer) */
 	SDEV_OFFLINE,		/* Device offlined (by error handling or
 				 * user request */
-	SDEV_BLOCK,		/* Device blocked by scsi lld.  No scsi 
-				 * commands from user or midlayer should be issued
-				 * to the scsi lld. */
+	SDEV_BLOCK,		/* Device blocked by scsi lld.  No
+				 * scsi commands from user or midlayer
+				 * should be issued to the scsi
+				 * lld. */
+	SDEV_CREATED_BLOCK,	/* same as above but for created devices */
 };
 
 enum scsi_device_event {
@@ -156,8 +159,6 @@ struct scsi_device {
 	atomic_t iodone_cnt;
 	atomic_t ioerr_cnt;
 
-	int timeout;
-
 	struct device		sdev_gendev,
 				sdev_dev;
 
@@ -235,6 +236,16 @@ struct scsi_target {
 						 * for the device at a time. */
 	unsigned int		pdt_1f_for_no_lun;	/* PDT = 0x1f */
 						/* means no lun present */
+	/* commands actually active on LLD. protected by host lock. */
+	unsigned int		target_busy;
+	/*
+	 * LLDs should set this in the slave_alloc host template callout.
+	 * If set to zero then there is not limit.
+	 */
+	unsigned int		can_queue;
+	unsigned int		target_blocked;
+	unsigned int		max_target_blocked;
+#define SCSI_DEFAULT_TARGET_BLOCKED	3
 
 	char			scsi_level;
 	struct execute_work	ew;
@@ -354,10 +365,11 @@ extern int scsi_is_target_device(const struct device *);
 extern int scsi_execute(struct scsi_device *sdev, const unsigned char *cmd,
 			int data_direction, void *buffer, unsigned bufflen,
 			unsigned char *sense, int timeout, int retries,
-			int flag);
+			int flag, int *resid);
 extern int scsi_execute_req(struct scsi_device *sdev, const unsigned char *cmd,
 			    int data_direction, void *buffer, unsigned bufflen,
-			    struct scsi_sense_hdr *, int timeout, int retries);
+			    struct scsi_sense_hdr *, int timeout, int retries,
+			    int *resid);
 extern int scsi_execute_async(struct scsi_device *sdev,
 			      const unsigned char *cmd, int cmd_len, int data_direction,
 			      void *buffer, unsigned bufflen, int use_sg,
@@ -383,9 +395,22 @@ static inline unsigned int sdev_id(struct scsi_device *sdev)
 #define scmd_id(scmd) sdev_id((scmd)->device)
 #define scmd_channel(scmd) sdev_channel((scmd)->device)
 
+/*
+ * checks for positions of the SCSI state machine
+ */
 static inline int scsi_device_online(struct scsi_device *sdev)
 {
 	return sdev->sdev_state != SDEV_OFFLINE;
+}
+static inline int scsi_device_blocked(struct scsi_device *sdev)
+{
+	return sdev->sdev_state == SDEV_BLOCK ||
+		sdev->sdev_state == SDEV_CREATED_BLOCK;
+}
+static inline int scsi_device_created(struct scsi_device *sdev)
+{
+	return sdev->sdev_state == SDEV_CREATED ||
+		sdev->sdev_state == SDEV_CREATED_BLOCK;
 }
 
 /* accessor functions for the SCSI parameters */
@@ -426,7 +451,7 @@ static inline int scsi_device_enclosure(struct scsi_device *sdev)
 
 static inline int scsi_device_protection(struct scsi_device *sdev)
 {
-	return sdev->inquiry[5] & (1<<0);
+	return sdev->scsi_level > SCSI_2 && sdev->inquiry[5] & (1<<0);
 }
 
 #define MODULE_ALIAS_SCSI_DEVICE(type) \

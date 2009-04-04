@@ -30,7 +30,7 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Harald Welte <laforge@netfilter.org>");
-MODULE_DESCRIPTION("[ip,ip6,arp]_tables backend module");
+MODULE_DESCRIPTION("{ip,ip6,arp,eb}_tables backend module");
 
 #define SMP_ALIGN(x) (((x) + SMP_CACHE_BYTES-1) & ~(SMP_CACHE_BYTES-1))
 
@@ -58,17 +58,20 @@ static struct xt_af *xt;
 #define duprintf(format, args...)
 #endif
 
-static const char *const xt_prefix[NPROTO] = {
-	[AF_INET]	= "ip",
-	[AF_INET6]	= "ip6",
-	[NF_ARP]	= "arp",
+static const char *const xt_prefix[NFPROTO_NUMPROTO] = {
+	[NFPROTO_UNSPEC] = "x",
+	[NFPROTO_IPV4]   = "ip",
+	[NFPROTO_ARP]    = "arp",
+	[NFPROTO_BRIDGE] = "eb",
+	[NFPROTO_IPV6]   = "ip6",
 };
 
 /* Registration hooks for targets. */
 int
 xt_register_target(struct xt_target *target)
 {
-	int ret, af = target->family;
+	u_int8_t af = target->family;
+	int ret;
 
 	ret = mutex_lock_interruptible(&xt[af].mutex);
 	if (ret != 0)
@@ -82,7 +85,7 @@ EXPORT_SYMBOL(xt_register_target);
 void
 xt_unregister_target(struct xt_target *target)
 {
-	int af = target->family;
+	u_int8_t af = target->family;
 
 	mutex_lock(&xt[af].mutex);
 	list_del(&target->list);
@@ -123,7 +126,8 @@ EXPORT_SYMBOL(xt_unregister_targets);
 int
 xt_register_match(struct xt_match *match)
 {
-	int ret, af = match->family;
+	u_int8_t af = match->family;
+	int ret;
 
 	ret = mutex_lock_interruptible(&xt[af].mutex);
 	if (ret != 0)
@@ -139,7 +143,7 @@ EXPORT_SYMBOL(xt_register_match);
 void
 xt_unregister_match(struct xt_match *match)
 {
-	int af =  match->family;
+	u_int8_t af = match->family;
 
 	mutex_lock(&xt[af].mutex);
 	list_del(&match->list);
@@ -185,7 +189,7 @@ EXPORT_SYMBOL(xt_unregister_matches);
  */
 
 /* Find match, grabs ref.  Returns ERR_PTR() on error. */
-struct xt_match *xt_find_match(int af, const char *name, u8 revision)
+struct xt_match *xt_find_match(u8 af, const char *name, u8 revision)
 {
 	struct xt_match *m;
 	int err = 0;
@@ -205,12 +209,17 @@ struct xt_match *xt_find_match(int af, const char *name, u8 revision)
 		}
 	}
 	mutex_unlock(&xt[af].mutex);
+
+	if (af != NFPROTO_UNSPEC)
+		/* Try searching again in the family-independent list */
+		return xt_find_match(NFPROTO_UNSPEC, name, revision);
+
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL(xt_find_match);
 
 /* Find target, grabs ref.  Returns ERR_PTR() on error. */
-struct xt_target *xt_find_target(int af, const char *name, u8 revision)
+struct xt_target *xt_find_target(u8 af, const char *name, u8 revision)
 {
 	struct xt_target *t;
 	int err = 0;
@@ -230,11 +239,16 @@ struct xt_target *xt_find_target(int af, const char *name, u8 revision)
 		}
 	}
 	mutex_unlock(&xt[af].mutex);
+
+	if (af != NFPROTO_UNSPEC)
+		/* Try searching again in the family-independent list */
+		return xt_find_target(NFPROTO_UNSPEC, name, revision);
+
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL(xt_find_target);
 
-struct xt_target *xt_request_find_target(int af, const char *name, u8 revision)
+struct xt_target *xt_request_find_target(u8 af, const char *name, u8 revision)
 {
 	struct xt_target *target;
 
@@ -246,7 +260,7 @@ struct xt_target *xt_request_find_target(int af, const char *name, u8 revision)
 }
 EXPORT_SYMBOL_GPL(xt_request_find_target);
 
-static int match_revfn(int af, const char *name, u8 revision, int *bestp)
+static int match_revfn(u8 af, const char *name, u8 revision, int *bestp)
 {
 	const struct xt_match *m;
 	int have_rev = 0;
@@ -259,10 +273,14 @@ static int match_revfn(int af, const char *name, u8 revision, int *bestp)
 				have_rev = 1;
 		}
 	}
+
+	if (af != NFPROTO_UNSPEC && !have_rev)
+		return match_revfn(NFPROTO_UNSPEC, name, revision, bestp);
+
 	return have_rev;
 }
 
-static int target_revfn(int af, const char *name, u8 revision, int *bestp)
+static int target_revfn(u8 af, const char *name, u8 revision, int *bestp)
 {
 	const struct xt_target *t;
 	int have_rev = 0;
@@ -275,11 +293,15 @@ static int target_revfn(int af, const char *name, u8 revision, int *bestp)
 				have_rev = 1;
 		}
 	}
+
+	if (af != NFPROTO_UNSPEC && !have_rev)
+		return target_revfn(NFPROTO_UNSPEC, name, revision, bestp);
+
 	return have_rev;
 }
 
 /* Returns true or false (if no such extension at all) */
-int xt_find_revision(int af, const char *name, u8 revision, int target,
+int xt_find_revision(u8 af, const char *name, u8 revision, int target,
 		     int *err)
 {
 	int have_rev, best = -1;
@@ -307,37 +329,47 @@ int xt_find_revision(int af, const char *name, u8 revision, int target,
 }
 EXPORT_SYMBOL_GPL(xt_find_revision);
 
-int xt_check_match(const struct xt_match *match, unsigned short family,
-		   unsigned int size, const char *table, unsigned int hook_mask,
-		   unsigned short proto, int inv_proto)
+int xt_check_match(struct xt_mtchk_param *par,
+		   unsigned int size, u_int8_t proto, bool inv_proto)
 {
-	if (XT_ALIGN(match->matchsize) != size) {
+	if (XT_ALIGN(par->match->matchsize) != size &&
+	    par->match->matchsize != -1) {
+		/*
+		 * ebt_among is exempt from centralized matchsize checking
+		 * because it uses a dynamic-size data set.
+		 */
 		printk("%s_tables: %s match: invalid size %Zu != %u\n",
-		       xt_prefix[family], match->name,
-		       XT_ALIGN(match->matchsize), size);
+		       xt_prefix[par->family], par->match->name,
+		       XT_ALIGN(par->match->matchsize), size);
 		return -EINVAL;
 	}
-	if (match->table && strcmp(match->table, table)) {
+	if (par->match->table != NULL &&
+	    strcmp(par->match->table, par->table) != 0) {
 		printk("%s_tables: %s match: only valid in %s table, not %s\n",
-		       xt_prefix[family], match->name, match->table, table);
+		       xt_prefix[par->family], par->match->name,
+		       par->match->table, par->table);
 		return -EINVAL;
 	}
-	if (match->hooks && (hook_mask & ~match->hooks) != 0) {
-		printk("%s_tables: %s match: bad hook_mask %u/%u\n",
-		       xt_prefix[family], match->name, hook_mask, match->hooks);
+	if (par->match->hooks && (par->hook_mask & ~par->match->hooks) != 0) {
+		printk("%s_tables: %s match: bad hook_mask %#x/%#x\n",
+		       xt_prefix[par->family], par->match->name,
+		       par->hook_mask, par->match->hooks);
 		return -EINVAL;
 	}
-	if (match->proto && (match->proto != proto || inv_proto)) {
+	if (par->match->proto && (par->match->proto != proto || inv_proto)) {
 		printk("%s_tables: %s match: only valid for protocol %u\n",
-		       xt_prefix[family], match->name, match->proto);
+		       xt_prefix[par->family], par->match->name,
+		       par->match->proto);
 		return -EINVAL;
 	}
+	if (par->match->checkentry != NULL && !par->match->checkentry(par))
+		return -EINVAL;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(xt_check_match);
 
 #ifdef CONFIG_COMPAT
-int xt_compat_add_offset(int af, unsigned int offset, short delta)
+int xt_compat_add_offset(u_int8_t af, unsigned int offset, short delta)
 {
 	struct compat_delta *tmp;
 
@@ -359,7 +391,7 @@ int xt_compat_add_offset(int af, unsigned int offset, short delta)
 }
 EXPORT_SYMBOL_GPL(xt_compat_add_offset);
 
-void xt_compat_flush_offsets(int af)
+void xt_compat_flush_offsets(u_int8_t af)
 {
 	struct compat_delta *tmp, *next;
 
@@ -373,7 +405,7 @@ void xt_compat_flush_offsets(int af)
 }
 EXPORT_SYMBOL_GPL(xt_compat_flush_offsets);
 
-short xt_compat_calc_jump(int af, unsigned int offset)
+short xt_compat_calc_jump(u_int8_t af, unsigned int offset)
 {
 	struct compat_delta *tmp;
 	short delta;
@@ -448,32 +480,36 @@ int xt_compat_match_to_user(struct xt_entry_match *m, void __user **dstptr,
 EXPORT_SYMBOL_GPL(xt_compat_match_to_user);
 #endif /* CONFIG_COMPAT */
 
-int xt_check_target(const struct xt_target *target, unsigned short family,
-		    unsigned int size, const char *table, unsigned int hook_mask,
-		    unsigned short proto, int inv_proto)
+int xt_check_target(struct xt_tgchk_param *par,
+		    unsigned int size, u_int8_t proto, bool inv_proto)
 {
-	if (XT_ALIGN(target->targetsize) != size) {
+	if (XT_ALIGN(par->target->targetsize) != size) {
 		printk("%s_tables: %s target: invalid size %Zu != %u\n",
-		       xt_prefix[family], target->name,
-		       XT_ALIGN(target->targetsize), size);
+		       xt_prefix[par->family], par->target->name,
+		       XT_ALIGN(par->target->targetsize), size);
 		return -EINVAL;
 	}
-	if (target->table && strcmp(target->table, table)) {
+	if (par->target->table != NULL &&
+	    strcmp(par->target->table, par->table) != 0) {
 		printk("%s_tables: %s target: only valid in %s table, not %s\n",
-		       xt_prefix[family], target->name, target->table, table);
+		       xt_prefix[par->family], par->target->name,
+		       par->target->table, par->table);
 		return -EINVAL;
 	}
-	if (target->hooks && (hook_mask & ~target->hooks) != 0) {
-		printk("%s_tables: %s target: bad hook_mask %u/%u\n",
-		       xt_prefix[family], target->name, hook_mask,
-		       target->hooks);
+	if (par->target->hooks && (par->hook_mask & ~par->target->hooks) != 0) {
+		printk("%s_tables: %s target: bad hook_mask %#x/%#x\n",
+		       xt_prefix[par->family], par->target->name,
+		       par->hook_mask, par->target->hooks);
 		return -EINVAL;
 	}
-	if (target->proto && (target->proto != proto || inv_proto)) {
+	if (par->target->proto && (par->target->proto != proto || inv_proto)) {
 		printk("%s_tables: %s target: only valid for protocol %u\n",
-		       xt_prefix[family], target->name, target->proto);
+		       xt_prefix[par->family], par->target->name,
+		       par->target->proto);
 		return -EINVAL;
 	}
+	if (par->target->checkentry != NULL && !par->target->checkentry(par))
+		return -EINVAL;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(xt_check_target);
@@ -590,7 +626,8 @@ void xt_free_table_info(struct xt_table_info *info)
 EXPORT_SYMBOL(xt_free_table_info);
 
 /* Find table by name, grabs mutex & ref.  Returns ERR_PTR() on error. */
-struct xt_table *xt_find_table_lock(struct net *net, int af, const char *name)
+struct xt_table *xt_find_table_lock(struct net *net, u_int8_t af,
+				    const char *name)
 {
 	struct xt_table *t;
 
@@ -612,13 +649,13 @@ void xt_table_unlock(struct xt_table *table)
 EXPORT_SYMBOL_GPL(xt_table_unlock);
 
 #ifdef CONFIG_COMPAT
-void xt_compat_lock(int af)
+void xt_compat_lock(u_int8_t af)
 {
 	mutex_lock(&xt[af].compat_mutex);
 }
 EXPORT_SYMBOL_GPL(xt_compat_lock);
 
-void xt_compat_unlock(int af)
+void xt_compat_unlock(u_int8_t af)
 {
 	mutex_unlock(&xt[af].compat_mutex);
 }
@@ -722,13 +759,13 @@ EXPORT_SYMBOL_GPL(xt_unregister_table);
 #ifdef CONFIG_PROC_FS
 struct xt_names_priv {
 	struct seq_net_private p;
-	int af;
+	u_int8_t af;
 };
 static void *xt_table_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	struct xt_names_priv *priv = seq->private;
 	struct net *net = seq_file_net(seq);
-	int af = priv->af;
+	u_int8_t af = priv->af;
 
 	mutex_lock(&xt[af].mutex);
 	return seq_list_start(&net->xt.tables[af], *pos);
@@ -738,7 +775,7 @@ static void *xt_table_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	struct xt_names_priv *priv = seq->private;
 	struct net *net = seq_file_net(seq);
-	int af = priv->af;
+	u_int8_t af = priv->af;
 
 	return seq_list_next(v, &net->xt.tables[af], pos);
 }
@@ -746,7 +783,7 @@ static void *xt_table_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 static void xt_table_seq_stop(struct seq_file *seq, void *v)
 {
 	struct xt_names_priv *priv = seq->private;
-	int af = priv->af;
+	u_int8_t af = priv->af;
 
 	mutex_unlock(&xt[af].mutex);
 }
@@ -790,59 +827,143 @@ static const struct file_operations xt_table_ops = {
 	.release = seq_release_net,
 };
 
+/*
+ * Traverse state for ip{,6}_{tables,matches} for helping crossing
+ * the multi-AF mutexes.
+ */
+struct nf_mttg_trav {
+	struct list_head *head, *curr;
+	uint8_t class, nfproto;
+};
+
+enum {
+	MTTG_TRAV_INIT,
+	MTTG_TRAV_NFP_UNSPEC,
+	MTTG_TRAV_NFP_SPEC,
+	MTTG_TRAV_DONE,
+};
+
+static void *xt_mttg_seq_next(struct seq_file *seq, void *v, loff_t *ppos,
+    bool is_target)
+{
+	static const uint8_t next_class[] = {
+		[MTTG_TRAV_NFP_UNSPEC] = MTTG_TRAV_NFP_SPEC,
+		[MTTG_TRAV_NFP_SPEC]   = MTTG_TRAV_DONE,
+	};
+	struct nf_mttg_trav *trav = seq->private;
+
+	switch (trav->class) {
+	case MTTG_TRAV_INIT:
+		trav->class = MTTG_TRAV_NFP_UNSPEC;
+		mutex_lock(&xt[NFPROTO_UNSPEC].mutex);
+		trav->head = trav->curr = is_target ?
+			&xt[NFPROTO_UNSPEC].target : &xt[NFPROTO_UNSPEC].match;
+ 		break;
+	case MTTG_TRAV_NFP_UNSPEC:
+		trav->curr = trav->curr->next;
+		if (trav->curr != trav->head)
+			break;
+		mutex_unlock(&xt[NFPROTO_UNSPEC].mutex);
+		mutex_lock(&xt[trav->nfproto].mutex);
+		trav->head = trav->curr = is_target ?
+			&xt[trav->nfproto].target : &xt[trav->nfproto].match;
+		trav->class = next_class[trav->class];
+		break;
+	case MTTG_TRAV_NFP_SPEC:
+		trav->curr = trav->curr->next;
+		if (trav->curr != trav->head)
+			break;
+		/* fallthru, _stop will unlock */
+	default:
+		return NULL;
+	}
+
+	if (ppos != NULL)
+		++*ppos;
+	return trav;
+}
+
+static void *xt_mttg_seq_start(struct seq_file *seq, loff_t *pos,
+    bool is_target)
+{
+	struct nf_mttg_trav *trav = seq->private;
+	unsigned int j;
+
+	trav->class = MTTG_TRAV_INIT;
+	for (j = 0; j < *pos; ++j)
+		if (xt_mttg_seq_next(seq, NULL, NULL, is_target) == NULL)
+			return NULL;
+	return trav;
+}
+
+static void xt_mttg_seq_stop(struct seq_file *seq, void *v)
+{
+	struct nf_mttg_trav *trav = seq->private;
+
+	switch (trav->class) {
+	case MTTG_TRAV_NFP_UNSPEC:
+		mutex_unlock(&xt[NFPROTO_UNSPEC].mutex);
+		break;
+	case MTTG_TRAV_NFP_SPEC:
+		mutex_unlock(&xt[trav->nfproto].mutex);
+		break;
+	}
+}
+
 static void *xt_match_seq_start(struct seq_file *seq, loff_t *pos)
 {
-	struct proc_dir_entry *pde = (struct proc_dir_entry *)seq->private;
-	u_int16_t af = (unsigned long)pde->data;
-
-	mutex_lock(&xt[af].mutex);
-	return seq_list_start(&xt[af].match, *pos);
+	return xt_mttg_seq_start(seq, pos, false);
 }
 
-static void *xt_match_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+static void *xt_match_seq_next(struct seq_file *seq, void *v, loff_t *ppos)
 {
-	struct proc_dir_entry *pde = (struct proc_dir_entry *)seq->private;
-	u_int16_t af = (unsigned long)pde->data;
-
-	return seq_list_next(v, &xt[af].match, pos);
-}
-
-static void xt_match_seq_stop(struct seq_file *seq, void *v)
-{
-	struct proc_dir_entry *pde = seq->private;
-	u_int16_t af = (unsigned long)pde->data;
-
-	mutex_unlock(&xt[af].mutex);
+	return xt_mttg_seq_next(seq, v, ppos, false);
 }
 
 static int xt_match_seq_show(struct seq_file *seq, void *v)
 {
-	struct xt_match *match = list_entry(v, struct xt_match, list);
+	const struct nf_mttg_trav *trav = seq->private;
+	const struct xt_match *match;
 
-	if (strlen(match->name))
-		return seq_printf(seq, "%s\n", match->name);
-	else
-		return 0;
+	switch (trav->class) {
+	case MTTG_TRAV_NFP_UNSPEC:
+	case MTTG_TRAV_NFP_SPEC:
+		if (trav->curr == trav->head)
+			return 0;
+		match = list_entry(trav->curr, struct xt_match, list);
+		return (*match->name == '\0') ? 0 :
+		       seq_printf(seq, "%s\n", match->name);
+	}
+	return 0;
 }
 
 static const struct seq_operations xt_match_seq_ops = {
 	.start	= xt_match_seq_start,
 	.next	= xt_match_seq_next,
-	.stop	= xt_match_seq_stop,
+	.stop	= xt_mttg_seq_stop,
 	.show	= xt_match_seq_show,
 };
 
 static int xt_match_open(struct inode *inode, struct file *file)
 {
+	struct seq_file *seq;
+	struct nf_mttg_trav *trav;
 	int ret;
 
-	ret = seq_open(file, &xt_match_seq_ops);
-	if (!ret) {
-		struct seq_file *seq = file->private_data;
+	trav = kmalloc(sizeof(*trav), GFP_KERNEL);
+	if (trav == NULL)
+		return -ENOMEM;
 
-		seq->private = PDE(inode);
+	ret = seq_open(file, &xt_match_seq_ops);
+	if (ret < 0) {
+		kfree(trav);
+		return ret;
 	}
-	return ret;
+
+	seq = file->private_data;
+	seq->private = trav;
+	trav->nfproto = (unsigned long)PDE(inode)->data;
+	return 0;
 }
 
 static const struct file_operations xt_match_ops = {
@@ -850,62 +971,63 @@ static const struct file_operations xt_match_ops = {
 	.open	 = xt_match_open,
 	.read	 = seq_read,
 	.llseek	 = seq_lseek,
-	.release = seq_release,
+	.release = seq_release_private,
 };
 
 static void *xt_target_seq_start(struct seq_file *seq, loff_t *pos)
 {
-	struct proc_dir_entry *pde = (struct proc_dir_entry *)seq->private;
-	u_int16_t af = (unsigned long)pde->data;
-
-	mutex_lock(&xt[af].mutex);
-	return seq_list_start(&xt[af].target, *pos);
+	return xt_mttg_seq_start(seq, pos, true);
 }
 
-static void *xt_target_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+static void *xt_target_seq_next(struct seq_file *seq, void *v, loff_t *ppos)
 {
-	struct proc_dir_entry *pde = (struct proc_dir_entry *)seq->private;
-	u_int16_t af = (unsigned long)pde->data;
-
-	return seq_list_next(v, &xt[af].target, pos);
-}
-
-static void xt_target_seq_stop(struct seq_file *seq, void *v)
-{
-	struct proc_dir_entry *pde = seq->private;
-	u_int16_t af = (unsigned long)pde->data;
-
-	mutex_unlock(&xt[af].mutex);
+	return xt_mttg_seq_next(seq, v, ppos, true);
 }
 
 static int xt_target_seq_show(struct seq_file *seq, void *v)
 {
-	struct xt_target *target = list_entry(v, struct xt_target, list);
+	const struct nf_mttg_trav *trav = seq->private;
+	const struct xt_target *target;
 
-	if (strlen(target->name))
-		return seq_printf(seq, "%s\n", target->name);
-	else
-		return 0;
+	switch (trav->class) {
+	case MTTG_TRAV_NFP_UNSPEC:
+	case MTTG_TRAV_NFP_SPEC:
+		if (trav->curr == trav->head)
+			return 0;
+		target = list_entry(trav->curr, struct xt_target, list);
+		return (*target->name == '\0') ? 0 :
+		       seq_printf(seq, "%s\n", target->name);
+	}
+	return 0;
 }
 
 static const struct seq_operations xt_target_seq_ops = {
 	.start	= xt_target_seq_start,
 	.next	= xt_target_seq_next,
-	.stop	= xt_target_seq_stop,
+	.stop	= xt_mttg_seq_stop,
 	.show	= xt_target_seq_show,
 };
 
 static int xt_target_open(struct inode *inode, struct file *file)
 {
+	struct seq_file *seq;
+	struct nf_mttg_trav *trav;
 	int ret;
 
-	ret = seq_open(file, &xt_target_seq_ops);
-	if (!ret) {
-		struct seq_file *seq = file->private_data;
+	trav = kmalloc(sizeof(*trav), GFP_KERNEL);
+	if (trav == NULL)
+		return -ENOMEM;
 
-		seq->private = PDE(inode);
+	ret = seq_open(file, &xt_target_seq_ops);
+	if (ret < 0) {
+		kfree(trav);
+		return ret;
 	}
-	return ret;
+
+	seq = file->private_data;
+	seq->private = trav;
+	trav->nfproto = (unsigned long)PDE(inode)->data;
+	return 0;
 }
 
 static const struct file_operations xt_target_ops = {
@@ -913,7 +1035,7 @@ static const struct file_operations xt_target_ops = {
 	.open	 = xt_target_open,
 	.read	 = seq_read,
 	.llseek	 = seq_lseek,
-	.release = seq_release,
+	.release = seq_release_private,
 };
 
 #define FORMAT_TABLES	"_tables_names"
@@ -922,14 +1044,14 @@ static const struct file_operations xt_target_ops = {
 
 #endif /* CONFIG_PROC_FS */
 
-int xt_proto_init(struct net *net, int af)
+int xt_proto_init(struct net *net, u_int8_t af)
 {
 #ifdef CONFIG_PROC_FS
 	char buf[XT_FUNCTION_MAXNAMELEN];
 	struct proc_dir_entry *proc;
 #endif
 
-	if (af >= NPROTO)
+	if (af >= ARRAY_SIZE(xt_prefix))
 		return -EINVAL;
 
 
@@ -974,7 +1096,7 @@ out:
 }
 EXPORT_SYMBOL_GPL(xt_proto_init);
 
-void xt_proto_fini(struct net *net, int af)
+void xt_proto_fini(struct net *net, u_int8_t af)
 {
 #ifdef CONFIG_PROC_FS
 	char buf[XT_FUNCTION_MAXNAMELEN];
@@ -998,7 +1120,7 @@ static int __net_init xt_net_init(struct net *net)
 {
 	int i;
 
-	for (i = 0; i < NPROTO; i++)
+	for (i = 0; i < NFPROTO_NUMPROTO; i++)
 		INIT_LIST_HEAD(&net->xt.tables[i]);
 	return 0;
 }
@@ -1011,11 +1133,11 @@ static int __init xt_init(void)
 {
 	int i, rv;
 
-	xt = kmalloc(sizeof(struct xt_af) * NPROTO, GFP_KERNEL);
+	xt = kmalloc(sizeof(struct xt_af) * NFPROTO_NUMPROTO, GFP_KERNEL);
 	if (!xt)
 		return -ENOMEM;
 
-	for (i = 0; i < NPROTO; i++) {
+	for (i = 0; i < NFPROTO_NUMPROTO; i++) {
 		mutex_init(&xt[i].mutex);
 #ifdef CONFIG_COMPAT
 		mutex_init(&xt[i].compat_mutex);

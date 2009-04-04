@@ -12,7 +12,7 @@
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
  * Joe Taylor <joe@tensilica.com>
- * Piet Delaney <piet@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
  * Kevin Chea
  */
 
@@ -263,6 +263,8 @@ _startup:
 	movi	a6, per_cpu__exc_table
 	slli	a4, a4, EXC_TABLE_SIZE_LOG2
 	add	a6, a6, a4
+#else
+#	movi    a6, 0				# DEBUG: Use NULL Pointer to detect a bogus &exc_table[]
 #endif
 	xsr	a6, EXCSAVE_1			# restore a6 with boot args that were...
 						# ... saved above from a2.
@@ -299,8 +301,9 @@ ENTRY(start_info)
  */
 	
 	.section ".bss.page_aligned", "w"
+#ifdef CONFIG_MMU
 ENTRY(swapper_pg_dir)
 	.fill	PAGE_SIZE, 1, 0
+#endif
 ENTRY(empty_zero_page)
 	.fill	PAGE_SIZE, 1, 0
-

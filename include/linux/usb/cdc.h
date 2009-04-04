@@ -9,6 +9,8 @@
 #ifndef __LINUX_USB_CDC_H
 #define __LINUX_USB_CDC_H
 
+#include <linux/types.h>
+
 #define USB_CDC_SUBCLASS_ACM			0x02
 #define USB_CDC_SUBCLASS_ETHERNET		0x06
 #define USB_CDC_SUBCLASS_WHCM			0x08
@@ -158,6 +160,15 @@ struct usb_cdc_mdlm_detail_desc {
 	/* type is associated with mdlm_desc.bGUID */
 	__u8	bGuidDescriptorType;
 	__u8	bDetailData[0];
+} __attribute__ ((packed));
+
+/* "OBEX Control Model Functional Descriptor" */
+struct usb_cdc_obex_desc {
+	__u8	bLength;
+	__u8	bDescriptorType;
+	__u8	bDescriptorSubType;
+
+	__le16	bcdVersion;
 } __attribute__ ((packed));
 
 /*-------------------------------------------------------------------------*/

@@ -1,6 +1,8 @@
 #ifndef __LINUX_PKT_SCHED_H
 #define __LINUX_PKT_SCHED_H
 
+#include <linux/types.h>
+
 /* Logical priority bands not depending on specific packet scheduler.
    Every scheduler will map them to real traffic classes, if it has
    no more precise mechanism to classify packets.
@@ -121,6 +123,13 @@ struct tc_prio_qopt
 {
 	int	bands;			/* Number of bands */
 	__u8	priomap[TC_PRIO_MAX+1];	/* Map: logical priority -> PRIO band */
+};
+
+/* MULTIQ section */
+
+struct tc_multiq_qopt {
+	__u16	bands;			/* Number of bands */
+	__u16	max_bands;		/* Maximum number of queues */
 };
 
 /* TBF section */
@@ -492,5 +501,21 @@ struct tc_netem_corrupt
 };
 
 #define NETEM_DIST_SCALE	8192
+
+/* DRR */
+
+enum
+{
+	TCA_DRR_UNSPEC,
+	TCA_DRR_QUANTUM,
+	__TCA_DRR_MAX
+};
+
+#define TCA_DRR_MAX	(__TCA_DRR_MAX - 1)
+
+struct tc_drr_stats
+{
+	__u32	deficit;
+};
 
 #endif

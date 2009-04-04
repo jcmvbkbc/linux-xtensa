@@ -9,7 +9,7 @@
  * Copyright (C) 2002 - 2009 Tensilica Inc.
  */
 
-#include <asm/variant/core.h>
+#include <variant/core.h>
 #include <asm/core.h>
 
 	.macro	src_b	r, w0, w1

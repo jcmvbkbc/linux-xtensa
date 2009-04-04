@@ -27,6 +27,7 @@
  */
 void bacct_add_tsk(struct taskstats *stats, struct task_struct *tsk)
 {
+	const struct cred *tcred;
 	struct timespec uptime, ts;
 	u64 ac_etime;
 
@@ -53,10 +54,11 @@ void bacct_add_tsk(struct taskstats *stats, struct task_struct *tsk)
 		stats->ac_flag |= AXSIG;
 	stats->ac_nice	 = task_nice(tsk);
 	stats->ac_sched	 = tsk->policy;
-	stats->ac_uid	 = tsk->uid;
-	stats->ac_gid	 = tsk->gid;
 	stats->ac_pid	 = tsk->pid;
 	rcu_read_lock();
+	tcred = __task_cred(tsk);
+	stats->ac_uid	 = tcred->uid;
+	stats->ac_gid	 = tcred->gid;
 	stats->ac_ppid	 = pid_alive(tsk) ?
 				rcu_dereference(tsk->real_parent)->tgid : 0;
 	rcu_read_unlock();
@@ -90,8 +92,8 @@ void xacct_add_tsk(struct taskstats *stats, struct task_struct *p)
 	mm = get_task_mm(p);
 	if (mm) {
 		/* adjust to KB unit */
-		stats->hiwater_rss   = mm->hiwater_rss * PAGE_SIZE / KB;
-		stats->hiwater_vm    = mm->hiwater_vm * PAGE_SIZE / KB;
+		stats->hiwater_rss   = get_mm_hiwater_rss(mm) * PAGE_SIZE / KB;
+		stats->hiwater_vm    = get_mm_hiwater_vm(mm)  * PAGE_SIZE / KB;
 		mmput(mm);
 	}
 	stats->read_char	= p->ioac.rchar;
@@ -120,8 +122,10 @@ void acct_update_integrals(struct task_struct *tsk)
 	if (likely(tsk->mm)) {
 		cputime_t time, dtime;
 		struct timeval value;
+		unsigned long flags;
 		u64 delta;
 
+		local_irq_save(flags);
 		time = tsk->stime + tsk->utime;
 		dtime = cputime_sub(time, tsk->acct_timexpd);
 		jiffies_to_timeval(cputime_to_jiffies(dtime), &value);
@@ -129,10 +133,12 @@ void acct_update_integrals(struct task_struct *tsk)
 		delta = delta * USEC_PER_SEC + value.tv_usec;
 
 		if (delta == 0)
-			return;
+			goto out;
 		tsk->acct_timexpd = time;
 		tsk->acct_rss_mem1 += delta * get_mm_rss(tsk->mm);
 		tsk->acct_vm_mem1 += delta * tsk->mm->total_vm;
+	out:
+		local_irq_restore(flags);
 	}
 }
 

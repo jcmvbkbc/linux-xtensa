@@ -91,31 +91,21 @@ static void print_amp_vals(struct snd_info_buffer *buffer,
 
 static void print_pcm_rates(struct snd_info_buffer *buffer, unsigned int pcm)
 {
-	static unsigned int rates[] = {
-		8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200,
-		96000, 176400, 192000, 384000
-	};
-	int i;
+	char buf[SND_PRINT_RATES_ADVISED_BUFSIZE];
 
 	pcm &= AC_SUPPCM_RATES;
 	snd_iprintf(buffer, "    rates [0x%x]:", pcm);
-	for (i = 0; i < ARRAY_SIZE(rates); i++) 
-		if (pcm & (1 << i))
-			snd_iprintf(buffer, " %d", rates[i]);
-	snd_iprintf(buffer, "\n");
+	snd_print_pcm_rates(pcm, buf, sizeof(buf));
+	snd_iprintf(buffer, "%s\n", buf);
 }
 
 static void print_pcm_bits(struct snd_info_buffer *buffer, unsigned int pcm)
 {
-	static unsigned int bits[] = { 8, 16, 20, 24, 32 };
-	int i;
+	char buf[SND_PRINT_BITS_ADVISED_BUFSIZE];
 
-	pcm = (pcm >> 16) & 0xff;
-	snd_iprintf(buffer, "    bits [0x%x]:", pcm);
-	for (i = 0; i < ARRAY_SIZE(bits); i++)
-		if (pcm & (1 << i))
-			snd_iprintf(buffer, " %d", bits[i]);
-	snd_iprintf(buffer, "\n");
+	snd_iprintf(buffer, "    bits [0x%x]:", (pcm >> 16) & 0xff);
+	snd_print_pcm_bits(pcm, buf, sizeof(buf));
+	snd_iprintf(buffer, "%s\n", buf);
 }
 
 static void print_pcm_formats(struct snd_info_buffer *buffer,
@@ -143,32 +133,6 @@ static void print_pcm_caps(struct snd_info_buffer *buffer,
 	print_pcm_rates(buffer, pcm);
 	print_pcm_bits(buffer, pcm);
 	print_pcm_formats(buffer, stream);
-}
-
-static const char *get_jack_location(u32 cfg)
-{
-	static char *bases[7] = {
-		"N/A", "Rear", "Front", "Left", "Right", "Top", "Bottom",
-	};
-	static unsigned char specials_idx[] = {
-		0x07, 0x08,
-		0x17, 0x18, 0x19,
-		0x37, 0x38
-	};
-	static char *specials[] = {
-		"Rear Panel", "Drive Bar",
-		"Riser", "HDMI", "ATAPI",
-		"Mobile-In", "Mobile-Out"
-	};
-	int i;
-	cfg = (cfg & AC_DEFCFG_LOCATION) >> AC_DEFCFG_LOCATION_SHIFT;
-	if ((cfg & 0x0f) < 7)
-		return bases[cfg & 0x0f];
-	for (i = 0; i < ARRAY_SIZE(specials_idx); i++) {
-		if (cfg == specials_idx[i])
-			return specials[i];
-	}
-	return "UNKNOWN";
 }
 
 static const char *get_jack_connection(u32 cfg)
@@ -206,17 +170,10 @@ static void print_pin_caps(struct snd_info_buffer *buffer,
 			   int *supports_vref)
 {
 	static char *jack_conns[4] = { "Jack", "N/A", "Fixed", "Both" };
-	static char *jack_types[16] = {
-		"Line Out", "Speaker", "HP Out", "CD",
-		"SPDIF Out", "Digital Out", "Modem Line", "Modem Hand",
-		"Line In", "Aux", "Mic", "Telephony",
-		"SPDIF In", "Digitial In", "Reserved", "Other"
-	};
-	static char *jack_locations[4] = { "Ext", "Int", "Sep", "Oth" };
 	unsigned int caps, val;
 
 	caps = snd_hda_param_read(codec, nid, AC_PAR_PIN_CAP);
-	snd_iprintf(buffer, "  Pincap 0x08%x:", caps);
+	snd_iprintf(buffer, "  Pincap 0x%08x:", caps);
 	if (caps & AC_PINCAP_IN)
 		snd_iprintf(buffer, " IN");
 	if (caps & AC_PINCAP_OUT)
@@ -229,8 +186,13 @@ static void print_pin_caps(struct snd_info_buffer *buffer,
 		snd_iprintf(buffer, " Detect");
 	if (caps & AC_PINCAP_BALANCE)
 		snd_iprintf(buffer, " Balanced");
-	if (caps & AC_PINCAP_LR_SWAP)
-		snd_iprintf(buffer, " R/L");
+	if (caps & AC_PINCAP_HDMI) {
+		/* Realtek uses this bit as a different meaning */
+		if ((codec->vendor_id >> 16) == 0x10ec)
+			snd_iprintf(buffer, " R/L");
+		else
+			snd_iprintf(buffer, " HDMI");
+	}
 	if (caps & AC_PINCAP_TRIG_REQ)
 		snd_iprintf(buffer, " Trigger");
 	if (caps & AC_PINCAP_IMP_SENSE)
@@ -269,9 +231,9 @@ static void print_pin_caps(struct snd_info_buffer *buffer,
 	caps = snd_hda_codec_read(codec, nid, 0, AC_VERB_GET_CONFIG_DEFAULT, 0);
 	snd_iprintf(buffer, "  Pin Default 0x%08x: [%s] %s at %s %s\n", caps,
 		    jack_conns[(caps & AC_DEFCFG_PORT_CONN) >> AC_DEFCFG_PORT_CONN_SHIFT],
-		    jack_types[(caps & AC_DEFCFG_DEVICE) >> AC_DEFCFG_DEVICE_SHIFT],
-		    jack_locations[(caps >> (AC_DEFCFG_LOCATION_SHIFT + 4)) & 3],
-		    get_jack_location(caps));
+		    snd_hda_get_jack_type(caps),
+		    snd_hda_get_jack_connectivity(caps),
+		    snd_hda_get_jack_location(caps));
 	snd_iprintf(buffer, "    Conn = %s, Color = %s\n",
 		    get_jack_connection(caps),
 		    get_jack_color(caps));
@@ -437,7 +399,8 @@ static void print_conn_list(struct snd_info_buffer *buffer,
 {
 	int c, curr = -1;
 
-	if (conn_len > 1 && wid_type != AC_WID_AUD_MIX)
+	if (conn_len > 1 && wid_type != AC_WID_AUD_MIX &&
+	    wid_type != AC_WID_VOL_KNB)
 		curr = snd_hda_codec_read(codec, nid, 0,
 					  AC_VERB_GET_CONNECT_SEL, 0);
 	snd_iprintf(buffer, "  Connection: %d\n", conn_len);
@@ -450,17 +413,6 @@ static void print_conn_list(struct snd_info_buffer *buffer,
 		}
 		snd_iprintf(buffer, "\n");
 	}
-}
-
-static void print_realtek_coef(struct snd_info_buffer *buffer,
-			       struct hda_codec *codec, hda_nid_t nid)
-{
-	int coeff = snd_hda_codec_read(codec, nid, 0,
-				       AC_VERB_GET_PROC_COEF, 0);
-	snd_iprintf(buffer, "  Processing Coefficient: 0x%02x\n", coeff);
-	coeff = snd_hda_codec_read(codec, nid, 0,
-				   AC_VERB_GET_COEF_INDEX, 0);
-	snd_iprintf(buffer, "  Coefficient Index: 0x%02x\n", coeff);
 }
 
 static void print_gpio(struct snd_info_buffer *buffer,
@@ -478,6 +430,8 @@ static void print_gpio(struct snd_info_buffer *buffer,
 		    (gpio & AC_GPIO_UNSOLICITED) ? 1 : 0,
 		    (gpio & AC_GPIO_WAKE) ? 1 : 0);
 	max = gpio & AC_GPIO_IO_COUNT;
+	if (!max || max > 8)
+		return;
 	enable = snd_hda_codec_read(codec, nid, 0,
 				    AC_VERB_GET_GPIO_MASK, 0);
 	direction = snd_hda_codec_read(codec, nid, 0,
@@ -493,12 +447,13 @@ static void print_gpio(struct snd_info_buffer *buffer,
 	for (i = 0; i < max; ++i)
 		snd_iprintf(buffer,
 			    "  IO[%d]: enable=%d, dir=%d, wake=%d, "
-			    "sticky=%d, data=%d\n", i,
+			    "sticky=%d, data=%d, unsol=%d\n", i,
 			    (enable & (1<<i)) ? 1 : 0,
 			    (direction & (1<<i)) ? 1 : 0,
 			    (wake & (1<<i)) ? 1 : 0,
 			    (sticky & (1<<i)) ? 1 : 0,
-			    (data & (1<<i)) ? 1 : 0);
+			    (data & (1<<i)) ? 1 : 0,
+			    (unsol & (1<<i)) ? 1 : 0);
 	/* FIXME: add GPO and GPI pin information */
 }
 
@@ -506,12 +461,11 @@ static void print_codec_info(struct snd_info_entry *entry,
 			     struct snd_info_buffer *buffer)
 {
 	struct hda_codec *codec = entry->private_data;
-	char buf[32];
 	hda_nid_t nid;
 	int i, nodes;
 
-	snd_hda_get_codec_name(codec, buf, sizeof(buf));
-	snd_iprintf(buffer, "Codec: %s\n", buf);
+	snd_iprintf(buffer, "Codec: %s\n",
+		    codec->name ? codec->name : "Not Set");
 	snd_iprintf(buffer, "Address: %d\n", codec->addr);
 	snd_iprintf(buffer, "Vendor Id: 0x%x\n", codec->vendor_id);
 	snd_iprintf(buffer, "Subsystem Id: 0x%x\n", codec->subsystem_id);
@@ -540,6 +494,8 @@ static void print_codec_info(struct snd_info_entry *entry,
 	}
 
 	print_gpio(buffer, codec, codec->afg);
+	if (codec->proc_widget_hook)
+		codec->proc_widget_hook(buffer, codec, codec->afg);
 
 	for (i = 0; i < nodes; i++, nid++) {
 		unsigned int wid_caps =
@@ -552,9 +508,15 @@ static void print_codec_info(struct snd_info_entry *entry,
 
 		snd_iprintf(buffer, "Node 0x%02x [%s] wcaps 0x%x:", nid,
 			    get_wid_type_name(wid_type), wid_caps);
-		if (wid_caps & AC_WCAP_STEREO)
-			snd_iprintf(buffer, " Stereo");
-		else
+		if (wid_caps & AC_WCAP_STEREO) {
+			unsigned int chans;
+			chans = (wid_caps & AC_WCAP_CHAN_CNT_EXT) >> 13;
+			chans = ((chans << 1) | 1) + 1;
+			if (chans == 2)
+				snd_iprintf(buffer, " Stereo");
+			else
+				snd_iprintf(buffer, " %d-Channels", chans);
+		} else
 			snd_iprintf(buffer, " Mono");
 		if (wid_caps & AC_WCAP_DIGITAL)
 			snd_iprintf(buffer, " Digital");
@@ -566,6 +528,8 @@ static void print_codec_info(struct snd_info_entry *entry,
 			snd_iprintf(buffer, " Stripe");
 		if (wid_caps & AC_WCAP_LR_SWAP)
 			snd_iprintf(buffer, " R/L");
+		if (wid_caps & AC_WCAP_CP_CAPS)
+			snd_iprintf(buffer, " CP");
 		snd_iprintf(buffer, "\n");
 
 		/* volume knob is a special widget that always have connection
@@ -634,9 +598,8 @@ static void print_codec_info(struct snd_info_entry *entry,
 		if (wid_caps & AC_WCAP_PROC_WID)
 			print_proc_caps(buffer, codec, nid);
 
-		/* NID 0x20 == Realtek Define Registers */
-		if (codec->vendor_id == 0x10ec && nid == 0x20)
-			print_realtek_coef(buffer, codec, nid);
+		if (codec->proc_widget_hook)
+			codec->proc_widget_hook(buffer, codec, nid);
 	}
 	snd_hda_power_down(codec);
 }

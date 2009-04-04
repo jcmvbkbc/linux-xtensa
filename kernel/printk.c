@@ -13,7 +13,7 @@
  * Fixed SMP synchronization, 08/08/99, Manfred Spraul
  *     manfred@colorfullife.com
  * Rewrote bits to get rid of console_lock
- *	01Mar01 Andrew Morton <andrewm@uow.edu.au>
+ *	01Mar01 Andrew Morton
  */
 
 #include <linux/kernel.h>
@@ -73,7 +73,6 @@ EXPORT_SYMBOL(oops_in_progress);
  * driver system.
  */
 static DECLARE_MUTEX(console_sem);
-static DECLARE_MUTEX(secondary_console_sem);
 struct console *console_drivers;
 EXPORT_SYMBOL_GPL(console_drivers);
 
@@ -233,45 +232,6 @@ static inline void boot_delay_msec(void)
 #endif
 
 /*
- * Return the number of unread characters in the log buffer.
- */
-static int log_buf_get_len(void)
-{
-	return logged_chars;
-}
-
-/*
- * Copy a range of characters from the log buffer.
- */
-int log_buf_copy(char *dest, int idx, int len)
-{
-	int ret, max;
-	bool took_lock = false;
-
-	if (!oops_in_progress) {
-		spin_lock_irq(&logbuf_lock);
-		took_lock = true;
-	}
-
-	max = log_buf_get_len();
-	if (idx < 0 || idx >= max) {
-		ret = -1;
-	} else {
-		if (len > max)
-			len = max;
-		ret = len;
-		idx += (log_end - max);
-		while (len-- > 0)
-			dest[len] = LOG_BUF(idx + len);
-	}
-
-	if (took_lock)
-		spin_unlock_irq(&logbuf_lock);
-
-	return ret;
-}
-
-/*
  * Commands to do_syslog:
  *
  * 	0 -- Close the log.  Currently a NOP.
@@ -421,7 +381,7 @@ out:
 	return error;
 }
 
-asmlinkage long sys_syslog(int type, char __user *buf, int len)
+SYSCALL_DEFINE3(syslog, int, type, char __user *, buf, int, len)
 {
 	return do_syslog(type, buf, len);
 }
@@ -577,9 +537,6 @@ static int have_callable_console(void)
  * @fmt: format string
  *
  * This is printk().  It can be called from any context.  We want it to work.
- * Be aware of the fact that if oops_in_progress is not set, we might try to
- * wake klogd up which could deadlock on runqueue lock if printk() is called
- * from scheduler code.
  *
  * We try to grab the console_sem.  If we succeed, it's easy - we log the output and
  * call the console drivers.  If we fail to get the semaphore we place the output
@@ -593,6 +550,8 @@ static int have_callable_console(void)
  *
  * See also:
  * printf(3)
+ *
+ * See the vsnprintf() documentation for format string extensions over C99.
  */
 
 asmlinkage int printk(const char *fmt, ...)
@@ -659,7 +618,7 @@ static int acquire_console_semaphore_for_printk(unsigned int cpu)
 static const char recursion_bug_msg [] =
 		KERN_CRIT "BUG: recent printk recursion!\n";
 static int recursion_bug;
-	static int new_text_line = 1;
+static int new_text_line = 1;
 static char printk_buf[1024];
 
 asmlinkage int vprintk(const char *fmt, va_list args)
@@ -702,7 +661,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	if (recursion_bug) {
 		recursion_bug = 0;
 		strcpy(printk_buf, recursion_bug_msg);
-		printed_len = sizeof(recursion_bug_msg);
+		printed_len = strlen(recursion_bug_msg);
 	}
 	/* Emit the output into the temporary buffer */
 	printed_len += vscnprintf(printk_buf + printed_len,
@@ -781,11 +740,6 @@ EXPORT_SYMBOL(printk);
 EXPORT_SYMBOL(vprintk);
 
 #else
-
-asmlinkage long sys_syslog(int type, char __user *buf, int len)
-{
-	return -ENOSYS;
-}
 
 static void call_console_drivers(unsigned start, unsigned end)
 {
@@ -936,12 +890,14 @@ void suspend_console(void)
 	printk("Suspending console(s) (use no_console_suspend to debug)\n");
 	acquire_console_sem();
 	console_suspended = 1;
+	up(&console_sem);
 }
 
 void resume_console(void)
 {
 	if (!console_suspend_enabled)
 		return;
+	down(&console_sem);
 	console_suspended = 0;
 	release_console_sem();
 }
@@ -957,11 +913,9 @@ void resume_console(void)
 void acquire_console_sem(void)
 {
 	BUG_ON(in_interrupt());
-	if (console_suspended) {
-		down(&secondary_console_sem);
-		return;
-	}
 	down(&console_sem);
+	if (console_suspended)
+		return;
 	console_locked = 1;
 	console_may_schedule = 1;
 }
@@ -971,6 +925,10 @@ int try_acquire_console_sem(void)
 {
 	if (down_trylock(&console_sem))
 		return -1;
+	if (console_suspended) {
+		up(&console_sem);
+		return -1;
+	}
 	console_locked = 1;
 	console_may_schedule = 0;
 	return 0;
@@ -982,10 +940,25 @@ int is_console_locked(void)
 	return console_locked;
 }
 
+static DEFINE_PER_CPU(int, printk_pending);
+
+void printk_tick(void)
+{
+	if (__get_cpu_var(printk_pending)) {
+		__get_cpu_var(printk_pending) = 0;
+		wake_up_interruptible(&log_wait);
+	}
+}
+
+int printk_needs_cpu(int cpu)
+{
+	return per_cpu(printk_pending, cpu);
+}
+
 void wake_up_klogd(void)
 {
-	if (!oops_in_progress && waitqueue_active(&log_wait))
-		wake_up_interruptible(&log_wait);
+	if (waitqueue_active(&log_wait))
+		__raw_get_cpu_var(printk_pending) = 1;
 }
 
 /**
@@ -1009,7 +982,7 @@ void release_console_sem(void)
 	unsigned wake_klogd = 0;
 
 	if (console_suspended) {
-		up(&secondary_console_sem);
+		up(&console_sem);
 		return;
 	}
 
@@ -1290,22 +1263,6 @@ static int __init disable_boot_consoles(void)
 	return 0;
 }
 late_initcall(disable_boot_consoles);
-
-/**
- * tty_write_message - write a message to a certain tty, not just the console.
- * @tty: the destination tty_struct
- * @msg: the message to write
- *
- * This is used for messages that need to be redirected to a specific tty.
- * We don't put it into the syslog queue right now maybe in the future if
- * really needed.
- */
-void tty_write_message(struct tty_struct *tty, char *msg)
-{
-	if (tty && tty->ops->write)
-		tty->ops->write(tty, msg, strlen(msg));
-	return;
-}
 
 #if defined CONFIG_PRINTK
 

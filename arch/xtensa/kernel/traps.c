@@ -16,7 +16,7 @@
  * Joe Taylor	<joe@tensilica.com>
  * Chris Zankel	<chris@zankel.net>
  * Marc Gauthier<marc@tensilica.com, marc@alumni.uwaterloo.ca>
- * Piet Delaney <piet@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
  * Kevin Chea
  *
  * This file is subject to the terms and conditions of the GNU General Public
@@ -31,6 +31,7 @@
 #include <linux/stringify.h>
 #include <linux/kallsyms.h>
 #include <linux/delay.h>
+#include <linux/hardirq.h>
 #include <linux/kdebug.h>
 
 #include <asm/ptrace.h>
@@ -108,6 +109,8 @@ static dispatch_init_table_t __initdata dispatch_init_table[] = {
 { EXCCAUSE_UNALIGNED,			KRNL,	   fast_unaligned },
 # endif
 #endif
+
+#ifdef CONFIG_MMU
 { EXCCAUSE_ITLB_MISS,			0,	   do_page_fault },
 { EXCCAUSE_ITLB_MISS,			USER|KRNL, fast_second_level_miss},
 { EXCCAUSE_ITLB_MULTIHIT,		0,	   do_multihit },
@@ -122,6 +125,7 @@ static dispatch_init_table_t __initdata dispatch_init_table[] = {
 { EXCCAUSE_STORE_CACHE_ATTRIBUTE,	USER|KRNL, fast_store_prohibited },
 { EXCCAUSE_STORE_CACHE_ATTRIBUTE,	0,	   do_page_fault },
 { EXCCAUSE_LOAD_CACHE_ATTRIBUTE,	0,	   do_page_fault },
+#endif /* CONFIG_MMU */
 #if XTENSA_HAVE_COPROCESSOR(0)
 COPROCESSOR(0),
 #endif
@@ -174,7 +178,8 @@ __die_if_kernel(const char *str, struct pt_regs *regs, long err)
 void do_unhandled(struct pt_regs *regs, unsigned long exccause)
 {
 	char buf[100];
-	sprintf(buf,"Caught unhandled exception - exccause=%d", (int)exccause);
+	
+	sprintf(buf,"Caught unhandled exception - exccause: %d", (int)exccause);
 	__die_if_kernel(buf, regs, SIGKILL);
 
 	/* If in user mode, send SIGILL signal to current process */
@@ -448,11 +453,10 @@ void show_trace(struct task_struct *task, unsigned long *sp)
 	unsigned long a0, a1, pc;
 	unsigned long sp_start, sp_end;
 
-	a1 = (unsigned long)sp;
-
-	if (a1 == 0)
-		__asm__ __volatile__ ("mov %0, a1\n" : "=a"(a1));
-
+	if (sp)
+		a1 = (unsigned long)sp;
+	else
+		a1 = task->thread.sp;
 
 	sp_start = a1 & ~(THREAD_SIZE-1);
 	sp_end = sp_start + THREAD_SIZE;
@@ -494,9 +498,8 @@ void show_stack(struct task_struct *task, unsigned long *sp)
 	int i = 0;
 	unsigned long *stack;
 
-	if (sp == 0)
-		__asm__ __volatile__ ("mov %0, a1\n" : "=a"(sp));
-
+	if (!sp)
+		sp = (unsigned long *)task->thread.sp;
  	stack = sp;
 
 	printk("\nStack: ");

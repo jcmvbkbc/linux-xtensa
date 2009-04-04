@@ -11,7 +11,7 @@
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com>
- * Piet Delaney <piet@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
  */
 
 

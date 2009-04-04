@@ -70,8 +70,6 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 		goto done;
 	}
 
-	rsge.sg_list = NULL;
-
 	/*
 	 * Check that the qkey matches (except for QP0, see 9.6.1.4.1).
 	 * Qkeys with the high order bit set mean use the
@@ -115,21 +113,6 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 		rq = &qp->r_rq;
 	}
 
-	if (rq->max_sge > 1) {
-		/*
-		 * XXX We could use GFP_KERNEL if ipath_do_send()
-		 * was always called from the tasklet instead of
-		 * from ipath_post_send().
-		 */
-		rsge.sg_list = kmalloc((rq->max_sge - 1) *
-					sizeof(struct ipath_sge),
-				       GFP_ATOMIC);
-		if (!rsge.sg_list) {
-			dev->n_pkt_drops++;
-			goto drop;
-		}
-	}
-
 	/*
 	 * Get the next work request entry to find where to put the data.
 	 * Note that it is safe to drop the lock after changing rq->tail
@@ -147,6 +130,7 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 		goto drop;
 	}
 	wqe = get_rwqe_ptr(rq, tail);
+	rsge.sg_list = qp->r_ud_sg_list;
 	if (!ipath_init_sge(qp, wqe, &rlen, &rsge)) {
 		spin_unlock_irqrestore(&rq->lock, flags);
 		dev->n_pkt_drops++;
@@ -242,7 +226,6 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 	ipath_cq_enter(to_icq(qp->ibqp.recv_cq), &wc,
 		       swqe->wr.send_flags & IB_SEND_SOLICITED);
 drop:
-	kfree(rsge.sg_list);
 	if (atomic_dec_and_test(&qp->refcount))
 		wake_up(&qp->wait);
 done:;
@@ -267,6 +250,7 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 	u16 lrh0;
 	u16 lid;
 	int ret = 0;
+	int next_cur;
 
 	spin_lock_irqsave(&qp->s_lock, flags);
 
@@ -290,8 +274,9 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 		goto bail;
 
 	wqe = get_swqe_ptr(qp, qp->s_cur);
-	if (++qp->s_cur >= qp->s_size)
-		qp->s_cur = 0;
+	next_cur = qp->s_cur + 1;
+	if (next_cur >= qp->s_size)
+		next_cur = 0;
 
 	/* Construct the header. */
 	ah_attr = &to_iah(wqe->wr.wr.ud.ah)->attr;
@@ -315,6 +300,7 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 				qp->s_flags |= IPATH_S_WAIT_DMA;
 				goto bail;
 			}
+			qp->s_cur = next_cur;
 			spin_unlock_irqrestore(&qp->s_lock, flags);
 			ipath_ud_loopback(qp, wqe);
 			spin_lock_irqsave(&qp->s_lock, flags);
@@ -323,6 +309,7 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 		}
 	}
 
+	qp->s_cur = next_cur;
 	extra_bytes = -wqe->length & 3;
 	nwords = (wqe->length + extra_bytes) >> 2;
 

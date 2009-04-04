@@ -224,7 +224,9 @@ static const struct agp_bridge_driver amd_8151_driver = {
 	.alloc_by_type		= agp_generic_alloc_by_type,
 	.free_by_type		= agp_generic_free_by_type,
 	.agp_alloc_page		= agp_generic_alloc_page,
+	.agp_alloc_pages	= agp_generic_alloc_pages,
 	.agp_destroy_page	= agp_generic_destroy_page,
+	.agp_destroy_pages	= agp_generic_destroy_pages,
 	.agp_type_to_mask_type  = agp_generic_type_to_mask_type,
 };
 
@@ -269,15 +271,15 @@ static __devinit int fix_northbridge(struct pci_dev *nb, struct pci_dev *agp,
 	nb_order = (nb_order >> 1) & 7;
 	pci_read_config_dword(nb, AMD64_GARTAPERTUREBASE, &nb_base);
 	nb_aper = nb_base << 25;
-	if (agp_aperture_valid(nb_aper, (32*1024*1024)<<nb_order)) {
-		return 0;
-	}
 
 	/* Northbridge seems to contain crap. Try the AGP bridge. */
 
 	pci_read_config_word(agp, cap+0x14, &apsize);
-	if (apsize == 0xffff)
+	if (apsize == 0xffff) {
+		if (agp_aperture_valid(nb_aper, (32*1024*1024)<<nb_order))
+			return 0;
 		return -1;
+	}
 
 	apsize &= 0xfff;
 	/* Some BIOS use weird encodings not in the AGPv3 table. */
@@ -297,6 +299,11 @@ static __devinit int fix_northbridge(struct pci_dev *nb, struct pci_dev *agp,
 		dev_info(&agp->dev, "aperture size %u MB is not right, using settings from NB\n",
 			 32 << order);
 		order = nb_order;
+	}
+
+	if (nb_order >= order) {
+		if (agp_aperture_valid(nb_aper, (32*1024*1024)<<nb_order))
+			return 0;
 	}
 
 	dev_info(&agp->dev, "aperture from AGP @ %Lx size %u MB\n",
@@ -770,6 +777,6 @@ module_init(agp_amd64_init);
 module_exit(agp_amd64_cleanup);
 #endif
 
-MODULE_AUTHOR("Dave Jones <davej@codemonkey.org.uk>, Andi Kleen");
+MODULE_AUTHOR("Dave Jones <davej@redhat.com>, Andi Kleen");
 module_param(agp_try_unsupported, bool, 0);
 MODULE_LICENSE("GPL");

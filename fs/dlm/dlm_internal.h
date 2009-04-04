@@ -2,7 +2,7 @@
 *******************************************************************************
 **
 **  Copyright (C) Sistina Software, Inc.  1997-2003  All rights reserved.
-**  Copyright (C) 2004-2007 Red Hat, Inc.  All rights reserved.
+**  Copyright (C) 2004-2008 Red Hat, Inc.  All rights reserved.
 **
 **  This copyrighted material is made available to anyone wishing to use,
 **  modify, copy, or redistribute it subject to the terms and conditions
@@ -105,7 +105,7 @@ struct dlm_dirtable {
 struct dlm_rsbtable {
 	struct list_head	list;
 	struct list_head	toss;
-	rwlock_t		lock;
+	spinlock_t		lock;
 };
 
 struct dlm_lkbtable {
@@ -245,7 +245,8 @@ struct dlm_lkb {
 	struct list_head	lkb_astqueue;	/* need ast to be sent */
 	struct list_head	lkb_ownqueue;	/* list of locks for a process */
 	struct list_head	lkb_time_list;
-	unsigned long		lkb_timestamp;
+	ktime_t			lkb_time_bast;	/* for debugging */
+	ktime_t			lkb_timestamp;
 	unsigned long		lkb_timeout_cs;
 
 	char			*lkb_lvbptr;
@@ -441,8 +442,11 @@ struct dlm_ls {
 	uint32_t		ls_global_id;	/* global unique lockspace ID */
 	uint32_t		ls_exflags;
 	int			ls_lvblen;
-	int			ls_count;	/* reference count */
+	int			ls_count;	/* refcount of processes in
+						   the dlm using this ls */
+	int			ls_create_count; /* create/release refcount */
 	unsigned long		ls_flags;	/* LSFL_ */
+	unsigned long		ls_scan_time;
 	struct kobject		ls_kobj;
 
 	struct dlm_rsbtable	*ls_rsbtbl;
@@ -478,6 +482,7 @@ struct dlm_ls {
 	struct dentry		*ls_debug_rsb_dentry; /* debugfs */
 	struct dentry		*ls_debug_waiters_dentry; /* debugfs */
 	struct dentry		*ls_debug_locks_dentry; /* debugfs */
+	struct dentry		*ls_debug_all_dentry; /* debugfs */
 
 	wait_queue_head_t	ls_uevent_wait;	/* user part of join/leave */
 	int			ls_uevent_result;

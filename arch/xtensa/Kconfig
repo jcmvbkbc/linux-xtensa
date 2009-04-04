@@ -1,17 +1,15 @@
-# xtensa configuration
+# arch/xtensa/Kconfig:
 #
 # For a description of the syntax of this configuration file,
 # see Documentation/kbuild/kconfig-language.txt.
 
-mainmenu "Linux/Xtensa Kernel Configuration for Xtensa"
+mainmenu "Linux/Xtensa Kernel Configuration"
 
 config ZONE_DMA
-	bool
-	default y
+	def_bool y
 
 config XTENSA
-	bool
-	default y
+	def_bool y
 	select HAVE_IDE
 	select HAVE_ARCH_KGDB
 	help
@@ -24,28 +22,25 @@ config XTENSA
 	  a home page at <http://www.linux-xtensa.org/>.
 
 config RWSEM_XCHGADD_ALGORITHM
-	bool
-	default y
+	def_bool y
 
 config GENERIC_FIND_NEXT_BIT
-	bool
-	default y
+	def_bool y
 
 config GENERIC_HWEIGHT
-	bool
-	default y
+	def_bool y
 
 config GENERIC_HARDIRQS
-	bool
-	default y
+	def_bool y
+
+config GENERIC_GPIO
+	def_bool y
 
 config ARCH_HAS_ILOG2_U32
-	bool
-	default n
+	def_bool n
 
 config ARCH_HAS_ILOG2_U64
-	bool
-	default n
+	def_bool n
 
 config NO_IOPORT
 	def_bool y
@@ -57,128 +52,163 @@ config HZ
 	int
 	default 100
 
-source "init/Kconfig"
+config GENERIC_TIME
+	def_bool y
 
-menu "Processor type and features"
+source "init/Kconfig"
+source "kernel/Kconfig.freezer"
+
+menu "Xtensa Processor type and features"
+
+config MMU
+	bool "VARIANT/Core has a Full MMU (TLB, Pages, Protection, etc)"
+	depends on !XTENSA_VARIANT_S6000 && !XTENSA_VARIANT_DC232A
+	default true
+	help
+	  Build a Conventional Kernel with full MMU support,
+	  ie: it supports a TLB with auto-loading, Page protection.
+
+config VARIANT_IRQ_SWITCH
+	def_bool n
+
+config	XTENSA_VARIANT_HASCODE
+	bool "This core has variant-specific code that needs to be linked in"
+	default false
+	help
+	  Typical Xtensa core variants don't have variant-specific code,
+	  but some do, and if selected will be linked into the kernel.
 
 choice
 	prompt "Xtensa Processor Configuration"
 	default XTENSA_VARIANT_FSF
 
+
+config XTENSA_VARIANT_FSF
+	bool "fsf - default (not generic) configuration"
+	select MMU
+
 config XTENSA_VARIANT_MMUBASELE
 	bool "mmubasele - base little-endian processor configuration"
 	help
-	This variant refers to a base little-endian processor configuration (mmubasele)
-	that is a subset of the Diamond 232L Standard cores.
+	  This variant refers to a base little-endian processor configuration (mmubasele)
+	  that is a subset of the Diamond 232L Standard cores.
 
 config XTENSA_VARIANT_DC232A
 	bool "dc232a - Diamond 232L Standard Core Rev.A (LE)"
 	help
-	This variant refers to Tensilica's Diamond 232L Standard core Rev.A (LE).
+	  This variant refers to Tensilica's Diamond 232L Standard core Rev.A (LE).
 
 config XTENSA_VARIANT_DC232B
 	bool "dc232b - Diamond 232L Standard Core Rev.B (LE)"
+	select MMU
 	help
-	This variant refers to Tensilica's Diamond 232L Standard core Rev.B (LE).
+	  This variant refers to Tensilica's Diamond 232L Standard core Rev.B (LE).
 
-config XTENSA_VARIANT_FSF
+config XTENSA_VARIANT_S6000
 	bool "fsf - default (not generic) configuration"
+	select VARIANT_IRQ_SWITCH
+	select ARCH_REQUIRE_GPIOLIB
+	select XTENSA_VARIANT_HASCODE
 
 config XTENSA_VARIANT_CUSTOM
 	bool "Custom Xtensa processor configuration"
 	help
 	Select this variant to use a custom Xtensa processor configuration.
-	You will be prompted for a processor variant name.
+	You will be prompted for a processor variant CORENAME.
 
 endchoice
 
+
 config XTENSA_VARIANT_CUSTOM_NAME
-	string "Xtensa Processor Custom Variant Name"
+	string "Xtensa Processor Custom Core Variant Name"
 	depends on XTENSA_VARIANT_CUSTOM
 	default "CORENAME"
 	help
 	  Provide the name of a custom Xtensa processor variant.
-	  The name should match what was provided to the overlay generation
-	  script.  This same NAME selects include/asm-xtensa/variant-NAME
-	  and the xtensa_NAME prefix for the toolchain.
+	  This CORENAME selects arch/xtensa/variant/CORENAME
+	  and the xtensa_NAME prefix for the toolchain. Ex:
+
+	        xtensa_dc_b_232l-linux-uclibc-gdb
+	        xtensa_dc_b_232l-linux-uclibc-gcc
+	               ---------
+	               CORENAME
+ 
+	  Don't forget you have to select MMU if you have one.
 
 config XTENSA_VARIANT_NAME
 	string
+	default "s6000"  if XTENSA_VARIANT_S6000
 	default "dc232l" if XTENSA_VARIANT_MMUBASELE
 	default "dc232a" if XTENSA_VARIANT_DC232A
 	default "dc232b" if XTENSA_VARIANT_DC232B
-	default "fsf" if XTENSA_VARIANT_FSF
+	default "fsf"    if XTENSA_VARIANT_FSF
 	default XTENSA_VARIANT_CUSTOM_NAME if XTENSA_VARIANT_CUSTOM
 
-config MMU
-	bool
-	default y
 
 config XTENSA_UNALIGNED_USER
 	bool "Unaligned memory access in user space"
-	---help---
-	   The Xtensa architecture currently does not handle unaligned
-	   memory accesses in hardware but through an exception handler.
-	   Per default, unaligned memory accesses are disabled in user space.
+	help
+	  The Xtensa architecture currently does not handle unaligned
+	  memory accesses in hardware but through an exception handler.
+	  Per default, unaligned memory accesses are disabled in user space.
 
-	   Say Y here to enable unaligned memory access in user space.
+	  Say Y here to enable unaligned memory access in user space.
 
 config XTENSA_UNALIGNED_KERNEL
 	bool "Unaligned memory access in kernel space"
-	---help---
-	If the kernel accesses memory with a register that has 
-	a random pointer in it usually will get an EXCCAUSE_UNALIGNED.
-	We don't currently have Double exception processing in the
-	fast_unaligned() handler and the double exceptions hide the
-	original problem with the kernel referencing a bogus pointer.
-	This functionaly is provided to support drivers that need
-	to use unaligned pointers. For now it's likely best to
-	not configure this in. With _kernel_exception now corectly
-	setting up the stack a conventional C backtrace will be
-	available to kgdb/xt-gdb.
+	help
+	  If the kernel accesses memory with a register that has 
+	  a random pointer in it usually will get an EXCCAUSE_UNALIGNED.
+	  We don't currently have Double exception processing in the
+	  fast_unaligned() handler and the double exceptions hide the
+	  original problem with the kernel referencing a bogus pointer.
+	  This functionaly is provided to support drivers that need
+	  to use unaligned pointers. For now it's likely best to
+	  not configure this in. With _kernel_exception now corectly
+	  setting up the stack a conventional C backtrace will be
+	  available to kgdb/xt-gdb.
 
 	   Say Y here to enable unaligned memory access in user space.
 
 config PREEMPT
 	bool "Preemptible Kernel"
 	default n
-	---help---
-           This option reduces the latency of the kernel when reacting to
-           real-time or interactive events by allowing a low priority process to
-           be preempted even if it is in kernel mode executing a system call.
-           Unfortunately the kernel code has some race conditions if both
-           CONFIG_SMP and CONFIG_PREEMPT are enabled, so this option is
-           currently disabled if you are building an SMP kernel.
+	help
+          This option reduces the latency of the kernel when reacting to
+          real-time or interactive events by allowing a low priority process to
+          be preempted even if it is in kernel mode executing a system call.
+          Unfortunately the kernel code has some race conditions if both
+          CONFIG_SMP and CONFIG_PREEMPT are enabled, so this option is
+          currently disabled if you are building an SMP kernel.
 
-           Say Y here if you are building a kernel for a desktop, embedded
-           or real-time system.  Say N if you are unsure.
+          Say Y here if you are building a kernel for a desktop, embedded
+          or real-time system.  Say N if you are unsure.
 
 config MATH_EMULATION
 	bool "Math emulation"
 	help
 	Can we use information of configuration file?
 
-config HIGHMEM
-	bool "High memory support"
-
 config ARCH_HAS_SMP
-	bool "System Supports SMP"
+	bool "System Supports SMP (MX)"
 	default y
-	---help---
-	This option is use to indicate that the system-on-a-chip (SOC)
-	supports Multiprocessing. Multiprocessor support implemented above
-	the CPU core definition and currently needs to be selected manually.
-	Multiprocessor support in implemented with external cache and
-	interrupt controlers. The external cache controler supports
-	cache coherency; thought still in the process of testing.
-	Currently addition cache flushs have been added to get
-	a SMP system to be stable under LTP test for about four days.
-	The interrupt distributer adds Interprocessor Interrupts
-	and causes the IRQ numbers to be increased by 4 for devices
-	like the open cores ethernet driver and the serial interface.
+	help
+	  This option is use to indicate that the system-on-a-chip (SOC)
+	  supports Multiprocessing. Multiprocessor support implemented above
+	  the CPU core definition and currently needs to be selected manually.
 
-	You still have to select "Enable SMP" to anable SMP on this SOC.
+	  Multiprocessor support in implemented with external cache and
+	  interrupt controlers. The external cache controler supports
+	  cache coherency; thought still in the process of testing.
+	  Currently addition cache flushs have been added to get
+	  a SMP system to be stable under LTP test for about four days.
 
+	  The MX interrupt distributer adds Interprocessor Interrupts
+	  and causes the IRQ numbers to be increased by 4 for devices
+	  like the open cores ethernet driver and the serial interface.
+
+	  You still have to select "Enable SMP" to enable SMP on this SOC.
+	
 config SMP
 	bool "Enable Symmetric multi-processing support"
 	depends on ARCH_HAS_SMP
@@ -192,9 +222,29 @@ config NR_CPUS
         range 2 32
         default "4"
 
+
+config XTENSA_CALIBRATE_CCOUNT
+	def_bool n
+	depends on !XTENSA_PLATFORM_LX60	
+	help
+	  On some platforms (XT2000, for example), the CPU clock rate can
+	  vary.  The frequency can be determined, however, by measuring
+	  against a well known, fixed frequency, such as an UART oscillator.
+
+config SERIAL_CONSOLE
+	def_bool n
+
+config XTENSA_ISS_NETWORK
+	def_bool n
+	depends on ARCH_HAS_SMP
+	help
+	  Enabled SMP Software; allows more than one CPU/CORE
+	  to be activated during startup.
+
 endmenu
 
-menu "Platform options"
+
+menu "Xtensa Platform options"
 
 choice
 	prompt "Xtensa System Type"
@@ -202,14 +252,23 @@ choice
 
 config XTENSA_PLATFORM_ISS
 	bool "ISS"
+	select XTENSA_CALIBRATE_CCOUNT
+	select SERIAL_CONSOLE
+	select XTENSA_ISS_NETWORK
 	help
 	  ISS is an acronym for Tensilica's Instruction Set Simulator.
 
 config XTENSA_PLATFORM_XT2000
 	bool "XT2000"
+	select XTENSA_CALIBRATE_CCOUNT
+	select PCI
 	help
 	  XT2000 is the name of Tensilica's feature-rich emulation platform.
 	  This hardware is capable of running a full Linux distribution.
+
+config XTENSA_PLATFORM_S6105
+	bool "S6105"
+	select SERIAL_CONSOLE
 
 config XTENSA_PLATFORM_LX60
 	bool "LX60"
@@ -245,13 +304,6 @@ config XTENSA_PLATFORM_NAME
 	default XTENSA_PLATFORM_CUSTOM_NAME if XTENSA_PLATFORM_CUSTOM
 
 
-config XTENSA_CALIBRATE_CCOUNT
-       depends on !XTENSA_PLATFORM_LX60
-	bool "Auto calibration of the CPU clock rate" if !XTENSA_PLATFORM_LX60
-	---help---
-	  On some platforms (XT2000, for example), the CPU clock rate can
-	  vary.  The frequency can be determined, however, by measuring
-	  against a well known, fixed frequency, such as an UART oscillator.
 
 config XTENSA_CPU_CLOCK
 	int "CPU clock rate [kHz]"
@@ -260,7 +312,7 @@ config XTENSA_CPU_CLOCK
 
 config GENERIC_CALIBRATE_DELAY
 	bool "Auto calibration of the BogoMIPS value"
-	---help---
+	help
 	  The BogoMIPS value can easily be derived from the CPU frequency.
 
 config CMDLINE_BOOL
@@ -276,16 +328,6 @@ config CMDLINE
 	  architectures, you should supply some command-line options at build
 	  time by entering them here. As a minimum, you should specify the
 	  memory size and the root device (e.g., mem=64M root=/dev/nfs).
-
-config SERIAL_CONSOLE
-	bool
-	depends on XTENSA_PLATFORM_ISS
-	default y
-
-config XTENSA_ISS_NETWORK
-	bool
-	depends on XTENSA_PLATFORM_ISS
-	default y
 
 config BLK_DEV_SIMDISK_COUNT
 	int "number of hostfile-based simulated block devices"
@@ -320,11 +362,11 @@ source "mm/Kconfig"
 
 endmenu
 
-menu "Bus options"
+menu "Xtensa Bus options"
 
 config PCI
-	bool "PCI support" if !XTENSA_PLATFORM_ISS || !XTENSA_PLATFORM_LX60
-	depends on !XTENSA_PLATFORM_ISS || !XTENSA_PLATFORM_LX60
+	bool "PCI support" if !XTENSA_PLATFORM_LX60
+	depends on !XTENSA_PLATFORM_LX60
 	default y
 	help
 	  Find out whether you have a PCI motherboard. PCI is the name of a
@@ -335,23 +377,22 @@ config PCI
 source "drivers/pci/Kconfig"
 
 config HOTPLUG
-
 	bool "Support for hot-pluggable devices"
-	---help---
-	Say Y here if you want to plug devices into your computer while
-	the system is running, and be able to use them quickly.  In many
-	cases, the devices can likewise be unplugged at any time too.
+	help
+	  Say Y here if you want to plug devices into your computer while
+	  the system is running, and be able to use them quickly.  In many
+	  cases, the devices can likewise be unplugged at any time too.
 
-	One well known example of this is PCMCIA- or PC-cards, credit-card
-	size devices such as network cards, modems or hard drives which are
-	plugged into slots found on all modern laptop computers.  Another
-	example, used on modern desktops as well as laptops, is USB.
+	  One well known example of this is PCMCIA- or PC-cards, credit-card
+	  size devices such as network cards, modems or hard drives which are
+	  plugged into slots found on all modern laptop computers.  Another
+	  example, used on modern desktops as well as laptops, is USB.
 
-	Enable HOTPLUG and build a modular kernel.  Get agent software
-	(from <http://linux-hotplug.sourceforge.net/>) and install it.
-	Then your kernel will automatically call out to a user mode "policy
-	agent" (/sbin/hotplug) to load modules and set up software needed
-	to use devices as you hotplug them.
+	  Enable HOTPLUG and build a modular kernel.  Get agent software
+	  (from <http://linux-hotplug.sourceforge.net/>) and install it.
+	  Then your kernel will automatically call out to a user mode "policy
+	  agent" (/sbin/hotplug) to load modules and set up software needed
+	  to use devices as you hotplug them.
 
 source "drivers/pcmcia/Kconfig"
 
@@ -359,13 +400,13 @@ source "drivers/pci/hotplug/Kconfig"
 
 endmenu
 
-menu "Executable file formats"
+menu "Xtensa Executable file formats"
 
 # only elf supported
 config KCORE_ELF
-        bool
+	bool "Support for kernel core ELF format files via /proc/kcore"
         depends on PROC_FS
-        default y
+	default y
         help
           If you enabled support for /proc file system then the file
           /proc/kcore will contain the kernel core image in ELF format. This
@@ -390,8 +431,8 @@ source "fs/Kconfig"
 menu "Xtensa initrd options"
 	depends on BLK_DEV_INITRD
 
-	config EMBEDDED_RAMDISK
-	bool "Embed root filesystem ramdisk into the kernel"
+config EMBEDDED_RAMDISK
+	bool "Embeded root filesystem ramdisk into the kernel"
 
 config EMBEDDED_RAMDISK_IMAGE
 	string "Filename of gzipped ramdisk image"

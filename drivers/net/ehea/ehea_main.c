@@ -99,7 +99,7 @@ MODULE_PARM_DESC(use_lro, " Large Receive Offload, 1: enable, 0: disable, "
 
 static int port_name_cnt;
 static LIST_HEAD(adapter_list);
-u64 ehea_driver_flags;
+static unsigned long ehea_driver_flags;
 struct work_struct ehea_rereg_mr_task;
 static DEFINE_MUTEX(dlpar_mem_lock);
 struct ehea_fw_handle_array ehea_fw_handles;
@@ -132,7 +132,7 @@ void ehea_dump(void *adr, int len, char *msg)
 	int x;
 	unsigned char *deb = adr;
 	for (x = 0; x < len; x += 16) {
-		printk(DRV_NAME " %s adr=%p ofs=%04x %016lx %016lx\n", msg,
+		printk(DRV_NAME " %s adr=%p ofs=%04x %016llx %016llx\n", msg,
 			  deb, x, *((u64 *)&deb[0]), *((u64 *)&deb[8]));
 		deb += 16;
 	}
@@ -728,7 +728,6 @@ static int ehea_proc_rwqes(struct net_device *dev,
 			}
 
 			ehea_proc_skb(pr, cqe, skb);
-			dev->last_rx = jiffies;
 		} else {
 			pr->p_stats.poll_receive_errors++;
 			port_reset = ehea_treat_poll_error(pr, rq, cqe,
@@ -831,7 +830,7 @@ static int ehea_poll(struct napi_struct *napi, int budget)
 	while ((rx != budget) || force_irq) {
 		pr->poll_counter = 0;
 		force_irq = 0;
-		netif_rx_complete(dev, napi);
+		netif_rx_complete(napi);
 		ehea_reset_cq_ep(pr->recv_cq);
 		ehea_reset_cq_ep(pr->send_cq);
 		ehea_reset_cq_n1(pr->recv_cq);
@@ -842,7 +841,7 @@ static int ehea_poll(struct napi_struct *napi, int budget)
 		if (!cqe && !cqe_skb)
 			return rx;
 
-		if (!netif_rx_reschedule(dev, napi))
+		if (!netif_rx_reschedule(napi))
 			return rx;
 
 		cqe_skb = ehea_proc_cqes(pr, EHEA_POLL_MAX_CQES);
@@ -860,7 +859,7 @@ static void ehea_netpoll(struct net_device *dev)
 	int i;
 
 	for (i = 0; i < port->num_def_qps; i++)
-		netif_rx_schedule(dev, &port->port_res[i].napi);
+		netif_rx_schedule(&port->port_res[i].napi);
 }
 #endif
 
@@ -868,7 +867,7 @@ static irqreturn_t ehea_recv_irq_handler(int irq, void *param)
 {
 	struct ehea_port_res *pr = param;
 
-	netif_rx_schedule(pr->port->netdev, &pr->napi);
+	netif_rx_schedule(&pr->napi);
 
 	return IRQ_HANDLED;
 }
@@ -884,7 +883,7 @@ static irqreturn_t ehea_qp_aff_irq_handler(int irq, void *param)
 
 	while (eqe) {
 		qp_token = EHEA_BMASK_GET(EHEA_EQE_QP_TOKEN, eqe->entry);
-		ehea_error("QP aff_err: entry=0x%lx, token=0x%x",
+		ehea_error("QP aff_err: entry=0x%llx, token=0x%x",
 			   eqe->entry, qp_token);
 
 		qp = port->port_res[qp_token].qp;
@@ -1160,7 +1159,7 @@ static void ehea_parse_eqe(struct ehea_adapter *adapter, u64 eqe)
 		netif_stop_queue(port->netdev);
 		break;
 	default:
-		ehea_error("unknown event code %x, eqe=0x%lX", ec, eqe);
+		ehea_error("unknown event code %x, eqe=0x%llX", ec, eqe);
 		break;
 	}
 }
@@ -1972,7 +1971,7 @@ static void ehea_set_multicast_list(struct net_device *dev)
 		}
 
 		if (dev->mc_count > port->adapter->max_mc_mac) {
-			ehea_info("Mcast registration limit reached (0x%lx). "
+			ehea_info("Mcast registration limit reached (0x%llx). "
 				  "Use ALLMULTI!",
 				  port->adapter->max_mc_mac);
 			goto out;
@@ -2863,7 +2862,7 @@ static void ehea_rereg_mrs(struct work_struct *work)
 	struct ehea_adapter *adapter;
 
 	mutex_lock(&dlpar_mem_lock);
-	ehea_info("LPAR memory enlarged - re-initializing driver");
+	ehea_info("LPAR memory changed - re-initializing driver");
 
 	list_for_each_entry(adapter, &adapter_list, list)
 		if (adapter->active_ports) {
@@ -2899,13 +2898,6 @@ static void ehea_rereg_mrs(struct work_struct *work)
 				goto out;
 			}
 		}
-
-	ehea_destroy_busmap();
-	ret = ehea_create_busmap();
-	if (ret) {
-		ehea_error("creating ehea busmap failed");
-		goto out;
-	}
 
 	clear_bit(__EHEA_STOP_XFER, &ehea_driver_flags);
 
@@ -3519,9 +3511,21 @@ void ehea_crash_handler(void)
 static int ehea_mem_notifier(struct notifier_block *nb,
                              unsigned long action, void *data)
 {
+	struct memory_notify *arg = data;
 	switch (action) {
-	case MEM_OFFLINE:
-		ehea_info("memory has been removed");
+	case MEM_CANCEL_OFFLINE:
+		ehea_info("memory offlining canceled");
+		/* Readd canceled memory block */
+	case MEM_ONLINE:
+		ehea_info("memory is going online");
+		if (ehea_add_sect_bmap(arg->start_pfn, arg->nr_pages))
+			return NOTIFY_BAD;
+		ehea_rereg_mrs(NULL);
+		break;
+	case MEM_GOING_OFFLINE:
+		ehea_info("memory is going offline");
+		if (ehea_rem_sect_bmap(arg->start_pfn, arg->nr_pages))
+			return NOTIFY_BAD;
 		ehea_rereg_mrs(NULL);
 		break;
 	default:

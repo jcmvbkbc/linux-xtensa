@@ -268,15 +268,30 @@ enum paravirt_lazy_mode paravirt_get_lazy_mode(void)
 	return __get_cpu_var(paravirt_lazy_mode);
 }
 
-void __init paravirt_use_bytelocks(void)
+void arch_flush_lazy_mmu_mode(void)
 {
-#ifdef CONFIG_SMP
-	pv_lock_ops.spin_is_locked = __byte_spin_is_locked;
-	pv_lock_ops.spin_is_contended = __byte_spin_is_contended;
-	pv_lock_ops.spin_lock = __byte_spin_lock;
-	pv_lock_ops.spin_trylock = __byte_spin_trylock;
-	pv_lock_ops.spin_unlock = __byte_spin_unlock;
-#endif
+	preempt_disable();
+
+	if (paravirt_get_lazy_mode() == PARAVIRT_LAZY_MMU) {
+		WARN_ON(preempt_count() == 1);
+		arch_leave_lazy_mmu_mode();
+		arch_enter_lazy_mmu_mode();
+	}
+
+	preempt_enable();
+}
+
+void arch_flush_lazy_cpu_mode(void)
+{
+	preempt_disable();
+
+	if (paravirt_get_lazy_mode() == PARAVIRT_LAZY_CPU) {
+		WARN_ON(preempt_count() == 1);
+		arch_leave_lazy_cpu_mode();
+		arch_enter_lazy_cpu_mode();
+	}
+
+	preempt_enable();
 }
 
 struct pv_info pv_info = {
@@ -330,6 +345,7 @@ struct pv_cpu_ops pv_cpu_ops = {
 #endif
 	.wbinvd = native_wbinvd,
 	.read_msr = native_read_msr_safe,
+	.read_msr_amd = native_read_msr_amd_safe,
 	.write_msr = native_write_msr_safe,
 	.read_tsc = native_read_tsc,
 	.read_pmc = native_read_pmc,
@@ -348,6 +364,10 @@ struct pv_cpu_ops pv_cpu_ops = {
 	.write_ldt_entry = native_write_ldt_entry,
 	.write_gdt_entry = native_write_gdt_entry,
 	.write_idt_entry = native_write_idt_entry,
+
+	.alloc_ldt = paravirt_nop,
+	.free_ldt = paravirt_nop,
+
 	.load_sp0 = native_load_sp0,
 
 #if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
@@ -373,8 +393,6 @@ struct pv_cpu_ops pv_cpu_ops = {
 
 struct pv_apic_ops pv_apic_ops = {
 #ifdef CONFIG_X86_LOCAL_APIC
-	.apic_write = native_apic_write,
-	.apic_read = native_apic_read,
 	.setup_boot_clock = setup_boot_APIC_clock,
 	.setup_secondary_clock = setup_secondary_APIC_clock,
 	.startup_ipi_hook = paravirt_nop,
@@ -460,18 +478,6 @@ struct pv_mmu_ops pv_mmu_ops = {
 
 	.set_fixmap = native_set_fixmap,
 };
-
-struct pv_lock_ops pv_lock_ops = {
-#ifdef CONFIG_SMP
-	.spin_is_locked = __ticket_spin_is_locked,
-	.spin_is_contended = __ticket_spin_is_contended,
-
-	.spin_lock = __ticket_spin_lock,
-	.spin_trylock = __ticket_spin_trylock,
-	.spin_unlock = __ticket_spin_unlock,
-#endif
-};
-EXPORT_SYMBOL_GPL(pv_lock_ops);
 
 EXPORT_SYMBOL_GPL(pv_time_ops);
 EXPORT_SYMBOL    (pv_cpu_ops);

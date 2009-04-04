@@ -3,7 +3,7 @@
  *      Copyright (c) 2002 Simon Srot (simons@opencores.org)
  *      Copyright (c) 2006, 2007, 2009 Tensilica Inc.
  *      Copyright (c) Dan Nicolaescu <dann@tensilica.com>
- *      Copyright (c) Pete Delaney <piet.delaney@tensilica.com>
+ *      Copyright (c) Pete Delaney <piet@tensilica.com>
  *      Copyright (c) 2008 Florian Fainelli <florian.fainelli@openpattern.org>
  * 
  * Based on:
@@ -68,6 +68,10 @@
 #include <linux/platform_device.h>
 
 #include <asm/hardware.h>
+#include <asm/processor.h>
+#include <platform/system.h>
+
+#include <asm/mxregs.h>		/* REMIND: move to processor.h */
 
 #include "open_eth.h"
 
@@ -138,7 +142,10 @@ static void oeth_print_packet(u32 * add, int len)
 }
 #endif
 
-static int oeth_open(struct net_device *dev)
+#if 0
+static 
+#endif
+int oeth_open(struct net_device *dev)
 {
 	int ret;
 	struct oeth_private *cep = netdev_priv(dev);
@@ -164,6 +171,17 @@ static int oeth_open(struct net_device *dev)
 
 	/* Start the queue, we are ready to process packets now. */
 	netif_start_queue(dev);
+	printk("%s:  Ready to process packets now on dev->name:'%s', dev:%p; \n", __func__, dev->name, dev);
+
+#if 0 && defined(CONFIG_DEBUG_KERNEL) && defined(CONFIG_ARCH_HAS_SMP)
+	/* For MX case:
+	 *	0: NMI
+	 *	1: UART
+	 *	2: OETH
+	 */
+	set_er(1<<(OETH_IRQ-2), MIASGSET);
+	set_er(0, MIASGSET);
+#endif
 	return 0;
 }
 
@@ -303,10 +321,10 @@ static irqreturn_t oeth_interrupt(int irq, void *dev_id)
 	if (int_events & (OETH_INT_RXF | OETH_INT_RXE | OETH_INT_BUSY)
 	    && !cep->reschedule_in_poll) {
 		spin_lock(&cep->napi_lock);
-		if (netif_rx_schedule_prep(dev, &cep->napi)) {
+		if (netif_rx_schedule_prep(&cep->napi)) {
 			regs->int_mask &= ~(OETH_INT_MASK_RXF
 					    | OETH_INT_MASK_RXE);
-			__netif_rx_schedule(dev, &cep->napi);
+			__netif_rx_schedule(&cep->napi);
 		} else {
 			cep->reschedule_in_poll++;
 		}
@@ -533,7 +551,7 @@ rx_action:
 		more = cep->reschedule_in_poll;
 		if (!more) {
 			/* Stop polling and reenable interrupts. */
-			__netif_rx_complete(dev, napi);
+			__netif_rx_complete(napi);
 			cep->regs->int_mask |= 
 				(OETH_INT_MASK_RXF | OETH_INT_MASK_RXE);
 		} else {
@@ -582,7 +600,10 @@ static int __init oeth_setup(struct net_device *dev, unsigned int base_addr,
 /*
  * Probe for an Opencores ethernet controller.
  */
-static int __devinit oeth_probe(struct platform_device *pdev)
+#if 0
+static 
+#endif
+int __devinit oeth_probe(struct platform_device *pdev)
 {
 	struct net_device *dev = alloc_etherdev(sizeof(struct oeth_private));
 	int res = 0;
@@ -719,7 +740,10 @@ static void mdio_write(struct net_device *dev, int phy_id, int location,
 }
 
 /* Initialize the Open Ethernet MAC. */
-static int oeth_setup(struct net_device *dev, unsigned int base_addr,
+#if 0
+static 
+#endif
+int oeth_setup(struct net_device *dev, unsigned int base_addr,
 		     unsigned int irq)
 {
 	struct oeth_private *cep = netdev_priv(dev);

@@ -92,6 +92,7 @@ ENTRY(ret_from_irq)
 	bra	resume_userspace
 	 nop
 ENTRY(resume_kernel)
+	cli
 	mov.l	@(TI_PRE_COUNT,r8), r0	! current_thread_info->preempt_count
 	tst	r0, r0
 	bf	noresched
@@ -105,28 +106,9 @@ need_resched:
 	and	#0xf0, r0		! interrupts off (exception path)?
 	cmp/eq	#0xf0, r0
 	bt	noresched
-
-	mov.l	1f, r0
-	mov.l	r0, @(TI_PRE_COUNT,r8)
-
-#ifdef CONFIG_TRACE_IRQFLAGS
 	mov.l	3f, r0
-	jsr	@r0
+	jsr	@r0			! call preempt_schedule_irq
 	 nop
-#endif
-	sti
-	mov.l	2f, r0
-	jsr	@r0
-	 nop
-	mov	#0, r0
-	mov.l	r0, @(TI_PRE_COUNT,r8)
-	cli
-#ifdef CONFIG_TRACE_IRQFLAGS
-	mov.l	4f, r0
-	jsr	@r0
-	 nop
-#endif
-
 	bra	need_resched
 	 nop
 
@@ -137,10 +119,7 @@ noresched:
 	.align 2
 1:	.long	PREEMPT_ACTIVE
 2:	.long	schedule
-#ifdef CONFIG_TRACE_IRQFLAGS
-3:	.long	trace_hardirqs_on
-4:	.long	trace_hardirqs_off
-#endif
+3:	.long	preempt_schedule_irq
 #endif
 
 ENTRY(resume_userspace)
@@ -329,15 +308,19 @@ ENTRY(system_call)
 	mov.l	1f, r9
 	mov.l	@r9, r8		! Read from TRA (Trap Address) Register
 #endif
+
+	mov	#OFF_TRA, r10
+	add	r15, r10
+	mov.l	r8, @r10		! set TRA value to tra
+
 	/*
 	 * Check the trap type
 	 */
 	mov	#((0x20 << 2) - 1), r9
 	cmp/hi	r9, r8
 	bt/s	debug_trap		! it's a debug trap..
-	 mov	#OFF_TRA, r9
-	add	r15, r9
-	mov.l	r8, @r9			! set TRA value to tra
+	 nop
+
 #ifdef CONFIG_TRACE_IRQFLAGS
 	mov.l	5f, r10
 	jsr	@r10

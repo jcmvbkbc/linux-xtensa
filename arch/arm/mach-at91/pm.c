@@ -17,8 +17,8 @@
 #include <linux/sysfs.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/io.h>
 
-#include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/atomic.h>
 #include <asm/mach/time.h>
@@ -332,7 +332,6 @@ static int at91_pm_enter(suspend_state_t state)
 			at91_sys_read(AT91_AIC_IPR) & at91_sys_read(AT91_AIC_IMR));
 
 error:
-	sdram_selfrefresh_disable();
 	target_state = PM_SUSPEND_ON;
 	at91_irq_resume();
 	at91_gpio_resume();

@@ -25,6 +25,7 @@
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/idr.h>
+#include <linux/jiffies.h>
 #include <linux/string.h>
 #include <linux/rwsem.h>
 #include <linux/semaphore.h>
@@ -159,7 +160,8 @@ static void fw_device_release(struct device *dev)
 
 	/*
 	 * Take the card lock so we don't set this to NULL while a
-	 * FW_NODE_UPDATED callback is being handled.
+	 * FW_NODE_UPDATED callback is being handled or while the
+	 * bus manager work looks at this node.
 	 */
 	spin_lock_irqsave(&card->lock, flags);
 	device->node->data = NULL;
@@ -381,46 +383,21 @@ static struct device_attribute fw_device_attributes[] = {
 	__ATTR_NULL,
 };
 
-struct read_quadlet_callback_data {
-	struct completion done;
-	int rcode;
-	u32 data;
-};
-
-static void
-complete_transaction(struct fw_card *card, int rcode,
-		     void *payload, size_t length, void *data)
-{
-	struct read_quadlet_callback_data *callback_data = data;
-
-	if (rcode == RCODE_COMPLETE)
-		callback_data->data = be32_to_cpu(*(__be32 *)payload);
-	callback_data->rcode = rcode;
-	complete(&callback_data->done);
-}
-
 static int
 read_rom(struct fw_device *device, int generation, int index, u32 *data)
 {
-	struct read_quadlet_callback_data callback_data;
-	struct fw_transaction t;
-	u64 offset;
+	int rcode;
 
 	/* device->node_id, accessed below, must not be older than generation */
 	smp_rmb();
 
-	init_completion(&callback_data.done);
-
-	offset = (CSR_REGISTER_BASE | CSR_CONFIG_ROM) + index * 4;
-	fw_send_request(device->card, &t, TCODE_READ_QUADLET_REQUEST,
+	rcode = fw_run_transaction(device->card, TCODE_READ_QUADLET_REQUEST,
 			device->node_id, generation, device->max_speed,
-			offset, NULL, 4, complete_transaction, &callback_data);
+			(CSR_REGISTER_BASE | CSR_CONFIG_ROM) + index * 4,
+			data, 4);
+	be32_to_cpus(data);
 
-	wait_for_completion(&callback_data.done);
-
-	*data = callback_data.data;
-
-	return callback_data.rcode;
+	return rcode;
 }
 
 #define READ_BIB_ROM_SIZE	256
@@ -612,8 +589,7 @@ static void create_units(struct fw_device *device)
 		unit->device.bus = &fw_bus_type;
 		unit->device.type = &fw_unit_type;
 		unit->device.parent = &device->device;
-		snprintf(unit->device.bus_id, sizeof(unit->device.bus_id),
-			 "%s.%d", device->device.bus_id, i++);
+		dev_set_name(&unit->device, "%s.%d", dev_name(&device->device), i++);
 
 		init_fw_attribute_group(&unit->device,
 					fw_unit_attributes,
@@ -643,7 +619,7 @@ static int shutdown_unit(struct device *device, void *data)
  */
 DECLARE_RWSEM(fw_device_rwsem);
 
-static DEFINE_IDR(fw_device_idr);
+DEFINE_IDR(fw_device_idr);
 int fw_cdev_major;
 
 struct fw_device *fw_device_get_by_devt(dev_t devt)
@@ -659,26 +635,6 @@ struct fw_device *fw_device_get_by_devt(dev_t devt)
 	return device;
 }
 
-static void fw_device_shutdown(struct work_struct *work)
-{
-	struct fw_device *device =
-		container_of(work, struct fw_device, work.work);
-	int minor = MINOR(device->device.devt);
-
-	fw_device_cdev_remove(device);
-	device_for_each_child(&device->device, NULL, shutdown_unit);
-	device_unregister(&device->device);
-
-	down_write(&fw_device_rwsem);
-	idr_remove(&fw_device_idr, minor);
-	up_write(&fw_device_rwsem);
-	fw_device_put(device);
-}
-
-static struct device_type fw_device_type = {
-	.release	= fw_device_release,
-};
-
 /*
  * These defines control the retry behavior for reading the config
  * rom.  It shouldn't be necessary to tweak these; if the device
@@ -693,11 +649,97 @@ static struct device_type fw_device_type = {
 #define MAX_RETRIES	10
 #define RETRY_DELAY	(3 * HZ)
 #define INITIAL_DELAY	(HZ / 2)
+#define SHUTDOWN_DELAY	(2 * HZ)
+
+static void fw_device_shutdown(struct work_struct *work)
+{
+	struct fw_device *device =
+		container_of(work, struct fw_device, work.work);
+	int minor = MINOR(device->device.devt);
+
+	if (time_is_after_jiffies(device->card->reset_jiffies + SHUTDOWN_DELAY)
+	    && !list_empty(&device->card->link)) {
+		schedule_delayed_work(&device->work, SHUTDOWN_DELAY);
+		return;
+	}
+
+	if (atomic_cmpxchg(&device->state,
+			   FW_DEVICE_GONE,
+			   FW_DEVICE_SHUTDOWN) != FW_DEVICE_GONE)
+		return;
+
+	fw_device_cdev_remove(device);
+	device_for_each_child(&device->device, NULL, shutdown_unit);
+	device_unregister(&device->device);
+
+	down_write(&fw_device_rwsem);
+	idr_remove(&fw_device_idr, minor);
+	up_write(&fw_device_rwsem);
+
+	fw_device_put(device);
+}
+
+static struct device_type fw_device_type = {
+	.release	= fw_device_release,
+};
+
+static void fw_device_update(struct work_struct *work);
+
+/*
+ * If a device was pending for deletion because its node went away but its
+ * bus info block and root directory header matches that of a newly discovered
+ * device, revive the existing fw_device.
+ * The newly allocated fw_device becomes obsolete instead.
+ */
+static int lookup_existing_device(struct device *dev, void *data)
+{
+	struct fw_device *old = fw_device(dev);
+	struct fw_device *new = data;
+	struct fw_card *card = new->card;
+	int match = 0;
+
+	down_read(&fw_device_rwsem); /* serialize config_rom access */
+	spin_lock_irq(&card->lock);  /* serialize node access */
+
+	if (memcmp(old->config_rom, new->config_rom, 6 * 4) == 0 &&
+	    atomic_cmpxchg(&old->state,
+			   FW_DEVICE_GONE,
+			   FW_DEVICE_RUNNING) == FW_DEVICE_GONE) {
+		struct fw_node *current_node = new->node;
+		struct fw_node *obsolete_node = old->node;
+
+		new->node = obsolete_node;
+		new->node->data = new;
+		old->node = current_node;
+		old->node->data = old;
+
+		old->max_speed = new->max_speed;
+		old->node_id = current_node->node_id;
+		smp_wmb();  /* update node_id before generation */
+		old->generation = card->generation;
+		old->config_rom_retries = 0;
+		fw_notify("rediscovered device %s\n", dev_name(dev));
+
+		PREPARE_DELAYED_WORK(&old->work, fw_device_update);
+		schedule_delayed_work(&old->work, 0);
+
+		if (current_node == card->root_node)
+			fw_schedule_bm_work(card, 0);
+
+		match = 1;
+	}
+
+	spin_unlock_irq(&card->lock);
+	up_read(&fw_device_rwsem);
+
+	return match;
+}
 
 static void fw_device_init(struct work_struct *work)
 {
 	struct fw_device *device =
 		container_of(work, struct fw_device, work.work);
+	struct device *revived_dev;
 	int minor, err;
 
 	/*
@@ -715,18 +757,28 @@ static void fw_device_init(struct work_struct *work)
 			fw_notify("giving up on config rom for node id %x\n",
 				  device->node_id);
 			if (device->node == device->card->root_node)
-				schedule_delayed_work(&device->card->work, 0);
+				fw_schedule_bm_work(device->card, 0);
 			fw_device_release(&device->device);
 		}
 		return;
 	}
 
-	err = -ENOMEM;
+	revived_dev = device_find_child(device->card->device,
+					device, lookup_existing_device);
+	if (revived_dev) {
+		put_device(revived_dev);
+		fw_device_release(&device->device);
+
+		return;
+	}
+
+	device_initialize(&device->device);
 
 	fw_device_get(device);
 	down_write(&fw_device_rwsem);
-	if (idr_pre_get(&fw_device_idr, GFP_KERNEL))
-		err = idr_get_new(&fw_device_idr, device, &minor);
+	err = idr_pre_get(&fw_device_idr, GFP_KERNEL) ?
+	      idr_get_new(&fw_device_idr, device, &minor) :
+	      -ENOMEM;
 	up_write(&fw_device_rwsem);
 
 	if (err < 0)
@@ -736,8 +788,7 @@ static void fw_device_init(struct work_struct *work)
 	device->device.type = &fw_device_type;
 	device->device.parent = device->card->device;
 	device->device.devt = MKDEV(fw_cdev_major, minor);
-	snprintf(device->device.bus_id, sizeof(device->device.bus_id),
-		 "fw%d", minor);
+	dev_set_name(&device->device, "fw%d", minor);
 
 	init_fw_attribute_group(&device->device,
 				fw_device_attributes,
@@ -759,20 +810,21 @@ static void fw_device_init(struct work_struct *work)
 	 * fw_node_event().
 	 */
 	if (atomic_cmpxchg(&device->state,
-		    FW_DEVICE_INITIALIZING,
-		    FW_DEVICE_RUNNING) == FW_DEVICE_SHUTDOWN) {
-		fw_device_shutdown(work);
+			   FW_DEVICE_INITIALIZING,
+			   FW_DEVICE_RUNNING) == FW_DEVICE_GONE) {
+		PREPARE_DELAYED_WORK(&device->work, fw_device_shutdown);
+		schedule_delayed_work(&device->work, SHUTDOWN_DELAY);
 	} else {
 		if (device->config_rom_retries)
 			fw_notify("created device %s: GUID %08x%08x, S%d00, "
 				  "%d config ROM retries\n",
-				  device->device.bus_id,
+				  dev_name(&device->device),
 				  device->config_rom[3], device->config_rom[4],
 				  1 << device->max_speed,
 				  device->config_rom_retries);
 		else
 			fw_notify("created device %s: GUID %08x%08x, S%d00\n",
-				  device->device.bus_id,
+				  dev_name(&device->device),
 				  device->config_rom[3], device->config_rom[4],
 				  1 << device->max_speed);
 		device->config_rom_retries = 0;
@@ -785,7 +837,7 @@ static void fw_device_init(struct work_struct *work)
 	 * pretty harmless.
 	 */
 	if (device->node == device->card->root_node)
-		schedule_delayed_work(&device->card->work, 0);
+		fw_schedule_bm_work(device->card, 0);
 
 	return;
 
@@ -872,8 +924,8 @@ static void fw_device_refresh(struct work_struct *work)
 
 	case REREAD_BIB_UNCHANGED:
 		if (atomic_cmpxchg(&device->state,
-			    FW_DEVICE_INITIALIZING,
-			    FW_DEVICE_RUNNING) == FW_DEVICE_SHUTDOWN)
+				   FW_DEVICE_INITIALIZING,
+				   FW_DEVICE_RUNNING) == FW_DEVICE_GONE)
 			goto gone;
 
 		fw_device_update(work);
@@ -904,22 +956,23 @@ static void fw_device_refresh(struct work_struct *work)
 	create_units(device);
 
 	if (atomic_cmpxchg(&device->state,
-		    FW_DEVICE_INITIALIZING,
-		    FW_DEVICE_RUNNING) == FW_DEVICE_SHUTDOWN)
+			   FW_DEVICE_INITIALIZING,
+			   FW_DEVICE_RUNNING) == FW_DEVICE_GONE)
 		goto gone;
 
-	fw_notify("refreshed device %s\n", device->device.bus_id);
+	fw_notify("refreshed device %s\n", dev_name(&device->device));
 	device->config_rom_retries = 0;
 	goto out;
 
  give_up:
-	fw_notify("giving up on refresh of device %s\n", device->device.bus_id);
+	fw_notify("giving up on refresh of device %s\n", dev_name(&device->device));
  gone:
-	atomic_set(&device->state, FW_DEVICE_SHUTDOWN);
-	fw_device_shutdown(work);
+	atomic_set(&device->state, FW_DEVICE_GONE);
+	PREPARE_DELAYED_WORK(&device->work, fw_device_shutdown);
+	schedule_delayed_work(&device->work, SHUTDOWN_DELAY);
  out:
 	if (node_id == card->root_node->node_id)
-		schedule_delayed_work(&card->work, 0);
+		fw_schedule_bm_work(card, 0);
 }
 
 void fw_node_event(struct fw_card *card, struct fw_node *node, int event)
@@ -938,13 +991,14 @@ void fw_node_event(struct fw_card *card, struct fw_node *node, int event)
 
 		/*
 		 * Do minimal intialization of the device here, the
-		 * rest will happen in fw_device_init().  We need the
-		 * card and node so we can read the config rom and we
-		 * need to do device_initialize() now so
-		 * device_for_each_child() in FW_NODE_UPDATED is
-		 * doesn't freak out.
+		 * rest will happen in fw_device_init().
+		 *
+		 * Attention:  A lot of things, even fw_device_get(),
+		 * cannot be done before fw_device_init() finished!
+		 * You can basically just check device->state and
+		 * schedule work until then, but only while holding
+		 * card->lock.
 		 */
-		device_initialize(&device->device);
 		atomic_set(&device->state, FW_DEVICE_INITIALIZING);
 		device->card = fw_card_get(card);
 		device->node = fw_node_get(node);
@@ -1019,9 +1073,10 @@ void fw_node_event(struct fw_card *card, struct fw_node *node, int event)
 		 */
 		device = node->data;
 		if (atomic_xchg(&device->state,
-				FW_DEVICE_SHUTDOWN) == FW_DEVICE_RUNNING) {
+				FW_DEVICE_GONE) == FW_DEVICE_RUNNING) {
 			PREPARE_DELAYED_WORK(&device->work, fw_device_shutdown);
-			schedule_delayed_work(&device->work, 0);
+			schedule_delayed_work(&device->work,
+				list_empty(&card->link) ? 0 : SHUTDOWN_DELAY);
 		}
 		break;
 	}

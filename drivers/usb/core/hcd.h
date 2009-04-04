@@ -16,6 +16,8 @@
  * Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#ifndef __USB_CORE_HCD_H
+#define __USB_CORE_HCD_H
 
 #ifdef __KERNEL__
 
@@ -212,8 +214,6 @@ struct hc_driver {
 	int	(*bus_suspend)(struct usb_hcd *);
 	int	(*bus_resume)(struct usb_hcd *);
 	int	(*start_port_reset)(struct usb_hcd *, unsigned port_num);
-	void	(*hub_irq_enable)(struct usb_hcd *);
-		/* Needed only if port-change IRQs are level-triggered */
 
 		/* force handover of high-speed port to full-speed companion */
 	void	(*relinquish_port)(struct usb_hcd *, int);
@@ -234,6 +234,7 @@ extern void usb_hcd_flush_endpoint(struct usb_device *udev,
 		struct usb_host_endpoint *ep);
 extern void usb_hcd_disable_endpoint(struct usb_device *udev,
 		struct usb_host_endpoint *ep);
+extern void usb_hcd_synchronize_unlinks(struct usb_device *udev);
 extern int usb_hcd_get_frame_number(struct usb_device *udev);
 
 extern struct usb_hcd *usb_create_hcd(const struct hc_driver *driver,
@@ -255,7 +256,7 @@ extern int usb_hcd_pci_probe(struct pci_dev *dev,
 extern void usb_hcd_pci_remove(struct pci_dev *dev);
 
 #ifdef CONFIG_PM
-extern int usb_hcd_pci_suspend(struct pci_dev *dev, pm_message_t state);
+extern int usb_hcd_pci_suspend(struct pci_dev *dev, pm_message_t msg);
 extern int usb_hcd_pci_resume(struct pci_dev *dev);
 #endif /* CONFIG_PM */
 
@@ -379,8 +380,6 @@ extern struct list_head usb_bus_list;
 extern struct mutex usb_bus_list_lock;
 extern wait_queue_head_t usb_kill_urb_queue;
 
-extern void usb_enable_root_hub_irq(struct usb_bus *bus);
-
 extern int usb_find_interface_driver(struct usb_device *dev,
 	struct usb_interface *interface);
 
@@ -389,8 +388,8 @@ extern int usb_find_interface_driver(struct usb_device *dev,
 #ifdef CONFIG_PM
 extern void usb_hcd_resume_root_hub(struct usb_hcd *hcd);
 extern void usb_root_hub_lost_power(struct usb_device *rhdev);
-extern int hcd_bus_suspend(struct usb_device *rhdev);
-extern int hcd_bus_resume(struct usb_device *rhdev);
+extern int hcd_bus_suspend(struct usb_device *rhdev, pm_message_t msg);
+extern int hcd_bus_resume(struct usb_device *rhdev, pm_message_t msg);
 #else
 static inline void usb_hcd_resume_root_hub(struct usb_hcd *hcd)
 {
@@ -422,7 +421,7 @@ static inline void usbfs_cleanup(void) { }
 
 /*-------------------------------------------------------------------------*/
 
-#if defined(CONFIG_USB_MON)
+#if defined(CONFIG_USB_MON) || defined(CONFIG_USB_MON_MODULE)
 
 struct usb_mon_operations {
 	void (*urb_submit)(struct usb_bus *bus, struct urb *urb);
@@ -464,7 +463,7 @@ static inline void usbmon_urb_submit_error(struct usb_bus *bus, struct urb *urb,
 static inline void usbmon_urb_complete(struct usb_bus *bus, struct urb *urb,
 		int status) {}
 
-#endif /* CONFIG_USB_MON */
+#endif /* CONFIG_USB_MON || CONFIG_USB_MON_MODULE */
 
 /*-------------------------------------------------------------------------*/
 
@@ -486,4 +485,12 @@ static inline void usbmon_urb_complete(struct usb_bus *bus, struct urb *urb,
  */
 extern struct rw_semaphore ehci_cf_port_reset_rwsem;
 
+/* Keep track of which host controller drivers are loaded */
+#define USB_UHCI_LOADED		0
+#define USB_OHCI_LOADED		1
+#define USB_EHCI_LOADED		2
+extern unsigned long usb_hcds_loaded;
+
 #endif /* __KERNEL__ */
+
+#endif /* __USB_CORE_HCD_H */

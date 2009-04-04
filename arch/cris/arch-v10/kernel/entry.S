@@ -23,7 +23,7 @@
 #include <linux/linkage.h>
 #include <linux/sys.h>
 #include <asm/unistd.h>
-#include <asm/arch/sv_addr_ag.h>
+#include <arch/sv_addr_ag.h>
 #include <asm/errno.h>
 #include <asm/thread_info.h>
 #include <asm/asm-offsets.h>
@@ -691,7 +691,7 @@ sys_call_table:
 	.long sys_uselib
 	.long sys_swapon
 	.long sys_reboot
-	.long old_readdir
+	.long sys_old_readdir
 	.long old_mmap		/* 90 */
 	.long sys_munmap
 	.long sys_truncate

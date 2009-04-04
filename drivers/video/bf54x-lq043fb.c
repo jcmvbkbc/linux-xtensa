@@ -58,7 +58,7 @@
 #include <asm/gpio.h>
 #include <asm/portmux.h>
 
-#include <asm/mach/bf54x-lq043.h>
+#include <mach/bf54x-lq043.h>
 
 #define NO_BL_SUPPORT
 
@@ -335,7 +335,20 @@ static int bfin_bf54x_fb_check_var(struct fb_var_screeninfo *var,
 				   struct fb_info *info)
 {
 
-	if (var->bits_per_pixel != LCD_BPP) {
+	switch (var->bits_per_pixel) {
+	case 24:/* TRUECOLOUR, 16m */
+		var->red.offset = 16;
+		var->green.offset = 8;
+		var->blue.offset = 0;
+		var->red.length = var->green.length = var->blue.length = 8;
+		var->transp.offset = 0;
+		var->transp.length = 0;
+		var->transp.msb_right = 0;
+		var->red.msb_right = 0;
+		var->green.msb_right = 0;
+		var->blue.msb_right = 0;
+		break;
+	default:
 		pr_debug("%s: depth not supported: %u BPP\n", __func__,
 			 var->bits_per_pixel);
 		return -EINVAL;
@@ -733,7 +746,6 @@ static int bfin_bf54x_remove(struct platform_device *pdev)
 static int bfin_bf54x_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	struct fb_info *fbinfo = platform_get_drvdata(pdev);
-	struct bfin_bf54xfb_info *info = fbinfo->par;
 
 	bfin_write_EPPI0_CONTROL(bfin_read_EPPI0_CONTROL() & ~EPPI_EN);
 	disable_dma(CH_EPPI0);
@@ -747,8 +759,18 @@ static int bfin_bf54x_resume(struct platform_device *pdev)
 	struct fb_info *fbinfo = platform_get_drvdata(pdev);
 	struct bfin_bf54xfb_info *info = fbinfo->par;
 
-	enable_dma(CH_EPPI0);
-	bfin_write_EPPI0_CONTROL(bfin_read_EPPI0_CONTROL() | EPPI_EN);
+	if (info->lq043_open_cnt) {
+
+		bfin_write_EPPI0_CONTROL(0);
+		SSYNC();
+
+		config_dma(info);
+		config_ppi(info);
+
+		/* start dma */
+		enable_dma(CH_EPPI0);
+		bfin_write_EPPI0_CONTROL(bfin_read_EPPI0_CONTROL() | EPPI_EN);
+	}
 
 	return 0;
 }

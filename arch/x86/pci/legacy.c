@@ -3,7 +3,7 @@
  */
 #include <linux/init.h>
 #include <linux/pci.h>
-#include "pci.h"
+#include <asm/pci_x86.h>
 
 /*
  * Discover remaining PCI buses in case there are peer host bridges.
@@ -14,7 +14,7 @@ static void __devinit pcibios_fixup_peer_bridges(void)
 	int n, devfn;
 	long node;
 
-	if (pcibios_last_bus <= 0 || pcibios_last_bus >= 0xff)
+	if (pcibios_last_bus <= 0 || pcibios_last_bus > 0xff)
 		return;
 	DBG("PCI: Peer bridge fixup\n");
 

@@ -11,7 +11,7 @@
  * Chris Zankel	<chris@zankel.net>
  * Joe Taylor	<joe@tensilica.com>
  * Marc Gauthier<marc@tensilica.com> <marc@alumni.uwaterloo.ca>
- * Piet Delaney <piet@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
  * Kevin Chea
  */
 
@@ -47,6 +47,8 @@
 #include <asm/page.h>
 #include <asm/setup.h>
 #include <asm/param.h>
+
+#include <platform/hardware.h>
 
 #if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE)
 struct screen_info screen_info = { 0, 24, 0, 0, 0, 80, 0, 0, 0, 24, 1, 16};
@@ -86,7 +88,13 @@ sysmem_info_t __initdata sysmem;
 int initrd_is_mapped;
 #endif
 
+#ifdef CONFIG_MMU
 extern void init_mmu(void);
+#else
+static inline void init_mmu(void) { }
+#endif
+
+extern void zones_init(void);
 
 /*
  * Boot parameter parsing.
@@ -390,7 +398,10 @@ void __init setup_arch(char **cmdline_p)
 	*cmdline_p = command_line;
 
 	check_s32c1i();
-	
+
+	/*
+ 	 * Likely setup by init_arch() on the primary processor.
+	 */	
 	if (sysmem.nr_banks == 0) {
 		sysmem.nr_banks = 1;
 		sysmem.bank[0].start = PLATFORM_DEFAULT_MEM_START;
@@ -457,6 +468,7 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	paging_init();
+	zones_init();
 
 #ifdef CONFIG_VT
 # if defined(CONFIG_VGA_CONSOLE)

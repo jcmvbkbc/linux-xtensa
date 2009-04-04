@@ -31,6 +31,26 @@
  * to be reused. Garbage collection will cause the number of dirty index nodes
  * to grow, however sufficient space is reserved for the index to ensure the
  * commit will never run out of space.
+ *
+ * Notes about dead watermark. At current UBIFS implementation we assume that
+ * LEBs which have less than @c->dead_wm bytes of free + dirty space are full
+ * and not worth garbage-collecting. The dead watermark is one min. I/O unit
+ * size, or min. UBIFS node size, depending on what is greater. Indeed, UBIFS
+ * Garbage Collector has to synchronize the GC head's write buffer before
+ * returning, so this is about wasting one min. I/O unit. However, UBIFS GC can
+ * actually reclaim even very small pieces of dirty space by garbage collecting
+ * enough dirty LEBs, but we do not bother doing this at this implementation.
+ *
+ * Notes about dark watermark. The results of GC work depends on how big are
+ * the UBIFS nodes GC deals with. Large nodes make GC waste more space. Indeed,
+ * if GC move data from LEB A to LEB B and nodes in LEB A are large, GC would
+ * have to waste large pieces of free space at the end of LEB B, because nodes
+ * from LEB A would not fit. And the worst situation is when all nodes are of
+ * maximum size. So dark watermark is the amount of free + dirty space in LEB
+ * which are guaranteed to be reclaimable. If LEB has less space, the GC migh
+ * be unable to reclaim it. So, LEBs with free + dirty greater than dark
+ * watermark are "good" LEBs from GC's point of few. The other LEBs are not so
+ * good, and GC takes extra care when moving them.
  */
 
 #include <linux/pagemap.h>
@@ -45,7 +65,7 @@
 #define SMALL_NODE_WM  UBIFS_MAX_DENT_NODE_SZ
 
 /*
- * GC may need to move more then one LEB to make progress. The below constants
+ * GC may need to move more than one LEB to make progress. The below constants
  * define "soft" and "hard" limits on the number of LEBs the garbage collector
  * may move.
  */
@@ -96,6 +116,48 @@ static int switch_gc_head(struct ubifs_info *c)
 }
 
 /**
+ * joinup - bring data nodes for an inode together.
+ * @c: UBIFS file-system description object
+ * @sleb: describes scanned LEB
+ * @inum: inode number
+ * @blk: block number
+ * @data: list to which to add data nodes
+ *
+ * This function looks at the first few nodes in the scanned LEB @sleb and adds
+ * them to @data if they are data nodes from @inum and have a larger block
+ * number than @blk. This function returns %0 on success and a negative error
+ * code on failure.
+ */
+static int joinup(struct ubifs_info *c, struct ubifs_scan_leb *sleb, ino_t inum,
+		  unsigned int blk, struct list_head *data)
+{
+	int err, cnt = 6, lnum = sleb->lnum, offs;
+	struct ubifs_scan_node *snod, *tmp;
+	union ubifs_key *key;
+
+	list_for_each_entry_safe(snod, tmp, &sleb->nodes, list) {
+		key = &snod->key;
+		if (key_inum(c, key) == inum &&
+		    key_type(c, key) == UBIFS_DATA_KEY &&
+		    key_block(c, key) > blk) {
+			offs = snod->offs;
+			err = ubifs_tnc_has_node(c, key, 0, lnum, offs, 0);
+			if (err < 0)
+				return err;
+			list_del(&snod->list);
+			if (err) {
+				list_add_tail(&snod->list, data);
+				blk = key_block(c, key);
+			} else
+				kfree(snod);
+			cnt = 6;
+		} else if (--cnt == 0)
+			break;
+	}
+	return 0;
+}
+
+/**
  * move_nodes - move nodes.
  * @c: UBIFS file-system description object
  * @sleb: describes nodes to move
@@ -116,16 +178,21 @@ static int switch_gc_head(struct ubifs_info *c)
 static int move_nodes(struct ubifs_info *c, struct ubifs_scan_leb *sleb)
 {
 	struct ubifs_scan_node *snod, *tmp;
-	struct list_head large, medium, small;
+	struct list_head data, large, medium, small;
 	struct ubifs_wbuf *wbuf = &c->jheads[GCHD].wbuf;
 	int avail, err, min = INT_MAX;
+	unsigned int blk = 0;
+	ino_t inum = 0;
 
+	INIT_LIST_HEAD(&data);
 	INIT_LIST_HEAD(&large);
 	INIT_LIST_HEAD(&medium);
 	INIT_LIST_HEAD(&small);
 
-	list_for_each_entry_safe(snod, tmp, &sleb->nodes, list) {
-		struct list_head *lst;
+	while (!list_empty(&sleb->nodes)) {
+		struct list_head *lst = sleb->nodes.next;
+
+		snod = list_entry(lst, struct ubifs_scan_node, list);
 
 		ubifs_assert(snod->type != UBIFS_IDX_NODE);
 		ubifs_assert(snod->type != UBIFS_REF_NODE);
@@ -136,7 +203,6 @@ static int move_nodes(struct ubifs_info *c, struct ubifs_scan_leb *sleb)
 		if (err < 0)
 			goto out;
 
-		lst = &snod->list;
 		list_del(lst);
 		if (!err) {
 			/* The node is obsolete, remove it from the list */
@@ -145,15 +211,30 @@ static int move_nodes(struct ubifs_info *c, struct ubifs_scan_leb *sleb)
 		}
 
 		/*
-		 * Sort the list of nodes so that large nodes go first, and
-		 * small nodes go last.
+		 * Sort the list of nodes so that data nodes go first, large
+		 * nodes go second, and small nodes go last.
 		 */
-		if (snod->len > MEDIUM_NODE_WM)
-			list_add(lst, &large);
+		if (key_type(c, &snod->key) == UBIFS_DATA_KEY) {
+			if (inum != key_inum(c, &snod->key)) {
+				if (inum) {
+					/*
+					 * Try to move data nodes from the same
+					 * inode together.
+					 */
+					err = joinup(c, sleb, inum, blk, &data);
+					if (err)
+						goto out;
+				}
+				inum = key_inum(c, &snod->key);
+				blk = key_block(c, &snod->key);
+			}
+			list_add_tail(lst, &data);
+		} else if (snod->len > MEDIUM_NODE_WM)
+			list_add_tail(lst, &large);
 		else if (snod->len > SMALL_NODE_WM)
-			list_add(lst, &medium);
+			list_add_tail(lst, &medium);
 		else
-			list_add(lst, &small);
+			list_add_tail(lst, &small);
 
 		/* And find the smallest node */
 		if (snod->len < min)
@@ -164,6 +245,7 @@ static int move_nodes(struct ubifs_info *c, struct ubifs_scan_leb *sleb)
 	 * Join the tree lists so that we'd have one roughly sorted list
 	 * ('large' will be the head of the joined list).
 	 */
+	list_splice(&data, &large);
 	list_splice(&medium, large.prev);
 	list_splice(&small, large.prev);
 
@@ -319,7 +401,7 @@ int ubifs_garbage_collect_leb(struct ubifs_info *c, struct ubifs_lprops *lp)
 
 		/*
 		 * Don't release the LEB until after the next commit, because
-		 * it may contain date which is needed for recovery. So
+		 * it may contain data which is needed for recovery. So
 		 * although we freed this LEB, it will become usable only after
 		 * the commit.
 		 */
@@ -334,15 +416,21 @@ int ubifs_garbage_collect_leb(struct ubifs_info *c, struct ubifs_lprops *lp)
 
 		err = move_nodes(c, sleb);
 		if (err)
-			goto out;
+			goto out_inc_seq;
 
 		err = gc_sync_wbufs(c);
 		if (err)
-			goto out;
+			goto out_inc_seq;
 
 		err = ubifs_change_one_lp(c, lnum, c->leb_size, 0, 0, 0, 0);
 		if (err)
-			goto out;
+			goto out_inc_seq;
+
+		/* Allow for races with TNC */
+		c->gced_lnum = lnum;
+		smp_wmb();
+		c->gc_seq += 1;
+		smp_wmb();
 
 		if (c->gc_lnum == -1) {
 			c->gc_lnum = lnum;
@@ -363,6 +451,14 @@ int ubifs_garbage_collect_leb(struct ubifs_info *c, struct ubifs_lprops *lp)
 out:
 	ubifs_scan_destroy(sleb);
 	return err;
+
+out_inc_seq:
+	/* We may have moved at least some nodes so allow for races with TNC */
+	c->gced_lnum = lnum;
+	smp_wmb();
+	c->gc_seq += 1;
+	smp_wmb();
+	goto out;
 }
 
 /**
@@ -639,7 +735,7 @@ int ubifs_gc_start_commit(struct ubifs_info *c)
 	 */
 	while (1) {
 		lp = ubifs_fast_find_freeable(c);
-		if (unlikely(IS_ERR(lp))) {
+		if (IS_ERR(lp)) {
 			err = PTR_ERR(lp);
 			goto out;
 		}
@@ -651,7 +747,7 @@ int ubifs_gc_start_commit(struct ubifs_info *c)
 		if (err)
 			goto out;
 		lp = ubifs_change_lp(c, lp, c->leb_size, 0, lp->flags, 0);
-		if (unlikely(IS_ERR(lp))) {
+		if (IS_ERR(lp)) {
 			err = PTR_ERR(lp);
 			goto out;
 		}
@@ -666,7 +762,7 @@ int ubifs_gc_start_commit(struct ubifs_info *c)
 	/* Record index freeable LEBs for unmapping after commit */
 	while (1) {
 		lp = ubifs_fast_find_frdi_idx(c);
-		if (unlikely(IS_ERR(lp))) {
+		if (IS_ERR(lp)) {
 			err = PTR_ERR(lp);
 			goto out;
 		}
@@ -682,7 +778,7 @@ int ubifs_gc_start_commit(struct ubifs_info *c)
 		/* Don't release the LEB until after the next commit */
 		flags = (lp->flags | LPROPS_TAKEN) ^ LPROPS_INDEX;
 		lp = ubifs_change_lp(c, lp, c->leb_size, 0, flags, 1);
-		if (unlikely(IS_ERR(lp))) {
+		if (IS_ERR(lp)) {
 			err = PTR_ERR(lp);
 			kfree(idx_gc);
 			goto out;
@@ -734,8 +830,9 @@ out:
  * ubifs_destroy_idx_gc - destroy idx_gc list.
  * @c: UBIFS file-system description object
  *
- * This function destroys the idx_gc list. It is called when unmounting or
- * remounting read-only so locks are not needed.
+ * This function destroys the @c->idx_gc list. It is called when unmounting
+ * so locks are not needed. Returns zero in case of success and a negative
+ * error code in case of failure.
  */
 void ubifs_destroy_idx_gc(struct ubifs_info *c)
 {
@@ -748,7 +845,6 @@ void ubifs_destroy_idx_gc(struct ubifs_info *c)
 		list_del(&idx_gc->list);
 		kfree(idx_gc);
 	}
-
 }
 
 /**

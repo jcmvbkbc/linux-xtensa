@@ -17,19 +17,18 @@
 
 #define EFX_WORKAROUND_ALWAYS(efx) 1
 #define EFX_WORKAROUND_FALCON_A(efx) (falcon_rev(efx) <= FALCON_REV_A1)
+#define EFX_WORKAROUND_10G(efx) EFX_IS10G(efx)
+#define EFX_WORKAROUND_SFT9001(efx) ((efx)->phy_type == PHY_TYPE_SFT9001A || \
+				     (efx)->phy_type == PHY_TYPE_SFT9001B)
 
 /* XAUI resets if link not detected */
 #define EFX_WORKAROUND_5147 EFX_WORKAROUND_ALWAYS
-/* SNAP frames have TOBE_DISC set */
-#define EFX_WORKAROUND_5475 EFX_WORKAROUND_ALWAYS
 /* RX PCIe double split performance issue */
 #define EFX_WORKAROUND_7575 EFX_WORKAROUND_ALWAYS
+/* Bit-bashed I2C reads cause performance drop */
+#define EFX_WORKAROUND_7884 EFX_WORKAROUND_10G
 /* TX pkt parser problem with <= 16 byte TXes */
 #define EFX_WORKAROUND_9141 EFX_WORKAROUND_ALWAYS
-/* XGXS and XAUI reset sequencing in SW */
-#define EFX_WORKAROUND_9388 EFX_WORKAROUND_ALWAYS
-/* Low rate CRC errors require XAUI reset */
-#define EFX_WORKAROUND_10750 EFX_WORKAROUND_ALWAYS
 /* TX_EV_PKT_ERR can be caused by a dangling TX descriptor
  * or a PCIe error (bug 11028) */
 #define EFX_WORKAROUND_10727 EFX_WORKAROUND_ALWAYS
@@ -52,5 +51,10 @@
 #define EFX_WORKAROUND_7803 EFX_WORKAROUND_FALCON_A
 /* Leak overlength packets rather than free */
 #define EFX_WORKAROUND_8071 EFX_WORKAROUND_FALCON_A
+
+/* Need to send XNP pages for 100BaseT */
+#define EFX_WORKAROUND_13204 EFX_WORKAROUND_SFT9001
+/* Don't restart AN in near-side loopback */
+#define EFX_WORKAROUND_15195 EFX_WORKAROUND_SFT9001
 
 #endif /* EFX_WORKAROUNDS_H */

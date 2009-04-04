@@ -112,6 +112,22 @@ int crypto_hash_walk_first(struct ahash_request *req,
 }
 EXPORT_SYMBOL_GPL(crypto_hash_walk_first);
 
+int crypto_hash_walk_first_compat(struct hash_desc *hdesc,
+				  struct crypto_hash_walk *walk,
+				  struct scatterlist *sg, unsigned int len)
+{
+	walk->total = len;
+
+	if (!walk->total)
+		return 0;
+
+	walk->alignmask = crypto_hash_alignmask(hdesc->tfm);
+	walk->sg = sg;
+	walk->flags = hdesc->flags;
+
+	return hash_walk_new_entry(walk);
+}
+
 static int ahash_setkey_unaligned(struct crypto_ahash *tfm, const u8 *key,
 				unsigned int keylen)
 {
@@ -146,6 +162,26 @@ static int ahash_setkey(struct crypto_ahash *tfm, const u8 *key,
 	return ahash->setkey(tfm, key, keylen);
 }
 
+static int ahash_nosetkey(struct crypto_ahash *tfm, const u8 *key,
+			  unsigned int keylen)
+{
+	return -ENOSYS;
+}
+
+int crypto_ahash_import(struct ahash_request *req, const u8 *in)
+{
+	struct crypto_ahash *tfm = crypto_ahash_reqtfm(req);
+	struct ahash_alg *alg = crypto_ahash_alg(tfm);
+
+	memcpy(ahash_request_ctx(req), in, crypto_ahash_reqsize(tfm));
+
+	if (alg->reinit)
+		alg->reinit(req);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(crypto_ahash_import);
+
 static unsigned int crypto_ahash_ctxsize(struct crypto_alg *alg, u32 type,
 					u32 mask)
 {
@@ -164,7 +200,7 @@ static int crypto_init_ahash_ops(struct crypto_tfm *tfm, u32 type, u32 mask)
 	crt->update = alg->update;
 	crt->final  = alg->final;
 	crt->digest = alg->digest;
-	crt->setkey = ahash_setkey;
+	crt->setkey = alg->setkey ? ahash_setkey : ahash_nosetkey;
 	crt->digestsize = alg->digestsize;
 
 	return 0;
@@ -178,7 +214,7 @@ static void crypto_ahash_show(struct seq_file *m, struct crypto_alg *alg)
 	seq_printf(m, "async        : %s\n", alg->cra_flags & CRYPTO_ALG_ASYNC ?
 					     "yes" : "no");
 	seq_printf(m, "blocksize    : %u\n", alg->cra_blocksize);
-	seq_printf(m, "digestsize   : %u\n", alg->cra_hash.digestsize);
+	seq_printf(m, "digestsize   : %u\n", alg->cra_ahash.digestsize);
 }
 
 const struct crypto_type crypto_ahash_type = {

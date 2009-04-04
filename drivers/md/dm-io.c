@@ -5,7 +5,7 @@
  * This file is released under the GPL.
  */
 
-#include "dm.h"
+#include <linux/device-mapper.h>
 
 #include <linux/bio.h>
 #include <linux/mempool.h>
@@ -56,7 +56,7 @@ struct dm_io_client *dm_io_client_create(unsigned num_pages)
 	if (!client->pool)
 		goto bad;
 
-	client->bios = bioset_create(16, 16);
+	client->bios = bioset_create(16, 0);
 	if (!client->bios)
 		goto bad;
 
@@ -328,7 +328,7 @@ static void dispatch_io(int rw, unsigned int num_regions,
 	struct dpages old_pages = *dp;
 
 	if (sync)
-		rw |= (1 << BIO_RW_SYNC);
+		rw |= (1 << BIO_RW_SYNCIO) | (1 << BIO_RW_UNPLUG);
 
 	/*
 	 * For multiple regions we need to be careful to rewind

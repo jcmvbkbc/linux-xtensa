@@ -12,7 +12,7 @@
  * Joe Taylor <joe@tensilica.com>
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
- * Piet Delaney <piet@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
  */
 
 #include <linux/linkage.h>

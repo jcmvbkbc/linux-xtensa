@@ -1,5 +1,5 @@
 /*
- * arch/xtensa/platform-iss/console.c
+ * arch/xtensa/platforms/iss/console.c
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
@@ -24,7 +24,7 @@
 #include <asm/uaccess.h>
 #include <asm/irq.h>
 
-#include <asm/platform/simcall.h>
+#include <platform/simcall.h>
 
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
@@ -140,16 +140,14 @@ static void rs_poll(unsigned long priv)
 }
 
 
-static void rs_put_char(struct tty_struct *tty, unsigned char ch)
+static int rs_put_char(struct tty_struct *tty, unsigned char ch)
 {
 	char buf[2];
-
-	if (!tty)
-		return;
 
 	buf[0] = ch;
 	buf[1] = '\0';		/* Is this NULL necessary? */
 	__simc (SYS_write, 1, (unsigned long) buf, 1, 0, 0);
+	return 1;
 }
 
 static void rs_flush_chars(struct tty_struct *tty)

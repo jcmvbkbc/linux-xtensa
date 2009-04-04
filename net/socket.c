@@ -69,7 +69,6 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/mutex.h>
-#include <linux/thread_info.h>
 #include <linux/wanrouter.h>
 #include <linux/if_bridge.h>
 #include <linux/if_frad.h>
@@ -491,8 +490,8 @@ static struct socket *sock_alloc(void)
 	sock = SOCKET_I(inode);
 
 	inode->i_mode = S_IFSOCK | S_IRWXUGO;
-	inode->i_uid = current->fsuid;
-	inode->i_gid = current->fsgid;
+	inode->i_uid = current_fsuid();
+	inode->i_gid = current_fsgid();
 
 	get_cpu_var(sockets_in_use)++;
 	put_cpu_var(sockets_in_use);
@@ -990,7 +989,6 @@ static int sock_close(struct inode *inode, struct file *filp)
 		printk(KERN_DEBUG "sock_close: NULL inode\n");
 		return 0;
 	}
-	sock_fasync(-1, filp, 0);
 	sock_release(SOCKET_I(inode));
 	return 0;
 }
@@ -1142,7 +1140,7 @@ static int __sock_create(struct net *net, int family, int type, int protocol,
 
 	sock->type = type;
 
-#if defined(CONFIG_KMOD)
+#ifdef CONFIG_MODULES
 	/* Attempt to load a protocol module if the find failed.
 	 *
 	 * 12/09/1996 Marcin: But! this makes REALLY only sense, if the user
@@ -1216,7 +1214,7 @@ int sock_create_kern(int family, int type, int protocol, struct socket **res)
 	return __sock_create(&init_net, family, type, protocol, res, 1);
 }
 
-asmlinkage long sys_socket(int family, int type, int protocol)
+SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
 {
 	int retval;
 	struct socket *sock;
@@ -1257,8 +1255,8 @@ out_release:
  *	Create a pair of connected sockets.
  */
 
-asmlinkage long sys_socketpair(int family, int type, int protocol,
-			       int __user *usockvec)
+SYSCALL_DEFINE4(socketpair, int, family, int, type, int, protocol,
+		int __user *, usockvec)
 {
 	struct socket *sock1, *sock2;
 	int fd1, fd2, err;
@@ -1315,13 +1313,7 @@ asmlinkage long sys_socketpair(int family, int type, int protocol,
 		goto out_fd1;
 	}
 
-	err = audit_fd_pair(fd1, fd2);
-	if (err < 0) {
-		fput(newfile1);
-		fput(newfile2);
-		goto out_fd;
-	}
-
+	audit_fd_pair(fd1, fd2);
 	fd_install(fd1, newfile1);
 	fd_install(fd2, newfile2);
 	/* fd1 and fd2 may be already another descriptors.
@@ -1351,7 +1343,6 @@ out_fd2:
 out_fd1:
 	put_filp(newfile2);
 	sock_release(sock2);
-out_fd:
 	put_unused_fd(fd1);
 	put_unused_fd(fd2);
 	goto out;
@@ -1365,7 +1356,7 @@ out_fd:
  *	the protocol layer (having also checked the address is ok).
  */
 
-asmlinkage long sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
+SYSCALL_DEFINE3(bind, int, fd, struct sockaddr __user *, umyaddr, int, addrlen)
 {
 	struct socket *sock;
 	struct sockaddr_storage address;
@@ -1394,7 +1385,7 @@ asmlinkage long sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
  *	ready for listening.
  */
 
-asmlinkage long sys_listen(int fd, int backlog)
+SYSCALL_DEFINE2(listen, int, fd, int, backlog)
 {
 	struct socket *sock;
 	int err, fput_needed;
@@ -1427,8 +1418,8 @@ asmlinkage long sys_listen(int fd, int backlog)
  *	clean when we restucture accept also.
  */
 
-long do_accept(int fd, struct sockaddr __user *upeer_sockaddr,
-	       int __user *upeer_addrlen, int flags)
+SYSCALL_DEFINE4(accept4, int, fd, struct sockaddr __user *, upeer_sockaddr,
+		int __user *, upeer_addrlen, int, flags)
 {
 	struct socket *sock, *newsock;
 	struct file *newfile;
@@ -1511,64 +1502,10 @@ out_fd:
 	goto out_put;
 }
 
-#ifdef HAVE_SET_RESTORE_SIGMASK
-asmlinkage long sys_paccept(int fd, struct sockaddr __user *upeer_sockaddr,
-			    int __user *upeer_addrlen,
-			    const sigset_t __user *sigmask,
-			    size_t sigsetsize, int flags)
+SYSCALL_DEFINE3(accept, int, fd, struct sockaddr __user *, upeer_sockaddr,
+		int __user *, upeer_addrlen)
 {
-	sigset_t ksigmask, sigsaved;
-	int ret;
-
-	if (sigmask) {
-		/* XXX: Don't preclude handling different sized sigset_t's.  */
-		if (sigsetsize != sizeof(sigset_t))
-			return -EINVAL;
-		if (copy_from_user(&ksigmask, sigmask, sizeof(ksigmask)))
-			return -EFAULT;
-
-		sigdelsetmask(&ksigmask, sigmask(SIGKILL)|sigmask(SIGSTOP));
-		sigprocmask(SIG_SETMASK, &ksigmask, &sigsaved);
-        }
-
-	ret = do_accept(fd, upeer_sockaddr, upeer_addrlen, flags);
-
-	if (ret < 0 && signal_pending(current)) {
-		/*
-		 * Don't restore the signal mask yet. Let do_signal() deliver
-		 * the signal on the way back to userspace, before the signal
-		 * mask is restored.
-		 */
-		if (sigmask) {
-			memcpy(&current->saved_sigmask, &sigsaved,
-			       sizeof(sigsaved));
-			set_restore_sigmask();
-		}
-	} else if (sigmask)
-		sigprocmask(SIG_SETMASK, &sigsaved, NULL);
-
-	return ret;
-}
-#else
-asmlinkage long sys_paccept(int fd, struct sockaddr __user *upeer_sockaddr,
-			    int __user *upeer_addrlen,
-			    const sigset_t __user *sigmask,
-			    size_t sigsetsize, int flags)
-{
-	/* The platform does not support restoring the signal mask in the
-	 * return path.  So we do not allow using paccept() with a signal
-	 * mask.  */
-	if (sigmask)
-		return -EINVAL;
-
-	return do_accept(fd, upeer_sockaddr, upeer_addrlen, flags);
-}
-#endif
-
-asmlinkage long sys_accept(int fd, struct sockaddr __user *upeer_sockaddr,
-			   int __user *upeer_addrlen)
-{
-	return do_accept(fd, upeer_sockaddr, upeer_addrlen, 0);
+	return sys_accept4(fd, upeer_sockaddr, upeer_addrlen, 0);
 }
 
 /*
@@ -1583,8 +1520,8 @@ asmlinkage long sys_accept(int fd, struct sockaddr __user *upeer_sockaddr,
  *	include the -EINPROGRESS status for such sockets.
  */
 
-asmlinkage long sys_connect(int fd, struct sockaddr __user *uservaddr,
-			    int addrlen)
+SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr,
+		int, addrlen)
 {
 	struct socket *sock;
 	struct sockaddr_storage address;
@@ -1615,8 +1552,8 @@ out:
  *	name to user space.
  */
 
-asmlinkage long sys_getsockname(int fd, struct sockaddr __user *usockaddr,
-				int __user *usockaddr_len)
+SYSCALL_DEFINE3(getsockname, int, fd, struct sockaddr __user *, usockaddr,
+		int __user *, usockaddr_len)
 {
 	struct socket *sock;
 	struct sockaddr_storage address;
@@ -1646,8 +1583,8 @@ out:
  *	name to user space.
  */
 
-asmlinkage long sys_getpeername(int fd, struct sockaddr __user *usockaddr,
-				int __user *usockaddr_len)
+SYSCALL_DEFINE3(getpeername, int, fd, struct sockaddr __user *, usockaddr,
+		int __user *, usockaddr_len)
 {
 	struct socket *sock;
 	struct sockaddr_storage address;
@@ -1678,9 +1615,9 @@ asmlinkage long sys_getpeername(int fd, struct sockaddr __user *usockaddr,
  *	the protocol.
  */
 
-asmlinkage long sys_sendto(int fd, void __user *buff, size_t len,
-			   unsigned flags, struct sockaddr __user *addr,
-			   int addr_len)
+SYSCALL_DEFINE6(sendto, int, fd, void __user *, buff, size_t, len,
+		unsigned, flags, struct sockaddr __user *, addr,
+		int, addr_len)
 {
 	struct socket *sock;
 	struct sockaddr_storage address;
@@ -1723,7 +1660,8 @@ out:
  *	Send a datagram down a socket.
  */
 
-asmlinkage long sys_send(int fd, void __user *buff, size_t len, unsigned flags)
+SYSCALL_DEFINE4(send, int, fd, void __user *, buff, size_t, len,
+		unsigned, flags)
 {
 	return sys_sendto(fd, buff, len, flags, NULL, 0);
 }
@@ -1734,9 +1672,9 @@ asmlinkage long sys_send(int fd, void __user *buff, size_t len, unsigned flags)
  *	sender address from kernel to user space.
  */
 
-asmlinkage long sys_recvfrom(int fd, void __user *ubuf, size_t size,
-			     unsigned flags, struct sockaddr __user *addr,
-			     int __user *addr_len)
+SYSCALL_DEFINE6(recvfrom, int, fd, void __user *, ubuf, size_t, size,
+		unsigned, flags, struct sockaddr __user *, addr,
+		int __user *, addr_len)
 {
 	struct socket *sock;
 	struct iovec iov;
@@ -1788,8 +1726,8 @@ asmlinkage long sys_recv(int fd, void __user *ubuf, size_t size,
  *	to pass the user mode parameter for the protocols to sort out.
  */
 
-asmlinkage long sys_setsockopt(int fd, int level, int optname,
-			       char __user *optval, int optlen)
+SYSCALL_DEFINE5(setsockopt, int, fd, int, level, int, optname,
+		char __user *, optval, int, optlen)
 {
 	int err, fput_needed;
 	struct socket *sock;
@@ -1822,8 +1760,8 @@ out_put:
  *	to pass a user mode parameter for the protocols to sort out.
  */
 
-asmlinkage long sys_getsockopt(int fd, int level, int optname,
-			       char __user *optval, int __user *optlen)
+SYSCALL_DEFINE5(getsockopt, int, fd, int, level, int, optname,
+		char __user *, optval, int __user *, optlen)
 {
 	int err, fput_needed;
 	struct socket *sock;
@@ -1852,7 +1790,7 @@ out_put:
  *	Shutdown a socket.
  */
 
-asmlinkage long sys_shutdown(int fd, int how)
+SYSCALL_DEFINE2(shutdown, int, fd, int, how)
 {
 	int err, fput_needed;
 	struct socket *sock;
@@ -1878,7 +1816,7 @@ asmlinkage long sys_shutdown(int fd, int how)
  *	BSD sendmsg interface
  */
 
-asmlinkage long sys_sendmsg(int fd, struct msghdr __user *msg, unsigned flags)
+SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
 {
 	struct compat_msghdr __user *msg_compat =
 	    (struct compat_msghdr __user *)msg;
@@ -1984,8 +1922,8 @@ out:
  *	BSD recvmsg interface
  */
 
-asmlinkage long sys_recvmsg(int fd, struct msghdr __user *msg,
-			    unsigned int flags)
+SYSCALL_DEFINE3(recvmsg, int, fd, struct msghdr __user *, msg,
+		unsigned int, flags)
 {
 	struct compat_msghdr __user *msg_compat =
 	    (struct compat_msghdr __user *)msg;
@@ -2095,7 +2033,7 @@ static const unsigned char nargs[19]={
 	AL(0),AL(3),AL(3),AL(3),AL(2),AL(3),
 	AL(3),AL(3),AL(4),AL(4),AL(4),AL(6),
 	AL(6),AL(2),AL(5),AL(5),AL(3),AL(3),
-	AL(6)
+	AL(4)
 };
 
 #undef AL
@@ -2108,22 +2046,20 @@ static const unsigned char nargs[19]={
  *  it is set by the callees.
  */
 
-asmlinkage long sys_socketcall(int call, unsigned long __user *args)
+SYSCALL_DEFINE2(socketcall, int, call, unsigned long __user *, args)
 {
 	unsigned long a[6];
 	unsigned long a0, a1;
 	int err;
 
-	if (call < 1 || call > SYS_PACCEPT)
+	if (call < 1 || call > SYS_ACCEPT4)
 		return -EINVAL;
 
 	/* copy_from_user should be SMP safe. */
 	if (copy_from_user(a, args, nargs[call]))
 		return -EFAULT;
 
-	err = audit_socketcall(nargs[call] / sizeof(unsigned long), a);
-	if (err)
-		return err;
+	audit_socketcall(nargs[call] / sizeof(unsigned long), a);
 
 	a0 = a[0];
 	a1 = a[1];
@@ -2142,9 +2078,8 @@ asmlinkage long sys_socketcall(int call, unsigned long __user *args)
 		err = sys_listen(a0, a1);
 		break;
 	case SYS_ACCEPT:
-		err =
-		    do_accept(a0, (struct sockaddr __user *)a1,
-			      (int __user *)a[2], 0);
+		err = sys_accept4(a0, (struct sockaddr __user *)a1,
+				  (int __user *)a[2], 0);
 		break;
 	case SYS_GETSOCKNAME:
 		err =
@@ -2191,12 +2126,9 @@ asmlinkage long sys_socketcall(int call, unsigned long __user *args)
 	case SYS_RECVMSG:
 		err = sys_recvmsg(a0, (struct msghdr __user *)a1, a[2]);
 		break;
-	case SYS_PACCEPT:
-		err =
-		    sys_paccept(a0, (struct sockaddr __user *)a1,
-			        (int __user *)a[2],
-				(const sigset_t __user *) a[3],
-				a[4], a[5]);
+	case SYS_ACCEPT4:
+		err = sys_accept4(a0, (struct sockaddr __user *)a1,
+				  (int __user *)a[2], a[3]);
 		break;
 	default:
 		err = -EINVAL;
@@ -2366,6 +2298,7 @@ int kernel_accept(struct socket *sock, struct socket **newsock, int flags)
 	}
 
 	(*newsock)->ops = sock->ops;
+	__module_get((*newsock)->ops->owner);
 
 done:
 	return err;

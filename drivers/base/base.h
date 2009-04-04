@@ -54,7 +54,7 @@ struct driver_private {
  */
 struct class_private {
 	struct kset class_subsys;
-	struct list_head class_devices;
+	struct klist class_devices;
 	struct list_head class_interfaces;
 	struct kset class_dirs;
 	struct mutex class_mutex;
@@ -88,8 +88,6 @@ extern void driver_detach(struct device_driver *drv);
 extern int driver_probe_device(struct device_driver *drv, struct device *dev);
 
 extern void sysdev_shutdown(void);
-extern int sysdev_suspend(pm_message_t state);
-extern int sysdev_resume(void);
 
 extern char *make_class_name(const char *name, struct kobject *kobj);
 

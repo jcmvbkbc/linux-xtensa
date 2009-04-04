@@ -10,6 +10,8 @@
 #ifndef __GFS2_ONDISK_DOT_H__
 #define __GFS2_ONDISK_DOT_H__
 
+#include <linux/types.h>
+
 #define GFS2_MAGIC		0x01161970
 #define GFS2_BASIC_BLOCK	512
 #define GFS2_BASIC_BLOCK_SHIFT	9
@@ -118,7 +120,11 @@ struct gfs2_sb {
 
 	char sb_lockproto[GFS2_LOCKNAME_LEN];
 	char sb_locktable[GFS2_LOCKNAME_LEN];
-	/* In gfs1, quota and license dinodes followed */
+
+	struct gfs2_inum __pad3; /* Was quota inode in gfs1 */
+	struct gfs2_inum __pad4; /* Was licence inode in gfs1 */
+#define GFS2_HAS_UUID 1
+	__u8 sb_uuid[16]; /* The UUID, maybe 0 for backwards compat */
 };
 
 /*

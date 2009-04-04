@@ -128,8 +128,6 @@ sys32_alarm_wrapper:
 	llgfr	%r2,%r2			# unsigned int
 	jg	sys_alarm		# branch to system call
 
-#sys32_pause_wrapper			# void
-
 	.globl	compat_sys_utime_wrapper
 compat_sys_utime_wrapper:
 	llgtr	%r2,%r2			# char *
@@ -334,17 +332,17 @@ compat_sys_getrusage_wrapper:
 	llgtr	%r3,%r3			# struct rusage_emu31 *
 	jg	compat_sys_getrusage	# branch to system call
 
-	.globl	sys32_gettimeofday_wrapper
-sys32_gettimeofday_wrapper:
+	.globl	compat_sys_gettimeofday_wrapper
+compat_sys_gettimeofday_wrapper:
 	llgtr	%r2,%r2			# struct timeval_emu31 *
 	llgtr	%r3,%r3			# struct timezone *
-	jg	sys32_gettimeofday	# branch to system call
+	jg	compat_sys_gettimeofday	# branch to system call
 
-	.globl	sys32_settimeofday_wrapper
-sys32_settimeofday_wrapper:
+	.globl	compat_sys_settimeofday_wrapper
+compat_sys_settimeofday_wrapper:
 	llgtr	%r2,%r2			# struct timeval_emu31 *
 	llgtr	%r3,%r3			# struct timezone *
-	jg	sys32_settimeofday	# branch to system call
+	jg	compat_sys_settimeofday	# branch to system call
 
 	.globl	sys32_getgroups16_wrapper
 sys32_getgroups16_wrapper:
@@ -549,7 +547,7 @@ sys32_setdomainname_wrapper:
 	.globl	sys32_newuname_wrapper
 sys32_newuname_wrapper:
 	llgtr	%r2,%r2			# struct new_utsname *
-	jg	s390x_newuname		# branch to system call
+	jg	sys_s390_newuname	# branch to system call
 
 	.globl	compat_sys_adjtimex_wrapper
 compat_sys_adjtimex_wrapper:
@@ -617,7 +615,7 @@ sys32_sysfs_wrapper:
 	.globl	sys32_personality_wrapper
 sys32_personality_wrapper:
 	llgfr	%r2,%r2			# unsigned long
-	jg	s390x_personality	# branch to system call
+	jg	sys_s390_personality	# branch to system call
 
 	.globl	sys32_setfsuid16_wrapper
 sys32_setfsuid16_wrapper:
@@ -1769,3 +1767,41 @@ sys_dup3_wrapper:
 sys_epoll_create1_wrapper:
 	lgfr	%r2,%r2			# int
 	jg	sys_epoll_create1	# branch to system call
+
+	.globl	sys32_readahead_wrapper
+sys32_readahead_wrapper:
+	lgfr	%r2,%r2			# int
+	llgfr	%r3,%r3			# u32
+	llgfr	%r4,%r4			# u32
+	lgfr	%r5,%r5			# s32
+	jg	sys32_readahead		# branch to system call
+
+	.globl	sys32_sendfile64_wrapper
+sys32_sendfile64_wrapper:
+	lgfr	%r2,%r2			# int
+	lgfr	%r3,%r3			# int
+	llgtr	%r4,%r4			# compat_loff_t *
+	lgfr	%r5,%r5			# s32
+	jg	sys32_sendfile64	# branch to system call
+
+	.globl	sys_tkill_wrapper
+sys_tkill_wrapper:
+	lgfr	%r2,%r2			# pid_t
+	lgfr	%r3,%r3			# int
+	jg	sys_tkill		# branch to system call
+
+	.globl	sys_tgkill_wrapper
+sys_tgkill_wrapper:
+	lgfr	%r2,%r2			# pid_t
+	lgfr	%r3,%r3			# pid_t
+	lgfr	%r4,%r4			# int
+	jg	sys_tgkill		# branch to system call
+
+	.globl	compat_sys_keyctl_wrapper
+compat_sys_keyctl_wrapper:
+	llgfr	%r2,%r2			# u32
+	llgfr	%r3,%r3			# u32
+	llgfr	%r4,%r4			# u32
+	llgfr	%r5,%r5			# u32
+	llgfr	%r6,%r6			# u32
+	jg	compat_sys_keyctl	# branch to system call

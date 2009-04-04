@@ -149,7 +149,7 @@ EXPORT_SYMBOL_GPL(ps3_get_spe_id);
 
 static unsigned long get_vas_id(void)
 {
-	unsigned long id;
+	u64 id;
 
 	lv1_get_logical_ppe_id(&id);
 	lv1_get_virtual_address_space_id_of_ppe(id, &id);
@@ -160,14 +160,18 @@ static unsigned long get_vas_id(void)
 static int __init construct_spu(struct spu *spu)
 {
 	int result;
-	unsigned long unused;
+	u64 unused;
+	u64 problem_phys;
+	u64 local_store_phys;
 
 	result = lv1_construct_logical_spe(PAGE_SHIFT, PAGE_SHIFT, PAGE_SHIFT,
 		PAGE_SHIFT, PAGE_SHIFT, get_vas_id(), SPE_TYPE_LOGICAL,
-		&spu_pdata(spu)->priv2_addr, &spu->problem_phys,
-		&spu->local_store_phys, &unused,
+		&spu_pdata(spu)->priv2_addr, &problem_phys,
+		&local_store_phys, &unused,
 		&spu_pdata(spu)->shadow_addr,
 		&spu_pdata(spu)->spe_id);
+	spu->problem_phys = problem_phys;
+	spu->local_store_phys = local_store_phys;
 
 	if (result) {
 		pr_debug("%s:%d: lv1_construct_logical_spe failed: %s\n",
@@ -186,14 +190,24 @@ static void spu_unmap(struct spu *spu)
 	iounmap(spu_pdata(spu)->shadow);
 }
 
+/**
+ * setup_areas - Map the spu regions into the address space.
+ *
+ * The current HV requires the spu shadow regs to be mapped with the
+ * PTE page protection bits set as read-only (PP=3).  This implementation
+ * uses the low level __ioremap() to bypass the page protection settings
+ * inforced by ioremap_flags() to get the needed PTE bits set for the
+ * shadow regs.
+ */
+
 static int __init setup_areas(struct spu *spu)
 {
 	struct table {char* name; unsigned long addr; unsigned long size;};
+	static const unsigned long shadow_flags = _PAGE_NO_CACHE | 3;
 
-	spu_pdata(spu)->shadow = ioremap_flags(spu_pdata(spu)->shadow_addr,
-					       sizeof(struct spe_shadow),
-					       pgprot_val(PAGE_READONLY) |
-					       _PAGE_NO_CACHE);
+	spu_pdata(spu)->shadow = __ioremap(spu_pdata(spu)->shadow_addr,
+					   sizeof(struct spe_shadow),
+					   shadow_flags);
 	if (!spu_pdata(spu)->shadow) {
 		pr_debug("%s:%d: ioremap shadow failed\n", __func__, __LINE__);
 		goto fail_ioremap;

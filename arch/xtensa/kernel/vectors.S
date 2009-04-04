@@ -108,6 +108,12 @@ ENTRY(_UserExceptionVector)
 ENTRY(_KernelExceptionVector)
 
 	xsr	a3, EXCSAVE_1		# save a3, and get dispatch table
+
+#if 0
+1:					# DEBUG
+	beqz	a3, 1b			# Loop if dispatch table not set up yet.
+#endif
+
 	wsr	a2, DEPC		# save a2
 	addi	a2, a1, -48-PT_SIZE	# adjust stack pointer for a future call12
 	s32i	a0, a2, PT_AREG0	# save a0 to ESF
@@ -225,9 +231,14 @@ ENTRY(_DoubleExceptionVector)
 	/* Get a register we can work with. */
 
 	xsr	a3, EXCSAVE_1
+#if 0
+1:					# DEBUG
+	beqz	a3, 1b			# Loop if dispatch table not set up yet.
+#endif
+
 	s32i	a2, a3, EXC_TABLE_DOUBLE_SAVE
 
-	/* Check for kernel double exception (usually fatal). */
+	/* Check for KERNEL double exception (usually fatal). */
 
 	rsr	a2, PS
 	_bbsi.l	a2, PS_UM_BIT, 2f	# NOTE: .Lksp is now to far away for a branch
@@ -513,6 +524,7 @@ _DoubleExceptionVector_WindowOverflow:
 	 * Might want to switch to a reserved kernel stack for the current
 	 * CPU here as the current stack might be blown.
 	 */
+#ifdef CONFIG_MMU
 	.extern fast_second_level_miss_double_kernel
 
 .Lksp:	/* OLDa0: a0, a1: a1, a2: a2, a3: trashed, depc: depc, excsave: a3 */
@@ -523,6 +535,9 @@ _DoubleExceptionVector_WindowOverflow:
 	bnez	a3, .Lunrecoverable
 1:	movi	a3, fast_second_level_miss_double_kernel
 	jx	a3
+#else
+.equ	.Lksp,	.Lunrecoverable
+#endif
 
 	/* Critical! We can't handle this situation. PANIC! */
 

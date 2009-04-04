@@ -45,11 +45,6 @@
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
 
-#ifndef CONFIG_BT_HCI_CORE_DEBUG
-#undef  BT_DBG
-#define BT_DBG(D...)
-#endif
-
 /* Handle HCI Event packets */
 
 static void hci_cc_inquiry_cancel(struct hci_dev *hdev, struct sk_buff *skb)
@@ -1605,14 +1600,11 @@ static inline void hci_remote_ext_features_evt(struct hci_dev *hdev, struct sk_b
 
 		if (conn->state == BT_CONFIG) {
 			if (!ev->status && hdev->ssp_mode > 0 &&
-							conn->ssp_mode > 0) {
-				if (conn->out) {
-					struct hci_cp_auth_requested cp;
-					cp.handle = ev->handle;
-					hci_send_cmd(hdev,
-						HCI_OP_AUTH_REQUESTED,
+					conn->ssp_mode > 0 && conn->out) {
+				struct hci_cp_auth_requested cp;
+				cp.handle = ev->handle;
+				hci_send_cmd(hdev, HCI_OP_AUTH_REQUESTED,
 							sizeof(cp), &cp);
-				}
 			} else {
 				conn->state = BT_CONNECTED;
 				hci_proto_connect_cfm(conn, ev->status);

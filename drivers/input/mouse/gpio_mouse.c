@@ -9,7 +9,6 @@
  */
 
 #include <linux/init.h>
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/input-polldev.h>
@@ -174,7 +173,7 @@ static int __devexit gpio_mouse_remove(struct platform_device *pdev)
 /* work with hotplug and coldplug */
 MODULE_ALIAS("platform:gpio_mouse");
 
-struct platform_driver gpio_mouse_device_driver = {
+static struct platform_driver gpio_mouse_device_driver = {
 	.remove		= __devexit_p(gpio_mouse_remove),
 	.driver		= {
 		.name	= "gpio_mouse",

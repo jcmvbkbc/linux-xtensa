@@ -54,7 +54,6 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/vmalloc.h>
-#include <linux/version.h>
 #include <linux/notifier.h>
 #include <linux/cpu.h>
 #include <linux/device.h>
@@ -117,7 +116,7 @@ extern int ehca_debug_level;
 		unsigned char *deb = (unsigned char *)(adr); \
 		for (x = 0; x < l; x += 16) { \
 			printk(KERN_INFO "EHCA_DMP:%s " format \
-			       " adr=%p ofs=%04x %016lx %016lx\n", \
+			       " adr=%p ofs=%04x %016llx %016llx\n", \
 			       __func__, ##args, deb, x, \
 			       *((u64 *)&deb[0]), *((u64 *)&deb[8])); \
 			deb += 16; \

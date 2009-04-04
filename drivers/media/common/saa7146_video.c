@@ -576,6 +576,7 @@ static int set_control(struct saa7146_fh *fh, struct v4l2_control *c)
 		vv->vflip = c->value;
 		break;
 	default: {
+		mutex_unlock(&dev->lock);
 		return -EINVAL;
 	}
 	}
@@ -834,13 +835,14 @@ static int video_end(struct saa7146_fh *fh, struct file *file)
  * copying is done already, arg is a kernel pointer.
  */
 
-int saa7146_video_do_ioctl(struct inode *inode, struct file *file, unsigned int cmd, void *arg)
+long saa7146_video_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 {
 	struct saa7146_fh *fh  = file->private_data;
 	struct saa7146_dev *dev = fh->dev;
 	struct saa7146_vv *vv = dev->vv_data;
 
-	int err = 0, result = 0, ee = 0;
+	long err = 0;
+	int result = 0, ee = 0;
 
 	struct saa7146_use_ops *ops;
 	struct videobuf_queue *q;
@@ -1068,7 +1070,7 @@ int saa7146_video_do_ioctl(struct inode *inode, struct file *file, unsigned int 
 	{
 		v4l2_std_id *id = arg;
 		int found = 0;
-		int i, err;
+		int i;
 
 		DEB_EE(("VIDIOC_S_STD\n"));
 
@@ -1116,7 +1118,6 @@ int saa7146_video_do_ioctl(struct inode *inode, struct file *file, unsigned int 
 	case VIDIOC_OVERLAY:
 	{
 		int on = *(int *)arg;
-		int err = 0;
 
 		DEB_D(("VIDIOC_OVERLAY on:%d\n",on));
 		if (on != 0) {
@@ -1192,7 +1193,6 @@ int saa7146_video_do_ioctl(struct inode *inode, struct file *file, unsigned int 
 	case VIDIOCGMBUF:
 	{
 		struct video_mbuf *mbuf = arg;
-		struct videobuf_queue *q;
 		int i;
 
 		/* fixme: number of capture buffers and sizes for v4l apps */
@@ -1217,7 +1217,7 @@ int saa7146_video_do_ioctl(struct inode *inode, struct file *file, unsigned int 
 	}
 #endif
 	default:
-		return v4l_compat_translate_ioctl(inode,file,cmd,arg,
+		return v4l_compat_translate_ioctl(file, cmd, arg,
 						  saa7146_video_do_ioctl);
 	}
 	return 0;

@@ -657,7 +657,7 @@ static int mxl5007t_get_status(struct dvb_frontend *fe, u32 *status)
 {
 	struct mxl5007t_state *state = fe->tuner_priv;
 	int rf_locked, ref_locked;
-	s32 rf_input_level;
+	s32 rf_input_level = 0;
 	int ret;
 
 	if (fe->ops.i2c_gate_ctrl)
@@ -979,7 +979,6 @@ struct dvb_frontend *mxl5007t_attach(struct dvb_frontend *fe,
 	switch (instance) {
 	case 0:
 		goto fail;
-		break;
 	case 1:
 		/* new tuner instance */
 		state->config = cfg;

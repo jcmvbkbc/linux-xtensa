@@ -39,7 +39,7 @@
 /* BTE status register only supports 16 bits for length field */
 #define BTE_LEN_BITS (16)
 #define BTE_LEN_MASK ((1 << BTE_LEN_BITS) - 1)
-#define BTE_MAX_XFER ((1 << BTE_LEN_BITS) * L1_CACHE_BYTES)
+#define BTE_MAX_XFER (BTE_LEN_MASK << L1_CACHE_SHIFT)
 
 
 /* Define hardware */
@@ -223,10 +223,11 @@ extern void bte_error_handler(unsigned long);
  * until the transfer is complete.  In order to get the asynch
  * version of bte_copy, you must perform this check yourself.
  */
-#define BTE_UNALIGNED_COPY(src, dest, len, mode)                        \
-	(((len & L1_CACHE_MASK) || (src & L1_CACHE_MASK) ||             \
-	  (dest & L1_CACHE_MASK)) ?                                     \
-	 bte_unaligned_copy(src, dest, len, mode) :              	\
+#define BTE_UNALIGNED_COPY(src, dest, len, mode)			\
+	(((len & (L1_CACHE_BYTES - 1)) ||				\
+	  (src & (L1_CACHE_BYTES - 1)) ||				\
+	  (dest & (L1_CACHE_BYTES - 1))) ?				\
+	 bte_unaligned_copy(src, dest, len, mode) :			\
 	 bte_copy(src, dest, len, mode, NULL))
 
 

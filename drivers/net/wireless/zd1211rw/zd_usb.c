@@ -37,6 +37,7 @@
 static struct usb_device_id usb_ids[] = {
 	/* ZD1211 */
 	{ USB_DEVICE(0x0ace, 0x1211), .driver_info = DEVICE_ZD1211 },
+	{ USB_DEVICE(0x0ace, 0xa211), .driver_info = DEVICE_ZD1211 },
 	{ USB_DEVICE(0x07b8, 0x6001), .driver_info = DEVICE_ZD1211 },
 	{ USB_DEVICE(0x126f, 0xa006), .driver_info = DEVICE_ZD1211 },
 	{ USB_DEVICE(0x6891, 0xa727), .driver_info = DEVICE_ZD1211 },
@@ -58,8 +59,10 @@ static struct usb_device_id usb_ids[] = {
 	{ USB_DEVICE(0x0586, 0x3407), .driver_info = DEVICE_ZD1211 },
 	{ USB_DEVICE(0x129b, 0x1666), .driver_info = DEVICE_ZD1211 },
 	{ USB_DEVICE(0x157e, 0x300a), .driver_info = DEVICE_ZD1211 },
+	{ USB_DEVICE(0x0105, 0x145f), .driver_info = DEVICE_ZD1211 },
 	/* ZD1211B */
 	{ USB_DEVICE(0x0ace, 0x1215), .driver_info = DEVICE_ZD1211B },
+	{ USB_DEVICE(0x0ace, 0xb215), .driver_info = DEVICE_ZD1211B },
 	{ USB_DEVICE(0x157e, 0x300d), .driver_info = DEVICE_ZD1211B },
 	{ USB_DEVICE(0x079b, 0x0062), .driver_info = DEVICE_ZD1211B },
 	{ USB_DEVICE(0x1582, 0x6003), .driver_info = DEVICE_ZD1211B },
@@ -81,6 +84,8 @@ static struct usb_device_id usb_ids[] = {
 	{ USB_DEVICE(0x0cde, 0x001a), .driver_info = DEVICE_ZD1211B },
 	{ USB_DEVICE(0x0586, 0x340a), .driver_info = DEVICE_ZD1211B },
 	{ USB_DEVICE(0x0471, 0x1237), .driver_info = DEVICE_ZD1211B },
+	{ USB_DEVICE(0x07fa, 0x1196), .driver_info = DEVICE_ZD1211B },
+	{ USB_DEVICE(0x0df6, 0x0036), .driver_info = DEVICE_ZD1211B },
 	/* "Driverless" devices that need ejecting */
 	{ USB_DEVICE(0x0ace, 0x2011), .driver_info = DEVICE_INSTALLER },
 	{ USB_DEVICE(0x0ace, 0x20ff), .driver_info = DEVICE_INSTALLER },
@@ -906,7 +911,7 @@ free_urb:
 	 * it might be freed by zd_mac_tx_to_dev or mac80211)
 	 */
 	info = IEEE80211_SKB_CB(skb);
-	usb = &zd_hw_mac(info->driver_data[0])->chip.usb;
+	usb = &zd_hw_mac(info->rate_driver_data[0])->chip.usb;
 	zd_mac_tx_to_dev(skb, urb->status);
 	free_tx_urb(usb, urb);
 	tx_dec_submitted_urbs(usb);
@@ -1062,8 +1067,7 @@ static int eject_installer(struct usb_interface *intf)
 	/* Find bulk out endpoint */
 	endpoint = &iface_desc->endpoint[1].desc;
 	if ((endpoint->bEndpointAddress & USB_TYPE_MASK) == USB_DIR_OUT &&
-	    (endpoint->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) ==
-	    USB_ENDPOINT_XFER_BULK) {
+	    usb_endpoint_xfer_bulk(endpoint)) {
 		bulk_out_ep = endpoint->bEndpointAddress;
 	} else {
 		dev_err(&udev->dev,

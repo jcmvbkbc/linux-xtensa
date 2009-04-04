@@ -18,7 +18,6 @@
 
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/async_tx.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/spinlock.h>
@@ -311,17 +310,26 @@ mv_xor_run_tx_complete_actions(struct mv_xor_desc_slot *desc,
 			enum dma_ctrl_flags flags = desc->async_tx.flags;
 			u32 src_cnt;
 			dma_addr_t addr;
+			dma_addr_t dest;
 
+			src_cnt = unmap->unmap_src_cnt;
+			dest = mv_desc_get_dest_addr(unmap);
 			if (!(flags & DMA_COMPL_SKIP_DEST_UNMAP)) {
-				addr = mv_desc_get_dest_addr(unmap);
-				dma_unmap_page(dev, addr, len, DMA_FROM_DEVICE);
+				enum dma_data_direction dir;
+
+				if (src_cnt > 1) /* is xor ? */
+					dir = DMA_BIDIRECTIONAL;
+				else
+					dir = DMA_FROM_DEVICE;
+				dma_unmap_page(dev, dest, len, dir);
 			}
 
 			if (!(flags & DMA_COMPL_SKIP_SRC_UNMAP)) {
-				src_cnt = unmap->unmap_src_cnt;
 				while (src_cnt--) {
 					addr = mv_desc_get_src_addr(unmap,
 								    src_cnt);
+					if (addr == dest)
+						continue;
 					dma_unmap_page(dev, addr, len,
 						       DMA_TO_DEVICE);
 				}
@@ -331,7 +339,7 @@ mv_xor_run_tx_complete_actions(struct mv_xor_desc_slot *desc,
 	}
 
 	/* run dependent operations */
-	async_tx_run_dependencies(&desc->async_tx);
+	dma_run_dependencies(&desc->async_tx);
 
 	return cookie;
 }
@@ -598,8 +606,7 @@ submit_done:
 }
 
 /* returns the number of allocated descriptors */
-static int mv_xor_alloc_chan_resources(struct dma_chan *chan,
-				       struct dma_client *client)
+static int mv_xor_alloc_chan_resources(struct dma_chan *chan)
 {
 	char *hw_desc;
 	int idx;
@@ -949,7 +956,7 @@ static int __devinit mv_xor_memcpy_self_test(struct mv_xor_device *device)
 	dma_chan = container_of(device->common.channels.next,
 				struct dma_chan,
 				device_node);
-	if (mv_xor_alloc_chan_resources(dma_chan, NULL) < 1) {
+	if (mv_xor_alloc_chan_resources(dma_chan) < 1) {
 		err = -ENODEV;
 		goto out;
 	}
@@ -1012,19 +1019,19 @@ mv_xor_xor_self_test(struct mv_xor_device *device)
 
 	for (src_idx = 0; src_idx < MV_XOR_NUM_SRC_TEST; src_idx++) {
 		xor_srcs[src_idx] = alloc_page(GFP_KERNEL);
-		if (!xor_srcs[src_idx])
-			while (src_idx--) {
+		if (!xor_srcs[src_idx]) {
+			while (src_idx--)
 				__free_page(xor_srcs[src_idx]);
-				return -ENOMEM;
-			}
+			return -ENOMEM;
+		}
 	}
 
 	dest = alloc_page(GFP_KERNEL);
-	if (!dest)
-		while (src_idx--) {
+	if (!dest) {
+		while (src_idx--)
 			__free_page(xor_srcs[src_idx]);
-			return -ENOMEM;
-		}
+		return -ENOMEM;
+	}
 
 	/* Fill in src buffers */
 	for (src_idx = 0; src_idx < MV_XOR_NUM_SRC_TEST; src_idx++) {
@@ -1044,7 +1051,7 @@ mv_xor_xor_self_test(struct mv_xor_device *device)
 	dma_chan = container_of(device->common.channels.next,
 				struct dma_chan,
 				device_node);
-	if (mv_xor_alloc_chan_resources(dma_chan, NULL) < 1) {
+	if (mv_xor_alloc_chan_resources(dma_chan) < 1) {
 		err = -ENODEV;
 		goto out;
 	}
@@ -1212,7 +1219,6 @@ static int __devinit mv_xor_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&mv_chan->chain);
 	INIT_LIST_HEAD(&mv_chan->completed_slots);
 	INIT_LIST_HEAD(&mv_chan->all_slots);
-	INIT_RCU_HEAD(&mv_chan->common.rcu);
 	mv_chan->common.device = dma_dev;
 
 	list_add_tail(&mv_chan->common.device_node, &dma_dev->channels);
@@ -1281,7 +1287,7 @@ mv_xor_conf_mbus_windows(struct mv_xor_shared_private *msp,
 
 static struct platform_driver mv_xor_driver = {
 	.probe		= mv_xor_probe,
-	.remove		= mv_xor_remove,
+	.remove		= __devexit_p(mv_xor_remove),
 	.driver		= {
 		.owner	= THIS_MODULE,
 		.name	= MV_XOR_NAME,

@@ -16,6 +16,7 @@
 #include <linux/poll.h>
 #include <linux/mutex.h>
 #include <linux/smp_lock.h>
+#include <linux/err.h>
 
 #include <asm/uaccess.h>
 #include <asm/atomic.h>
@@ -308,7 +309,8 @@ static void dasd_eer_write_standard_trigger(struct dasd_device *device,
 	do_gettimeofday(&tv);
 	header.tv_sec = tv.tv_sec;
 	header.tv_usec = tv.tv_usec;
-	strncpy(header.busid, device->cdev->dev.bus_id, DASD_EER_BUSID_SIZE);
+	strncpy(header.busid, dev_name(&device->cdev->dev),
+		DASD_EER_BUSID_SIZE);
 
 	spin_lock_irqsave(&bufferlock, flags);
 	list_for_each_entry(eerb, &bufferlist, list) {
@@ -348,7 +350,8 @@ static void dasd_eer_write_snss_trigger(struct dasd_device *device,
 	do_gettimeofday(&tv);
 	header.tv_sec = tv.tv_sec;
 	header.tv_usec = tv.tv_usec;
-	strncpy(header.busid, device->cdev->dev.bus_id, DASD_EER_BUSID_SIZE);
+	strncpy(header.busid, dev_name(&device->cdev->dev),
+		DASD_EER_BUSID_SIZE);
 
 	spin_lock_irqsave(&bufferlock, flags);
 	list_for_each_entry(eerb, &bufferlist, list) {
@@ -457,7 +460,7 @@ int dasd_eer_enable(struct dasd_device *device)
 
 	cqr = dasd_kmalloc_request("ECKD", 1 /* SNSS */,
 				   SNSS_DATA_SIZE, device);
-	if (!cqr)
+	if (IS_ERR(cqr))
 		return -ENOMEM;
 
 	cqr->startdev = device;
@@ -532,8 +535,8 @@ static int dasd_eer_open(struct inode *inp, struct file *filp)
 	    eerb->buffer_page_count > INT_MAX / PAGE_SIZE) {
 		kfree(eerb);
 		MESSAGE(KERN_WARNING, "can't open device since module "
-			"parameter eer_pages is smaller then 1 or"
-			" bigger then %d", (int)(INT_MAX / PAGE_SIZE));
+			"parameter eer_pages is smaller than 1 or"
+			" bigger than %d", (int)(INT_MAX / PAGE_SIZE));
 		unlock_kernel();
 		return -EINVAL;
 	}

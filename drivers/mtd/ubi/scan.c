@@ -42,7 +42,7 @@
 
 #include <linux/err.h>
 #include <linux/crc32.h>
-#include <asm/div64.h>
+#include <linux/math64.h>
 #include "ubi.h"
 
 #ifdef CONFIG_MTD_UBI_DEBUG_PARANOID
@@ -320,7 +320,7 @@ static int compare_lebs(struct ubi_device *ubi, const struct ubi_scan_leb *seb,
 	}
 
 	err = ubi_io_read_data(ubi, buf, pnum, 0, len);
-	if (err && err != UBI_IO_BITFLIPS)
+	if (err && err != UBI_IO_BITFLIPS && err != -EBADMSG)
 		goto out_free_buf;
 
 	data_crc = be32_to_cpu(vid_hdr->data_crc);
@@ -387,7 +387,7 @@ int ubi_scan_add_used(struct ubi_device *ubi, struct ubi_scan_info *si,
 		pnum, vol_id, lnum, ec, sqnum, bitflips);
 
 	sv = add_volume(si, vol_id, pnum, vid_hdr);
-	if (IS_ERR(sv) < 0)
+	if (IS_ERR(sv))
 		return PTR_ERR(sv);
 
 	if (si->max_sqnum < sqnum)
@@ -478,7 +478,7 @@ int ubi_scan_add_used(struct ubi_device *ubi, struct ubi_scan_info *si,
 			return 0;
 		} else {
 			/*
-			 * This logical eraseblock is older then the one found
+			 * This logical eraseblock is older than the one found
 			 * previously.
 			 */
 			if (cmp_res & 4)
@@ -904,10 +904,8 @@ struct ubi_scan_info *ubi_scan(struct ubi_device *ubi)
 	dbg_msg("scanning is finished");
 
 	/* Calculate mean erase counter */
-	if (si->ec_count) {
-		do_div(si->ec_sum, si->ec_count);
-		si->mean_ec = si->ec_sum;
-	}
+	if (si->ec_count)
+		si->mean_ec = div_u64(si->ec_sum, si->ec_count);
 
 	if (si->is_empty)
 		ubi_msg("empty MTD device detected");

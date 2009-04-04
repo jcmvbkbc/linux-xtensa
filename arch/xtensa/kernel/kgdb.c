@@ -19,7 +19,7 @@
  * Copyright (C) 2004 LinSysSoft Technologies Pvt. Ltd.
  * Copyright (C) 2004-2005, 2007 MontaVista Software Inc.
  * Copyright (C) 2007-2008 Jason Wessel, Wind River Systems, Inc.
- * Copyright (C) 2008 Piet Delaney, Tensilica Inc.
+ * Copyright (C) 2008 Pete Delaney, Tensilica Inc.
  */
 
 /****************************************************************************
@@ -27,7 +27,7 @@
  *  Written by:      Glenn Engel $
  *  Written by:	     Scott Foehner <sfoehner@yahoo.com>
  *  Written by:      Manish Lachwani, mlachwani@mvista.com
- *  Written by:	     Piet Delaney <piet.delaney@tensilica.com>
+ *  Written by:	     Pete Delaney <piet@tensilica.com>
  *  Updates by:	     Amit Kale<akale@veritas.com>
  *  Updates by:	     Tom Rini <trini@kernel.crashing.org>
  *  Updates by:	     Jason Wessel <jason.wessel@windriver.com>

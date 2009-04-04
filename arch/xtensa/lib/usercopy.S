@@ -53,7 +53,7 @@
  *	a11/ original length
  */
 
-#include <asm/variant/core.h>
+#include <variant/core.h>
 #include <asm/core.h>
 
 #ifdef __XTENSA_EB__

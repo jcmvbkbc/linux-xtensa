@@ -33,7 +33,6 @@
 #include <asm/atari_joystick.h>
 #include <asm/irq.h>
 
-extern unsigned int keymap_count;
 
 /* Hook for MIDI serial driver */
 void (*atari_MIDI_interrupt_hook) (void);
@@ -567,26 +566,33 @@ static int atari_keyb_done = 0;
 
 int atari_keyb_init(void)
 {
+	int error;
+
 	if (atari_keyb_done)
 		return 0;
 
 	kb_state.state = KEYBOARD;
 	kb_state.len = 0;
 
-	request_irq(IRQ_MFP_ACIA, atari_keyboard_interrupt, IRQ_TYPE_SLOW,
-		    "keyboard/mouse/MIDI", atari_keyboard_interrupt);
+	error = request_irq(IRQ_MFP_ACIA, atari_keyboard_interrupt,
+			    IRQ_TYPE_SLOW, "keyboard/mouse/MIDI",
+			    atari_keyboard_interrupt);
+	if (error)
+		return error;
 
 	atari_turnoff_irq(IRQ_MFP_ACIA);
 	do {
 		/* reset IKBD ACIA */
 		acia.key_ctrl = ACIA_RESET |
-				(atari_switches & ATARI_SWITCH_IKBD) ? ACIA_RHTID : 0;
+				((atari_switches & ATARI_SWITCH_IKBD) ?
+				 ACIA_RHTID : 0);
 		(void)acia.key_ctrl;
 		(void)acia.key_data;
 
 		/* reset MIDI ACIA */
 		acia.mid_ctrl = ACIA_RESET |
-				(atari_switches & ATARI_SWITCH_MIDI) ? ACIA_RHTID : 0;
+				((atari_switches & ATARI_SWITCH_MIDI) ?
+				 ACIA_RHTID : 0);
 		(void)acia.mid_ctrl;
 		(void)acia.mid_data;
 
@@ -599,13 +605,14 @@ int atari_keyb_init(void)
 				 ACIA_RHTID : ACIA_RLTID);
 
 		acia.mid_ctrl = ACIA_DIV16 | ACIA_D8N1S |
-				(atari_switches & ATARI_SWITCH_MIDI) ? ACIA_RHTID : 0;
+				((atari_switches & ATARI_SWITCH_MIDI) ?
+				 ACIA_RHTID : 0);
 
 	/* make sure the interrupt line is up */
-	} while ((mfp.par_dt_reg & 0x10) == 0);
+	} while ((st_mfp.par_dt_reg & 0x10) == 0);
 
 	/* enable ACIA Interrupts */
-	mfp.active_edge &= ~0x10;
+	st_mfp.active_edge &= ~0x10;
 	atari_turnon_irq(IRQ_MFP_ACIA);
 
 	ikbd_self_test = 1;
@@ -632,15 +639,3 @@ int atari_keyb_init(void)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(atari_keyb_init);
-
-int atari_kbd_translate(unsigned char keycode, unsigned char *keycodep, char raw_mode)
-{
-#ifdef CONFIG_MAGIC_SYSRQ
-	/* ALT+HELP pressed? */
-	if ((keycode == 98) && ((shift_state & 0xff) == 8))
-		*keycodep = 0xff;
-	else
-#endif
-		*keycodep = keycode;
-	return 1;
-}

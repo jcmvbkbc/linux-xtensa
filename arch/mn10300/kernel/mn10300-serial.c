@@ -17,7 +17,6 @@ static const char serial_revdate[] = "2007-11-06";
 #define SUPPORT_SYSRQ
 #endif
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/serial.h>
 #include <linux/circ_buf.h>
@@ -566,6 +565,11 @@ not_break:
 static void mn10300_serial_transmit_interrupt(struct mn10300_serial_port *port)
 {
 	_enter("%s", port->name);
+
+	if (!port->uart.info || !port->uart.info->port.tty) {
+		mn10300_serial_dis_tx_intr(port);
+		return;
+	}
 
 	if (uart_tx_stopped(&port->uart) ||
 	    uart_circ_empty(&port->uart.info->xmit))

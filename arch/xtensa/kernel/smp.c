@@ -22,6 +22,7 @@
 #include <linux/irq.h>
 #include <linux/thread_info.h>
 #include <linux/kdebug.h>
+#include <linux/cpumask.h>
 
 #include <asm/tlbflush.h>
 #include <asm/platform.h>
@@ -42,16 +43,17 @@
 extern DEFINE_PER_CPU(unsigned long, asid_cache);
 
 /* Map of cores in the system and currently online. */
-
-cpumask_t cpu_possible_map;
-cpumask_t cpu_online_map;
+#if 0
+const cpumask_t cpu_possible_map;
+const cpumask_t cpu_online_map;
+#endif
 
 EXPORT_SYMBOL(cpu_possible_map);
 EXPORT_SYMBOL(cpu_online_map);
 
 /* IPI (Inter Process Interrupt) */
 
-#define USE_IPI	0
+#define IPI_IRQ	0
 
 static irqreturn_t ipi_interrupt(int irq, void *dev_id);
 static struct irqaction ipi_irqaction = {
@@ -152,7 +154,7 @@ void __init secondary_start_kernel(void)
 
 	secondary_irq_init();
 	secondary_time_init();
-	secondary_irq_enable(USE_IPI);
+	secondary_irq_enable(IPI_IRQ);
 
 	cpu_set(cpu, cpu_online_map);
 
@@ -161,7 +163,7 @@ void __init secondary_start_kernel(void)
 
 void __init smp_init_irq(void)
 {
-	setup_irq(USE_IPI, &ipi_irqaction);
+	setup_irq(IPI_IRQ, &ipi_irqaction);
 }
 
 extern struct {

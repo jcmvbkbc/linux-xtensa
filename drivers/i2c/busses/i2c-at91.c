@@ -14,7 +14,6 @@
 */
 
 #include <linux/module.h>
-#include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/err.h>
 #include <linux/slab.h>
@@ -223,7 +222,7 @@ static int __devinit at91_i2c_probe(struct platform_device *pdev)
 		rc = -ENOMEM;
 		goto fail2;
 	}
-	sprintf(adapter->name, "AT91");
+	snprintf(adapter->name, sizeof(adapter->name), "AT91");
 	adapter->algo = &at91_algorithm;
 	adapter->class = I2C_CLASS_HWMON;
 	adapter->dev.parent = &pdev->dev;

@@ -29,7 +29,7 @@
  * would have been wasted for padding to the nearest minimal I/O unit boundary.
  * Instead, data first goes to the write-buffer and is flushed when the
  * buffer is full or when it is not used for some time (by timer). This is
- * similarto the mechanism is used by JFFS2.
+ * similar to the mechanism is used by JFFS2.
  *
  * Write-buffers are defined by 'struct ubifs_wbuf' objects and protected by
  * mutexes defined inside these objects. Since sometimes upper-level code
@@ -62,6 +62,7 @@ void ubifs_ro_mode(struct ubifs_info *c, int err)
 {
 	if (!c->ro_media) {
 		c->ro_media = 1;
+		c->no_chk_data_crc = 0;
 		ubifs_warn("switched to read-only mode, error %d", err);
 		dbg_dump_stack();
 	}
@@ -74,6 +75,7 @@ void ubifs_ro_mode(struct ubifs_info *c, int err)
  * @lnum: logical eraseblock number
  * @offs: offset within the logical eraseblock
  * @quiet: print no messages
+ * @must_chk_crc: indicates whether to always check the CRC
  *
  * This function checks node magic number and CRC checksum. This function also
  * validates node length to prevent UBIFS from becoming crazy when an attacker
@@ -81,11 +83,17 @@ void ubifs_ro_mode(struct ubifs_info *c, int err)
  * node length in the common header could cause UBIFS to read memory outside of
  * allocated buffer when checking the CRC checksum.
  *
- * This function returns zero in case of success %-EUCLEAN in case of bad CRC
- * or magic.
+ * This function may skip data nodes CRC checking if @c->no_chk_data_crc is
+ * true, which is controlled by corresponding UBIFS mount option. However, if
+ * @must_chk_crc is true, then @c->no_chk_data_crc is ignored and CRC is
+ * checked. Similarly, if @c->always_chk_crc is true, @c->no_chk_data_crc is
+ * ignored and CRC is checked.
+ *
+ * This function returns zero in case of success and %-EUCLEAN in case of bad
+ * CRC or magic.
  */
 int ubifs_check_node(const struct ubifs_info *c, const void *buf, int lnum,
-		     int offs, int quiet)
+		     int offs, int quiet, int must_chk_crc)
 {
 	int err = -EINVAL, type, node_len;
 	uint32_t crc, node_crc, magic;
@@ -120,6 +128,10 @@ int ubifs_check_node(const struct ubifs_info *c, const void *buf, int lnum,
 	} else if (node_len < c->ranges[type].min_len ||
 		   node_len > c->ranges[type].max_len)
 		goto out_len;
+
+	if (!must_chk_crc && type == UBIFS_DATA_NODE && !c->always_chk_crc &&
+	     c->no_chk_data_crc)
+		return 0;
 
 	crc = crc32(UBIFS_CRC32_INIT, buf + 8, node_len - 8);
 	node_crc = le32_to_cpu(ch->crc);
@@ -722,7 +734,7 @@ int ubifs_read_node_wbuf(struct ubifs_wbuf *wbuf, void *buf, int type, int len,
 		goto out;
 	}
 
-	err = ubifs_check_node(c, buf, lnum, offs, 0);
+	err = ubifs_check_node(c, buf, lnum, offs, 0, 0);
 	if (err) {
 		ubifs_err("expected node type %d", type);
 		return err;
@@ -781,7 +793,7 @@ int ubifs_read_node(const struct ubifs_info *c, void *buf, int type, int len,
 		goto out;
 	}
 
-	err = ubifs_check_node(c, buf, lnum, offs, 0);
+	err = ubifs_check_node(c, buf, lnum, offs, 0, 0);
 	if (err) {
 		ubifs_err("expected node type %d", type);
 		return err;

@@ -29,8 +29,6 @@
  */
 
 extern unsigned char boot_cpu_id;
-extern cpumask_t phys_cpu_present_map;
-#define cpu_possible_map phys_cpu_present_map
 
 typedef void (*smpfunc_t)(unsigned long, unsigned long, unsigned long,
 		       unsigned long, unsigned long);
@@ -50,31 +48,36 @@ struct seq_file;
 void smp_bogo(struct seq_file *);
 void smp_info(struct seq_file *);
 
-BTFIXUPDEF_CALL(void, smp_cross_call, smpfunc_t, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)
+BTFIXUPDEF_CALL(void, smp_cross_call, smpfunc_t, cpumask_t, unsigned long, unsigned long, unsigned long, unsigned long)
 BTFIXUPDEF_CALL(int, __hard_smp_processor_id, void)
 BTFIXUPDEF_BLACKBOX(hard_smp_processor_id)
 BTFIXUPDEF_BLACKBOX(load_current)
 
-#define smp_cross_call(func,arg1,arg2,arg3,arg4,arg5) BTFIXUP_CALL(smp_cross_call)(func,arg1,arg2,arg3,arg4,arg5)
+#define smp_cross_call(func,mask,arg1,arg2,arg3,arg4) BTFIXUP_CALL(smp_cross_call)(func,mask,arg1,arg2,arg3,arg4)
 
-static inline void xc0(smpfunc_t func) { smp_cross_call(func, 0, 0, 0, 0, 0); }
+static inline void xc0(smpfunc_t func) { smp_cross_call(func, cpu_online_map, 0, 0, 0, 0); }
 static inline void xc1(smpfunc_t func, unsigned long arg1)
-{ smp_cross_call(func, arg1, 0, 0, 0, 0); }
+{ smp_cross_call(func, cpu_online_map, arg1, 0, 0, 0); }
 static inline void xc2(smpfunc_t func, unsigned long arg1, unsigned long arg2)
-{ smp_cross_call(func, arg1, arg2, 0, 0, 0); }
+{ smp_cross_call(func, cpu_online_map, arg1, arg2, 0, 0); }
 static inline void xc3(smpfunc_t func, unsigned long arg1, unsigned long arg2,
 			   unsigned long arg3)
-{ smp_cross_call(func, arg1, arg2, arg3, 0, 0); }
+{ smp_cross_call(func, cpu_online_map, arg1, arg2, arg3, 0); }
 static inline void xc4(smpfunc_t func, unsigned long arg1, unsigned long arg2,
 			   unsigned long arg3, unsigned long arg4)
-{ smp_cross_call(func, arg1, arg2, arg3, arg4, 0); }
-static inline void xc5(smpfunc_t func, unsigned long arg1, unsigned long arg2,
-			   unsigned long arg3, unsigned long arg4, unsigned long arg5)
-{ smp_cross_call(func, arg1, arg2, arg3, arg4, arg5); }
+{ smp_cross_call(func, cpu_online_map, arg1, arg2, arg3, arg4); }
 
 static inline int smp_call_function(void (*func)(void *info), void *info, int wait)
 {
 	xc1((smpfunc_t)func, (unsigned long)info);
+	return 0;
+}
+
+static inline int smp_call_function_single(int cpuid, void (*func) (void *info),
+					   void *info, int wait)
+{
+	smp_cross_call((smpfunc_t)func, cpumask_of_cpu(cpuid),
+		       (unsigned long) info, 0, 0, 0);
 	return 0;
 }
 
@@ -167,7 +170,4 @@ void smp_setup_cpu_possible_map(void);
 #define smp_setup_cpu_possible_map() do { } while (0)
 
 #endif /* !(SMP) */
-
-#define NO_PROC_ID            0xFF
-
 #endif /* !(_SPARC_SMP_H) */

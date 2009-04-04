@@ -27,194 +27,173 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/types.h>
-#include <linux/pci.h>
 #include <linux/spinlock.h>
-#include <linux/io.h>
 #include <linux/platform_device.h>
-
-#include <asm/addrspace.h>
+#include <linux/gpio.h>
 
 #include <asm/mach-rc32434/rb.h>
+#include <asm/mach-rc32434/gpio.h>
 
-struct rb532_gpio_reg __iomem *rb532_gpio_reg0;
-EXPORT_SYMBOL(rb532_gpio_reg0);
-
-struct mpmc_device dev3;
+struct rb532_gpio_chip {
+	struct gpio_chip chip;
+	void __iomem	 *regbase;
+};
 
 static struct resource rb532_gpio_reg0_res[] = {
 	{
 		.name 	= "gpio_reg0",
-		.start 	= (u32)(IDT434_REG_BASE + GPIOBASE),
-		.end 	= (u32)(IDT434_REG_BASE + GPIOBASE + sizeof(struct rb532_gpio_reg)),
+		.start 	= REGBASE + GPIOBASE,
+		.end 	= REGBASE + GPIOBASE + sizeof(struct rb532_gpio_reg) - 1,
 		.flags 	= IORESOURCE_MEM,
 	}
 };
 
-static struct resource rb532_dev3_ctl_res[] = {
-	{
-		.name	= "dev3_ctl",
-		.start	= (u32)(IDT434_REG_BASE + DEV3BASE),
-		.end	= (u32)(IDT434_REG_BASE + DEV3BASE + sizeof(struct dev_reg)),
-		.flags	= IORESOURCE_MEM,
-	}
+/* rb532_set_bit - sanely set a bit
+ *
+ * bitval: new value for the bit
+ * offset: bit index in the 4 byte address range
+ * ioaddr: 4 byte aligned address being altered
+ */
+static inline void rb532_set_bit(unsigned bitval,
+		unsigned offset, void __iomem *ioaddr)
+{
+	unsigned long flags;
+	u32 val;
+
+	local_irq_save(flags);
+
+	val = readl(ioaddr);
+	val &= ~(!bitval << offset);   /* unset bit if bitval == 0 */
+	val |= (!!bitval << offset);   /* set bit if bitval == 1 */
+	writel(val, ioaddr);
+
+	local_irq_restore(flags);
+}
+
+/* rb532_get_bit - read a bit
+ *
+ * returns the boolean state of the bit, which may be > 1
+ */
+static inline int rb532_get_bit(unsigned offset, void __iomem *ioaddr)
+{
+	return (readl(ioaddr) & (1 << offset));
+}
+
+/*
+ * Return GPIO level */
+static int rb532_gpio_get(struct gpio_chip *chip, unsigned offset)
+{
+	struct rb532_gpio_chip	*gpch;
+
+	gpch = container_of(chip, struct rb532_gpio_chip, chip);
+	return rb532_get_bit(offset, gpch->regbase + GPIOD);
+}
+
+/*
+ * Set output GPIO level
+ */
+static void rb532_gpio_set(struct gpio_chip *chip,
+				unsigned offset, int value)
+{
+	struct rb532_gpio_chip	*gpch;
+
+	gpch = container_of(chip, struct rb532_gpio_chip, chip);
+	rb532_set_bit(value, offset, gpch->regbase + GPIOD);
+}
+
+/*
+ * Set GPIO direction to input
+ */
+static int rb532_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
+{
+	struct rb532_gpio_chip	*gpch;
+
+	gpch = container_of(chip, struct rb532_gpio_chip, chip);
+
+	/* disable alternate function in case it's set */
+	rb532_set_bit(0, offset, gpch->regbase + GPIOFUNC);
+
+	rb532_set_bit(0, offset, gpch->regbase + GPIOCFG);
+	return 0;
+}
+
+/*
+ * Set GPIO direction to output
+ */
+static int rb532_gpio_direction_output(struct gpio_chip *chip,
+					unsigned offset, int value)
+{
+	struct rb532_gpio_chip	*gpch;
+
+	gpch = container_of(chip, struct rb532_gpio_chip, chip);
+
+	/* disable alternate function in case it's set */
+	rb532_set_bit(0, offset, gpch->regbase + GPIOFUNC);
+
+	/* set the initial output value */
+	rb532_set_bit(value, offset, gpch->regbase + GPIOD);
+
+	rb532_set_bit(1, offset, gpch->regbase + GPIOCFG);
+	return 0;
+}
+
+static struct rb532_gpio_chip rb532_gpio_chip[] = {
+	[0] = {
+		.chip = {
+			.label			= "gpio0",
+			.direction_input	= rb532_gpio_direction_input,
+			.direction_output	= rb532_gpio_direction_output,
+			.get			= rb532_gpio_get,
+			.set			= rb532_gpio_set,
+			.base			= 0,
+			.ngpio			= 32,
+		},
+	},
 };
 
-void set_434_reg(unsigned reg_offs, unsigned bit, unsigned len, unsigned val)
+/*
+ * Set GPIO interrupt level
+ */
+void rb532_gpio_set_ilevel(int bit, unsigned gpio)
 {
-	unsigned long flags;
-	unsigned data;
-	unsigned i = 0;
-
-	spin_lock_irqsave(&dev3.lock, flags);
-
-	data = *(volatile unsigned *) (IDT434_REG_BASE + reg_offs);
-	for (i = 0; i != len; ++i) {
-		if (val & (1 << i))
-			data |= (1 << (i + bit));
-		else
-			data &= ~(1 << (i + bit));
-	}
-	writel(data, (IDT434_REG_BASE + reg_offs));
-
-	spin_unlock_irqrestore(&dev3.lock, flags);
+	rb532_set_bit(bit, gpio, rb532_gpio_chip->regbase + GPIOILEVEL);
 }
-EXPORT_SYMBOL(set_434_reg);
+EXPORT_SYMBOL(rb532_gpio_set_ilevel);
 
-unsigned get_434_reg(unsigned reg_offs)
+/*
+ * Set GPIO interrupt status
+ */
+void rb532_gpio_set_istat(int bit, unsigned gpio)
 {
-	return readl(IDT434_REG_BASE + reg_offs);
+	rb532_set_bit(bit, gpio, rb532_gpio_chip->regbase + GPIOISTAT);
 }
-EXPORT_SYMBOL(get_434_reg);
+EXPORT_SYMBOL(rb532_gpio_set_istat);
 
-void set_latch_u5(unsigned char or_mask, unsigned char nand_mask)
+/*
+ * Configure GPIO alternate function
+ */
+void rb532_gpio_set_func(unsigned gpio)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&dev3.lock, flags);
-
-	dev3.state = (dev3.state | or_mask) & ~nand_mask;
-	writel(dev3.state, &dev3.base);
-
-	spin_unlock_irqrestore(&dev3.lock, flags);
-}
-EXPORT_SYMBOL(set_latch_u5);
-
-unsigned char get_latch_u5(void)
-{
-	return dev3.state;
-}
-EXPORT_SYMBOL(get_latch_u5);
-
-int rb532_gpio_get_value(unsigned gpio)
-{
-	return readl(&rb532_gpio_reg0->gpiod) & (1 << gpio);
-}
-EXPORT_SYMBOL(rb532_gpio_get_value);
-
-void rb532_gpio_set_value(unsigned gpio, int value)
-{
-	unsigned tmp;
-
-	tmp = readl(&rb532_gpio_reg0->gpiod) & ~(1 << gpio);
-	if (value)
-		tmp |= 1 << gpio;
-
-	writel(tmp, (void *)&rb532_gpio_reg0->gpiod);
-}
-EXPORT_SYMBOL(rb532_gpio_set_value);
-
-int rb532_gpio_direction_input(unsigned gpio)
-{
-	writel(readl(&rb532_gpio_reg0->gpiocfg) & ~(1 << gpio),
-	       (void *)&rb532_gpio_reg0->gpiocfg);
-
-	return 0;
-}
-EXPORT_SYMBOL(rb532_gpio_direction_input);
-
-int rb532_gpio_direction_output(unsigned gpio, int value)
-{
-	gpio_set_value(gpio, value);
-	writel(readl(&rb532_gpio_reg0->gpiocfg) | (1 << gpio),
-	       (void *)&rb532_gpio_reg0->gpiocfg);
-
-	return 0;
-}
-EXPORT_SYMBOL(rb532_gpio_direction_output);
-
-void rb532_gpio_set_int_level(unsigned gpio, int value)
-{
-	unsigned tmp;
-
-	tmp = readl(&rb532_gpio_reg0->gpioilevel) & ~(1 << gpio);
-	if (value)
-		tmp |= 1 << gpio;
-	writel(tmp, (void *)&rb532_gpio_reg0->gpioilevel);
-}
-EXPORT_SYMBOL(rb532_gpio_set_int_level);
-
-int rb532_gpio_get_int_level(unsigned gpio)
-{
-	return readl(&rb532_gpio_reg0->gpioilevel) & (1 << gpio);
-}
-EXPORT_SYMBOL(rb532_gpio_get_int_level);
-
-void rb532_gpio_set_int_status(unsigned gpio, int value)
-{
-	unsigned tmp;
-
-	tmp = readl(&rb532_gpio_reg0->gpioistat);
-	if (value)
-		tmp |= 1 << gpio;
-	writel(tmp, (void *)&rb532_gpio_reg0->gpioistat);
-}
-EXPORT_SYMBOL(rb532_gpio_set_int_status);
-
-int rb532_gpio_get_int_status(unsigned gpio)
-{
-	return readl(&rb532_gpio_reg0->gpioistat) & (1 << gpio);
-}
-EXPORT_SYMBOL(rb532_gpio_get_int_status);
-
-void rb532_gpio_set_func(unsigned gpio, int value)
-{
-	unsigned tmp;
-
-	tmp = readl(&rb532_gpio_reg0->gpiofunc);
-	if (value)
-		tmp |= 1 << gpio;
-	writel(tmp, (void *)&rb532_gpio_reg0->gpiofunc);
+       rb532_set_bit(1, gpio, rb532_gpio_chip->regbase + GPIOFUNC);
 }
 EXPORT_SYMBOL(rb532_gpio_set_func);
 
-int rb532_gpio_get_func(unsigned gpio)
-{
-	return readl(&rb532_gpio_reg0->gpiofunc) & (1 << gpio);
-}
-EXPORT_SYMBOL(rb532_gpio_get_func);
-
 int __init rb532_gpio_init(void)
 {
-	rb532_gpio_reg0 = ioremap_nocache(rb532_gpio_reg0_res[0].start,
-				rb532_gpio_reg0_res[0].end -
-				rb532_gpio_reg0_res[0].start);
+	struct resource *r;
 
-	if (!rb532_gpio_reg0) {
+	r = rb532_gpio_reg0_res;
+	rb532_gpio_chip->regbase = ioremap_nocache(r->start, r->end - r->start);
+
+	if (!rb532_gpio_chip->regbase) {
 		printk(KERN_ERR "rb532: cannot remap GPIO register 0\n");
 		return -ENXIO;
 	}
 
-	dev3.base = ioremap_nocache(rb532_dev3_ctl_res[0].start,
-				rb532_dev3_ctl_res[0].end -
-				rb532_dev3_ctl_res[0].start);
-
-	if (!dev3.base) {
-		printk(KERN_ERR "rb532: cannot remap device controller 3\n");
-		return -ENXIO;
-	}
+	/* Register our GPIO chip */
+	gpiochip_add(&rb532_gpio_chip->chip);
 
 	return 0;
 }

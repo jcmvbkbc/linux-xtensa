@@ -99,67 +99,56 @@ static void fsg_led_ring_set(struct led_classdev *led_cdev,
 }
 
 
-
 static struct led_classdev fsg_wlan_led = {
 	.name			= "fsg:blue:wlan",
 	.brightness_set		= fsg_led_wlan_set,
+	.flags			= LED_CORE_SUSPENDRESUME,
 };
 
 static struct led_classdev fsg_wan_led = {
 	.name			= "fsg:blue:wan",
 	.brightness_set		= fsg_led_wan_set,
+	.flags			= LED_CORE_SUSPENDRESUME,
 };
 
 static struct led_classdev fsg_sata_led = {
 	.name			= "fsg:blue:sata",
 	.brightness_set		= fsg_led_sata_set,
+	.flags			= LED_CORE_SUSPENDRESUME,
 };
 
 static struct led_classdev fsg_usb_led = {
 	.name			= "fsg:blue:usb",
 	.brightness_set		= fsg_led_usb_set,
+	.flags			= LED_CORE_SUSPENDRESUME,
 };
 
 static struct led_classdev fsg_sync_led = {
 	.name			= "fsg:blue:sync",
 	.brightness_set		= fsg_led_sync_set,
+	.flags			= LED_CORE_SUSPENDRESUME,
 };
 
 static struct led_classdev fsg_ring_led = {
 	.name			= "fsg:blue:ring",
 	.brightness_set		= fsg_led_ring_set,
+	.flags			= LED_CORE_SUSPENDRESUME,
 };
-
-
-
-#ifdef CONFIG_PM
-static int fsg_led_suspend(struct platform_device *dev, pm_message_t state)
-{
-	led_classdev_suspend(&fsg_wlan_led);
-	led_classdev_suspend(&fsg_wan_led);
-	led_classdev_suspend(&fsg_sata_led);
-	led_classdev_suspend(&fsg_usb_led);
-	led_classdev_suspend(&fsg_sync_led);
-	led_classdev_suspend(&fsg_ring_led);
-	return 0;
-}
-
-static int fsg_led_resume(struct platform_device *dev)
-{
-	led_classdev_resume(&fsg_wlan_led);
-	led_classdev_resume(&fsg_wan_led);
-	led_classdev_resume(&fsg_sata_led);
-	led_classdev_resume(&fsg_usb_led);
-	led_classdev_resume(&fsg_sync_led);
-	led_classdev_resume(&fsg_ring_led);
-	return 0;
-}
-#endif
 
 
 static int fsg_led_probe(struct platform_device *pdev)
 {
 	int ret;
+
+	/* Map the LED chip select address space */
+	latch_address = (unsigned short *) ioremap(IXP4XX_EXP_BUS_BASE(2), 512);
+	if (!latch_address) {
+		ret = -ENOMEM;
+		goto failremap;
+	}
+
+	latch_value = 0xffff;
+	*latch_address = latch_value;
 
 	ret = led_classdev_register(&pdev->dev, &fsg_wlan_led);
 	if (ret < 0)
@@ -185,20 +174,8 @@ static int fsg_led_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto failring;
 
-	/* Map the LED chip select address space */
-	latch_address = (unsigned short *) ioremap(IXP4XX_EXP_BUS_BASE(2), 512);
-	if (!latch_address) {
-		ret = -ENOMEM;
-		goto failremap;
-	}
-
-	latch_value = 0xffff;
-	*latch_address = latch_value;
-
 	return ret;
 
- failremap:
-	led_classdev_unregister(&fsg_ring_led);
  failring:
 	led_classdev_unregister(&fsg_sync_led);
  failsync:
@@ -210,20 +187,22 @@ static int fsg_led_probe(struct platform_device *pdev)
  failwan:
 	led_classdev_unregister(&fsg_wlan_led);
  failwlan:
+	iounmap(latch_address);
+ failremap:
 
 	return ret;
 }
 
 static int fsg_led_remove(struct platform_device *pdev)
 {
-	iounmap(latch_address);
-
 	led_classdev_unregister(&fsg_wlan_led);
 	led_classdev_unregister(&fsg_wan_led);
 	led_classdev_unregister(&fsg_sata_led);
 	led_classdev_unregister(&fsg_usb_led);
 	led_classdev_unregister(&fsg_sync_led);
 	led_classdev_unregister(&fsg_ring_led);
+
+	iounmap(latch_address);
 
 	return 0;
 }
@@ -232,10 +211,6 @@ static int fsg_led_remove(struct platform_device *pdev)
 static struct platform_driver fsg_led_driver = {
 	.probe		= fsg_led_probe,
 	.remove		= fsg_led_remove,
-#ifdef CONFIG_PM
-	.suspend	= fsg_led_suspend,
-	.resume		= fsg_led_resume,
-#endif
 	.driver		= {
 		.name		= "fsg-led",
 	},

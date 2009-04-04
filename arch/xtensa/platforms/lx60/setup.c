@@ -34,8 +34,8 @@
 #include <asm/processor.h>
 #include <asm/platform.h>
 #include <asm/bootparam.h>
-#include <asm/platform/lcd.h>
-#include <asm/platform-lx60/hardware.h>
+#include <platform/lcd.h>
+#include <platform/hardware.h>
 
 void platform_halt(void)
 {
@@ -96,13 +96,7 @@ struct platform_device lx60_oeth_platform_device = {
 /* very early init */
 void __init platform_setup(char **cmdline)
 {
-	if ( cmdline[0] &&  cmdline[1] && cmdline[2] && cmdline[3])
-		printk("lx60 %s('%s', '%s', '%s', '%s')\n", __func__, cmdline[0], cmdline[1], cmdline[2],  cmdline[3]);
-	else if ( cmdline[0] &&  cmdline[1] && cmdline[2] )
-		printk("lx60 %s('%s', '%s', '%s')\n", __func__, cmdline[0], cmdline[1], cmdline[2]);
-	else if ( cmdline[0] &&  cmdline[1] )
-		printk("lx60 %s('%s', '%s')\n", __func__, cmdline[0], cmdline[1]);
-	else if (cmdline[0])
+	if (cmdline[0])
 		printk("lx60 %s('%s')\n", __func__, cmdline[0]);
 	else
 		printk("lx60 %s(void)\n", __func__);

@@ -68,7 +68,6 @@ static const struct hc_driver ps3_ohci_hc_driver = {
 	.get_frame_number	= ohci_get_frame,
 	.hub_status_data	= ohci_hub_status_data,
 	.hub_control		= ohci_hub_control,
-	.hub_irq_enable		= ohci_rhsc_enable,
 	.start_port_reset	= ohci_start_port_reset,
 #if defined(CONFIG_PM)
 	.bus_suspend 		= ohci_bus_suspend,
@@ -193,7 +192,7 @@ fail_start:
 	return result;
 }
 
-static int ps3_ohci_remove (struct ps3_system_bus_device *dev)
+static int ps3_ohci_remove(struct ps3_system_bus_device *dev)
 {
 	unsigned int tmp;
 	struct usb_hcd *hcd =
@@ -206,6 +205,7 @@ static int ps3_ohci_remove (struct ps3_system_bus_device *dev)
 
 	tmp = hcd->irq;
 
+	ohci_shutdown(hcd);
 	usb_remove_hcd(hcd);
 
 	ps3_system_bus_set_driver_data(dev, NULL);

@@ -16,6 +16,10 @@
 #include <net/netns/ipv6.h>
 #include <net/netns/dccp.h>
 #include <net/netns/x_tables.h>
+#if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+#include <net/netns/conntrack.h>
+#endif
+#include <net/netns/xfrm.h>
 
 struct proc_dir_entry;
 struct net_device;
@@ -67,6 +71,12 @@ struct net {
 #endif
 #ifdef CONFIG_NETFILTER
 	struct netns_xt		xt;
+#if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+	struct netns_ct		ct;
+#endif
+#endif
+#ifdef CONFIG_XFRM
+	struct netns_xfrm	xfrm;
 #endif
 	struct net_generic	*gen;
 };
@@ -99,11 +109,6 @@ extern struct list_head net_namespace_list;
 #ifdef CONFIG_NET_NS
 extern void __put_net(struct net *net);
 
-static inline int net_alive(struct net *net)
-{
-	return net && atomic_read(&net->count);
-}
-
 static inline struct net *get_net(struct net *net)
 {
 	atomic_inc(&net->count);
@@ -134,11 +139,6 @@ int net_eq(const struct net *net1, const struct net *net2)
 	return net1 == net2;
 }
 #else
-
-static inline int net_alive(struct net *net)
-{
-	return 1;
-}
 
 static inline struct net *get_net(struct net *net)
 {
@@ -186,6 +186,24 @@ static inline void release_net(struct net *net)
 }
 #endif
 
+#ifdef CONFIG_NET_NS
+
+static inline void write_pnet(struct net **pnet, struct net *net)
+{
+	*pnet = net;
+}
+
+static inline struct net *read_pnet(struct net * const *pnet)
+{
+	return *pnet;
+}
+
+#else
+
+#define write_pnet(pnet, net)	do { (void)(net);} while (0)
+#define read_pnet(pnet)		(&init_net)
+
+#endif
 
 #define for_each_net(VAR)				\
 	list_for_each_entry(VAR, &net_namespace_list, list)
@@ -206,8 +224,27 @@ struct pernet_operations {
 	void (*exit)(struct net *net);
 };
 
+/*
+ * Use these carefully.  If you implement a network device and it
+ * needs per network namespace operations use device pernet operations,
+ * otherwise use pernet subsys operations.
+ *
+ * This is critically important.  Most of the network code cleanup
+ * runs with the assumption that dev_remove_pack has been called so no
+ * new packets will arrive during and after the cleanup functions have
+ * been called.  dev_remove_pack is not per namespace so instead the
+ * guarantee of no more packets arriving in a network namespace is
+ * provided by ensuring that all network devices and all sockets have
+ * left the network namespace before the cleanup methods are called.
+ *
+ * For the longest time the ipv4 icmp code was registered as a pernet
+ * device which caused kernel oops, and panics during network
+ * namespace cleanup.   So please don't get this wrong.
+ */
 extern int register_pernet_subsys(struct pernet_operations *);
 extern void unregister_pernet_subsys(struct pernet_operations *);
+extern int register_pernet_gen_subsys(int *id, struct pernet_operations *);
+extern void unregister_pernet_gen_subsys(int id, struct pernet_operations *);
 extern int register_pernet_device(struct pernet_operations *);
 extern void unregister_pernet_device(struct pernet_operations *);
 extern int register_pernet_gen_device(int *id, struct pernet_operations *);

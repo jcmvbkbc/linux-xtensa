@@ -425,9 +425,6 @@ static ssize_t read_oldmem(struct file *file, char __user *buf,
 }
 #endif
 
-extern long vread(char *buf, char *addr, unsigned long count);
-extern long vwrite(char *buf, char *addr, unsigned long count);
-
 #ifdef CONFIG_DEVKMEM
 /*
  * This function reads the *virtual* memory as seen by the kernel.
@@ -992,9 +989,9 @@ static int __init chr_dev_init(void)
 
 	mem_class = class_create(THIS_MODULE, "mem");
 	for (i = 0; i < ARRAY_SIZE(devlist); i++)
-		device_create_drvdata(mem_class, NULL,
-				      MKDEV(MEM_MAJOR, devlist[i].minor),
-				      NULL, devlist[i].name);
+		device_create(mem_class, NULL,
+			      MKDEV(MEM_MAJOR, devlist[i].minor), NULL,
+			      devlist[i].name);
 
 	return 0;
 }

@@ -8,7 +8,7 @@ menu "Kernel hacking"
 source "lib/Kconfig.debug"
 
 config KGDB_BREAKS_WITH_ILLEGAL_INSTRUCTION
-	bool "Use and Illegal Instruction instead of BREAK instruction.
+	bool "Use and Illegal Instruction instead of BREAK instruction."
 	depends on  KGDB
 	default y
 	help

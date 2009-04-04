@@ -8,7 +8,6 @@
  *
  */
 
-#include <linux/list.h>
 #include <linux/netdevice.h>
 #include <linux/ethtool.h>
 #include <linux/etherdevice.h>
@@ -30,13 +29,9 @@ struct veth_net_stats {
 
 struct veth_priv {
 	struct net_device *peer;
-	struct net_device *dev;
-	struct list_head list;
 	struct veth_net_stats *stats;
 	unsigned ip_summed;
 };
-
-static LIST_HEAD(veth_list);
 
 /*
  * ethtool interface
@@ -244,6 +239,16 @@ static int veth_open(struct net_device *dev)
 	return 0;
 }
 
+static int veth_close(struct net_device *dev)
+{
+	struct veth_priv *priv = netdev_priv(dev);
+
+	netif_carrier_off(dev);
+	netif_carrier_off(priv->peer);
+
+	return 0;
+}
+
 static int veth_dev_init(struct net_device *dev)
 {
 	struct veth_net_stats *stats;
@@ -267,56 +272,24 @@ static void veth_dev_free(struct net_device *dev)
 	free_netdev(dev);
 }
 
+static const struct net_device_ops veth_netdev_ops = {
+	.ndo_init            = veth_dev_init,
+	.ndo_open            = veth_open,
+	.ndo_stop            = veth_close,
+	.ndo_start_xmit      = veth_xmit,
+	.ndo_get_stats       = veth_get_stats,
+	.ndo_set_mac_address = eth_mac_addr,
+};
+
 static void veth_setup(struct net_device *dev)
 {
 	ether_setup(dev);
 
-	dev->hard_start_xmit = veth_xmit;
-	dev->get_stats = veth_get_stats;
-	dev->open = veth_open;
+	dev->netdev_ops = &veth_netdev_ops;
 	dev->ethtool_ops = &veth_ethtool_ops;
 	dev->features |= NETIF_F_LLTX;
-	dev->init = veth_dev_init;
 	dev->destructor = veth_dev_free;
 }
-
-static void veth_change_state(struct net_device *dev)
-{
-	struct net_device *peer;
-	struct veth_priv *priv;
-
-	priv = netdev_priv(dev);
-	peer = priv->peer;
-
-	if (netif_carrier_ok(peer)) {
-		if (!netif_carrier_ok(dev))
-			netif_carrier_on(dev);
-	} else {
-		if (netif_carrier_ok(dev))
-			netif_carrier_off(dev);
-	}
-}
-
-static int veth_device_event(struct notifier_block *unused,
-			     unsigned long event, void *ptr)
-{
-	struct net_device *dev = ptr;
-
-	if (dev->open != veth_open)
-		goto out;
-
-	switch (event) {
-	case NETDEV_CHANGE:
-		veth_change_state(dev);
-		break;
-	}
-out:
-	return NOTIFY_DONE;
-}
-
-static struct notifier_block veth_notifier_block __read_mostly = {
-	.notifier_call	= veth_device_event,
-};
 
 /*
  * netlink interface
@@ -420,14 +393,10 @@ static int veth_newlink(struct net_device *dev,
 	 */
 
 	priv = netdev_priv(dev);
-	priv->dev = dev;
 	priv->peer = peer;
-	list_add(&priv->list, &veth_list);
 
 	priv = netdev_priv(peer);
-	priv->dev = peer;
 	priv->peer = dev;
-	INIT_LIST_HEAD(&priv->list);
 	return 0;
 
 err_register_dev:
@@ -448,13 +417,6 @@ static void veth_dellink(struct net_device *dev)
 
 	priv = netdev_priv(dev);
 	peer = priv->peer;
-
-	if (!list_empty(&priv->list))
-		list_del(&priv->list);
-
-	priv = netdev_priv(peer);
-	if (!list_empty(&priv->list))
-		list_del(&priv->list);
 
 	unregister_netdevice(dev);
 	unregister_netdevice(peer);
@@ -479,14 +441,12 @@ static struct rtnl_link_ops veth_link_ops = {
 
 static __init int veth_init(void)
 {
-	register_netdevice_notifier(&veth_notifier_block);
 	return rtnl_link_register(&veth_link_ops);
 }
 
 static __exit void veth_exit(void)
 {
 	rtnl_link_unregister(&veth_link_ops);
-	unregister_netdevice_notifier(&veth_notifier_block);
 }
 
 module_init(veth_init);

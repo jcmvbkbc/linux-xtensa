@@ -205,7 +205,7 @@ replay:
 		}
 	}
 
-	root_lock = qdisc_root_lock(q);
+	root_lock = qdisc_root_sleeping_lock(q);
 
 	if (tp == NULL) {
 		/* Proto-tcf does not exist, create new one */
@@ -227,7 +227,7 @@ replay:
 		err = -ENOENT;
 		tp_ops = tcf_proto_lookup_ops(tca[TCA_KIND]);
 		if (tp_ops == NULL) {
-#ifdef CONFIG_KMOD
+#ifdef CONFIG_MODULES
 			struct nlattr *kind = tca[TCA_KIND];
 			char name[IFNAMSIZ];
 
@@ -280,7 +280,7 @@ replay:
 		if (n->nlmsg_type == RTM_DELTFILTER && t->tcm_handle == 0) {
 			spin_lock_bh(root_lock);
 			*back = tp->next;
-			spin_lock_bh(root_lock);
+			spin_unlock_bh(root_lock);
 
 			tfilter_notify(skb, n, tp, fh, RTM_DELTFILTER);
 			tcf_destroy(tp);
@@ -531,7 +531,8 @@ void tcf_exts_change(struct tcf_proto *tp, struct tcf_exts *dst,
 	if (src->action) {
 		struct tc_action *act;
 		tcf_tree_lock(tp);
-		act = xchg(&dst->action, src->action);
+		act = dst->action;
+		dst->action = src->action;
 		tcf_tree_unlock(tp);
 		if (act)
 			tcf_action_destroy(act, TCA_ACT_UNBIND);

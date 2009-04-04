@@ -1,8 +1,10 @@
-ifneq ($(wildcard $(srctree)/include/asm-$(SRCARCH)/kvm.h),)
+ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/include/asm/kvm.h \
+      		  $(srctree)/include/asm-$(SRCARCH)/kvm.h),)
 header-y  += kvm.h
 endif
 
-ifneq ($(wildcard $(srctree)/include/asm-$(SRCARCH)/a.out.h),)
+ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/include/asm/a.out.h \
+      		  $(srctree)/include/asm-$(SRCARCH)/a.out.h),)
 unifdef-y += a.out.h
 endif
 unifdef-y += auxvec.h
@@ -29,6 +31,7 @@ unifdef-y += socket.h
 unifdef-y += sockios.h
 unifdef-y += stat.h
 unifdef-y += statfs.h
+unifdef-y += swab.h
 unifdef-y += termbits.h
 unifdef-y += termios.h
 unifdef-y += types.h

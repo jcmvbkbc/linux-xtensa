@@ -12,6 +12,7 @@ obj-$(CONFIG_OCFS2_FS_USERSPACE_CLUSTER) += ocfs2_stack_user.o
 ocfs2-objs := \
 	alloc.o 		\
 	aops.o 			\
+	blockcheck.o		\
 	buffer_head_io.o	\
 	dcache.o 		\
 	dir.o 			\
@@ -34,7 +35,14 @@ ocfs2-objs := \
 	symlink.o 		\
 	sysfile.o 		\
 	uptodate.o		\
-	ver.o
+	ver.o			\
+	quota_local.o		\
+	quota_global.o		\
+	xattr.o
+
+ifeq ($(CONFIG_OCFS2_FS_POSIX_ACL),y)
+ocfs2-objs += acl.o
+endif
 
 ocfs2_stackglue-objs := stackglue.o
 ocfs2_stack_o2cb-objs := stack_o2cb.o

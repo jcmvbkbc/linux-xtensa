@@ -26,11 +26,24 @@ _GLOBAL(__copy_tofrom_user)
 	andi.	r6,r6,7
 	PPC_MTOCRF	0x01,r5
 	blt	cr1,.Lshort_copy
+/* Below we want to nop out the bne if we're on a CPU that has the
+ * CPU_FTR_UNALIGNED_LD_STD bit set and the CPU_FTR_CP_USE_DCBTZ bit
+ * cleared.
+ * At the time of writing the only CPU that has this combination of bits
+ * set is Power6.
+ */
+BEGIN_FTR_SECTION
+	nop
+FTR_SECTION_ELSE
 	bne	.Ldst_unaligned
+ALT_FTR_SECTION_END(CPU_FTR_UNALIGNED_LD_STD | CPU_FTR_CP_USE_DCBTZ, \
+		    CPU_FTR_UNALIGNED_LD_STD)
 .Ldst_aligned:
-	andi.	r0,r4,7
 	addi	r3,r3,-16
+BEGIN_FTR_SECTION
+	andi.	r0,r4,7
 	bne	.Lsrc_unaligned
+END_FTR_SECTION_IFCLR(CPU_FTR_UNALIGNED_LD_STD)
 	srdi	r7,r5,4
 20:	ld	r9,0(r4)
 	addi	r4,r4,-8
@@ -49,18 +62,19 @@ _GLOBAL(__copy_tofrom_user)
 72:	std	r8,8(r3)
 	beq+	3f
 	addi	r3,r3,16
-23:	ld	r9,8(r4)
 .Ldo_tail:
 	bf	cr7*4+1,1f
-	rotldi	r9,r9,32
+23:	lwz	r9,8(r4)
+	addi	r4,r4,4
 73:	stw	r9,0(r3)
 	addi	r3,r3,4
 1:	bf	cr7*4+2,2f
-	rotldi	r9,r9,16
+44:	lhz	r9,8(r4)
+	addi	r4,r4,2
 74:	sth	r9,0(r3)
 	addi	r3,r3,2
 2:	bf	cr7*4+3,3f
-	rotldi	r9,r9,8
+45:	lbz	r9,8(r4)
 75:	stb	r9,0(r3)
 3:	li	r3,0
 	blr
@@ -128,17 +142,30 @@ _GLOBAL(__copy_tofrom_user)
 6:	cmpwi	cr1,r5,8
 	addi	r3,r3,32
 	sld	r9,r9,r10
-	ble	cr1,.Ldo_tail
+	ble	cr1,7f
 34:	ld	r0,8(r4)
 	srd	r7,r0,r11
 	or	r9,r7,r9
-	b	.Ldo_tail
+7:
+	bf	cr7*4+1,1f
+	rotldi	r9,r9,32
+94:	stw	r9,0(r3)
+	addi	r3,r3,4
+1:	bf	cr7*4+2,2f
+	rotldi	r9,r9,16
+95:	sth	r9,0(r3)
+	addi	r3,r3,2
+2:	bf	cr7*4+3,3f
+	rotldi	r9,r9,8
+96:	stb	r9,0(r3)
+3:	li	r3,0
+	blr
 
 .Ldst_unaligned:
 	PPC_MTOCRF	0x01,r6		/* put #bytes to 8B bdry into cr7 */
 	subf	r5,r6,r5
 	li	r7,0
-	cmpldi	r1,r5,16
+	cmpldi	cr1,r5,16
 	bf	cr7*4+3,1f
 35:	lbz	r0,0(r4)
 81:	stb	r0,0(r3)
@@ -205,7 +232,6 @@ _GLOBAL(__copy_tofrom_user)
 121:
 132:
 	addi	r3,r3,8
-123:
 134:
 135:
 138:
@@ -213,6 +239,9 @@ _GLOBAL(__copy_tofrom_user)
 140:
 141:
 142:
+123:
+144:
+145:
 
 /*
  * here we have had a fault on a load and r3 points to the first
@@ -296,6 +325,9 @@ _GLOBAL(__copy_tofrom_user)
 187:
 188:
 189:	
+194:
+195:
+196:
 1:
 	ld	r6,-24(r1)
 	ld	r5,-8(r1)
@@ -316,7 +348,9 @@ _GLOBAL(__copy_tofrom_user)
 	.llong	72b,172b
 	.llong	23b,123b
 	.llong	73b,173b
+	.llong	44b,144b
 	.llong	74b,174b
+	.llong	45b,145b
 	.llong	75b,175b
 	.llong	24b,124b
 	.llong	25b,125b
@@ -334,6 +368,9 @@ _GLOBAL(__copy_tofrom_user)
 	.llong	79b,179b
 	.llong	80b,180b
 	.llong	34b,134b
+	.llong	94b,194b
+	.llong	95b,195b
+	.llong	96b,196b
 	.llong	35b,135b
 	.llong	81b,181b
 	.llong	36b,136b

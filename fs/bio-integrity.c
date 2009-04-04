@@ -107,10 +107,11 @@ void bio_integrity_free(struct bio *bio, struct bio_set *bs)
 	BUG_ON(bip == NULL);
 
 	/* A cloned bio doesn't own the integrity metadata */
-	if (!bio_flagged(bio, BIO_CLONED) && bip->bip_buf != NULL)
+	if (!bio_flagged(bio, BIO_CLONED) && !bio_flagged(bio, BIO_FS_INTEGRITY)
+	    && bip->bip_buf != NULL)
 		kfree(bip->bip_buf);
 
-	mempool_free(bip->bip_vec, bs->bvec_pools[bip->bip_pool]);
+	bvec_free_bs(bs, bip->bip_vec, bip->bip_pool);
 	mempool_free(bip, bs->bio_integrity_pool);
 
 	bio->bi_integrity = NULL;
@@ -139,7 +140,6 @@ int bio_integrity_add_page(struct bio *bio, struct page *page,
 
 	iv = bip_vec_idx(bip, bip->bip_vcnt);
 	BUG_ON(iv == NULL);
-	BUG_ON(iv->bv_page != NULL);
 
 	iv->bv_page = page;
 	iv->bv_len = len;
@@ -149,6 +149,24 @@ int bio_integrity_add_page(struct bio *bio, struct page *page,
 	return len;
 }
 EXPORT_SYMBOL(bio_integrity_add_page);
+
+static int bdev_integrity_enabled(struct block_device *bdev, int rw)
+{
+	struct blk_integrity *bi = bdev_get_integrity(bdev);
+
+	if (bi == NULL)
+		return 0;
+
+	if (rw == READ && bi->verify_fn != NULL &&
+	    (bi->flags & INTEGRITY_FLAG_READ))
+		return 1;
+
+	if (rw == WRITE && bi->generate_fn != NULL &&
+	    (bi->flags & INTEGRITY_FLAG_WRITE))
+		return 1;
+
+	return 0;
+}
 
 /**
  * bio_integrity_enabled - Check whether integrity can be passed
@@ -313,6 +331,14 @@ static void bio_integrity_generate(struct bio *bio)
 	}
 }
 
+static inline unsigned short blk_integrity_tuple_size(struct blk_integrity *bi)
+{
+	if (bi)
+		return bi->tuple_size;
+
+	return 0;
+}
+
 /**
  * bio_integrity_prep - Prepare bio for integrity I/O
  * @bio:	bio to prepare
@@ -438,7 +464,7 @@ static int bio_integrity_verify(struct bio *bio)
 
 		if (ret) {
 			kunmap_atomic(kaddr, KM_USER0);
-			break;
+			return ret;
 		}
 
 		sectors = bv->bv_len / bi->sector_size;
@@ -466,18 +492,13 @@ static void bio_integrity_verify_fn(struct work_struct *work)
 	struct bio_integrity_payload *bip =
 		container_of(work, struct bio_integrity_payload, bip_work);
 	struct bio *bio = bip->bip_bio;
-	int error = bip->bip_error;
+	int error;
 
-	if (bio_integrity_verify(bio)) {
-		clear_bit(BIO_UPTODATE, &bio->bi_flags);
-		error = -EIO;
-	}
+	error = bio_integrity_verify(bio);
 
 	/* Restore original bio completion handler */
 	bio->bi_end_io = bip->bip_end_io;
-
-	if (bio->bi_end_io)
-		bio->bi_end_io(bio, error);
+	bio_endio(bio, error);
 }
 
 /**
@@ -498,7 +519,17 @@ void bio_integrity_endio(struct bio *bio, int error)
 
 	BUG_ON(bip->bip_bio != bio);
 
-	bip->bip_error = error;
+	/* In case of an I/O error there is no point in verifying the
+	 * integrity metadata.  Restore original bio end_io handler
+	 * and run it.
+	 */
+	if (error) {
+		bio->bi_end_io = bip->bip_end_io;
+		bio_endio(bio, error);
+
+		return;
+	}
+
 	INIT_WORK(&bip->bip_work, bio_integrity_verify_fn);
 	queue_work(kintegrityd_wq, &bip->bip_work);
 }

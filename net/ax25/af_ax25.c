@@ -317,6 +317,9 @@ void ax25_destroy_socket(ax25_cb *ax25)
 				/* Queue the unaccepted socket for death */
 				sock_orphan(skb->sk);
 
+				/* 9A4GL: hack to release unaccepted sockets */
+				skb->sk->sk_state = TCP_LISTEN;
+
 				ax25_start_heartbeat(sax25);
 				sax25->state = AX25_STATE_0;
 			}
@@ -1042,7 +1045,7 @@ static int ax25_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	if (addr->fsa_ax25.sax25_family != AF_AX25)
 		return -EINVAL;
 
-	user = ax25_findbyuid(current->euid);
+	user = ax25_findbyuid(current_euid());
 	if (user) {
 		call = user->call;
 		ax25_uid_put(user);

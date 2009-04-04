@@ -41,12 +41,6 @@
 #define LOG_FLAG_NOMEM		8
 
 #define ctcm_pr_debug(fmt, arg...) printk(KERN_DEBUG fmt, ##arg)
-#define ctcm_pr_info(fmt, arg...) printk(KERN_INFO fmt, ##arg)
-#define ctcm_pr_notice(fmt, arg...) printk(KERN_NOTICE fmt, ##arg)
-#define ctcm_pr_warn(fmt, arg...) printk(KERN_WARNING fmt, ##arg)
-#define ctcm_pr_emerg(fmt, arg...) printk(KERN_EMERG fmt, ##arg)
-#define ctcm_pr_err(fmt, arg...) printk(KERN_ERR fmt, ##arg)
-#define ctcm_pr_crit(fmt, arg...) printk(KERN_CRIT fmt, ##arg)
 
 #define CTCM_PR_DEBUG(fmt, arg...) \
 	do { \
@@ -104,7 +98,7 @@
 #define READ			0
 #define WRITE			1
 
-#define CTCM_ID_SIZE		BUS_ID_SIZE+3
+#define CTCM_ID_SIZE		20+3
 
 struct ctcm_profile {
 	unsigned long maxmulti;
@@ -229,14 +223,14 @@ void ctcm_remove_files(struct device *dev);
  */
 static inline void ctcm_clear_busy_do(struct net_device *dev)
 {
-	clear_bit(0, &(((struct ctcm_priv *)dev->priv)->tbusy));
+	clear_bit(0, &(((struct ctcm_priv *)dev->ml_priv)->tbusy));
 	netif_wake_queue(dev);
 }
 
 static inline void ctcm_clear_busy(struct net_device *dev)
 {
 	struct mpc_group *grp;
-	grp = ((struct ctcm_priv *)dev->priv)->mpcg;
+	grp = ((struct ctcm_priv *)dev->ml_priv)->mpcg;
 
 	if (!(grp && grp->in_sweep))
 		ctcm_clear_busy_do(dev);
@@ -246,7 +240,8 @@ static inline void ctcm_clear_busy(struct net_device *dev)
 static inline int ctcm_test_and_set_busy(struct net_device *dev)
 {
 	netif_stop_queue(dev);
-	return test_and_set_bit(0, &(((struct ctcm_priv *)dev->priv)->tbusy));
+	return test_and_set_bit(0,
+			&(((struct ctcm_priv *)dev->ml_priv)->tbusy));
 }
 
 extern int loglevel;
@@ -292,7 +287,7 @@ struct mpc_group *ctcmpc_init_mpc_group(struct ctcm_priv *priv);
 #define IS_MPC(p) ((p)->protocol == CTCM_PROTO_MPC)
 
 /* test if struct ctcm_priv of struct net_device has MPC protocol setting */
-#define IS_MPCDEV(d) IS_MPC((struct ctcm_priv *)d->priv)
+#define IS_MPCDEV(dev) IS_MPC((struct ctcm_priv *)dev->ml_priv)
 
 static inline gfp_t gfp_type(void)
 {

@@ -96,9 +96,9 @@ static int rxrpc_validate_address(struct rxrpc_sock *rx,
 
 	switch (srx->transport.family) {
 	case AF_INET:
-		_debug("INET: %x @ %u.%u.%u.%u",
+		_debug("INET: %x @ %pI4",
 		       ntohs(srx->transport.sin.sin_port),
-		       NIPQUAD(srx->transport.sin.sin_addr));
+		       &srx->transport.sin.sin_addr);
 		if (srx->transport_len > 8)
 			memset((void *)&srx->transport + 8, 0,
 			       srx->transport_len - 8);
@@ -284,13 +284,13 @@ struct rxrpc_call *rxrpc_kernel_begin_call(struct socket *sock,
 		if (IS_ERR(trans)) {
 			call = ERR_CAST(trans);
 			trans = NULL;
-			goto out;
+			goto out_notrans;
 		}
 	} else {
 		trans = rx->trans;
 		if (!trans) {
 			call = ERR_PTR(-ENOTCONN);
-			goto out;
+			goto out_notrans;
 		}
 		atomic_inc(&trans->usage);
 	}
@@ -315,6 +315,7 @@ struct rxrpc_call *rxrpc_kernel_begin_call(struct socket *sock,
 	rxrpc_put_bundle(trans, bundle);
 out:
 	rxrpc_put_transport(trans);
+out_notrans:
 	release_sock(&rx->sk);
 	_leave(" = %p", call);
 	return call;

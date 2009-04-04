@@ -2,6 +2,7 @@
 #define _LINUX_VMALLOC_H
 
 #include <linux/spinlock.h>
+#include <linux/init.h>
 #include <asm/page.h>		/* pgprot_t */
 
 struct vm_area_struct;		/* vma defining user mapping in mm_types.h */
@@ -23,7 +24,6 @@ struct vm_area_struct;		/* vma defining user mapping in mm_types.h */
 #endif
 
 struct vm_struct {
-	/* keep next,addr,size together to speedup lookups */
 	struct vm_struct	*next;
 	void			*addr;
 	unsigned long		size;
@@ -37,6 +37,19 @@ struct vm_struct {
 /*
  *	Highlevel APIs for driver use
  */
+extern void vm_unmap_ram(const void *mem, unsigned int count);
+extern void *vm_map_ram(struct page **pages, unsigned int count,
+				int node, pgprot_t prot);
+extern void vm_unmap_aliases(void);
+
+#ifdef CONFIG_MMU
+extern void __init vmalloc_init(void);
+#else
+static inline void vmalloc_init(void)
+{
+}
+#endif
+
 extern void *vmalloc(unsigned long size);
 extern void *vmalloc_user(unsigned long size);
 extern void *vmalloc_node(unsigned long size, int node);
@@ -71,6 +84,10 @@ extern struct vm_struct *get_vm_area_caller(unsigned long size,
 					unsigned long flags, void *caller);
 extern struct vm_struct *__get_vm_area(unsigned long size, unsigned long flags,
 					unsigned long start, unsigned long end);
+extern struct vm_struct *__get_vm_area_caller(unsigned long size,
+					unsigned long flags,
+					unsigned long start, unsigned long end,
+					void *caller);
 extern struct vm_struct *get_vm_area_node(unsigned long size,
 					  unsigned long flags, int node,
 					  gfp_t gfp_mask);
@@ -84,12 +101,14 @@ extern void unmap_kernel_range(unsigned long addr, unsigned long size);
 extern struct vm_struct *alloc_vm_area(size_t size);
 extern void free_vm_area(struct vm_struct *area);
 
+/* for /dev/kmem */
+extern long vread(char *buf, char *addr, unsigned long count);
+extern long vwrite(char *buf, char *addr, unsigned long count);
+
 /*
  *	Internals.  Dont't use..
  */
 extern rwlock_t vmlist_lock;
 extern struct vm_struct *vmlist;
-
-extern const struct seq_operations vmalloc_op;
 
 #endif /* _LINUX_VMALLOC_H */

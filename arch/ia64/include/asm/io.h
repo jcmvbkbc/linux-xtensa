@@ -19,6 +19,8 @@
  * Copyright (C) 1999 Don Dugger <don.dugger@intel.com>
  */
 
+#include <asm/unaligned.h>
+
 /* We don't use IO slowdowns on the ia64, but.. */
 #define __SLOW_DOWN_IO	do { } while (0)
 #define SLOW_DOWN_IO	do { } while (0)
@@ -241,7 +243,7 @@ __insw (unsigned long port, void *dst, unsigned long count)
 	unsigned short *dp = dst;
 
 	while (count--)
-		*dp++ = platform_inw(port);
+		put_unaligned(platform_inw(port), dp++);
 }
 
 static inline void
@@ -250,7 +252,7 @@ __insl (unsigned long port, void *dst, unsigned long count)
 	unsigned int *dp = dst;
 
 	while (count--)
-		*dp++ = platform_inl(port);
+		put_unaligned(platform_inl(port), dp++);
 }
 
 static inline void
@@ -268,7 +270,7 @@ __outsw (unsigned long port, const void *src, unsigned long count)
 	const unsigned short *sp = src;
 
 	while (count--)
-		platform_outw(*sp++, port);
+		platform_outw(get_unaligned(sp++), port);
 }
 
 static inline void
@@ -277,7 +279,7 @@ __outsl (unsigned long port, const void *src, unsigned long count)
 	const unsigned int *sp = src;
 
 	while (count--)
-		platform_outl(*sp++, port);
+		platform_outl(get_unaligned(sp++), port);
 }
 
 /*
@@ -431,29 +433,5 @@ extern void memcpy_toio(volatile void __iomem *dst, const void *src, long n);
 extern void memset_io(volatile void __iomem *s, int c, long n);
 
 # endif /* __KERNEL__ */
-
-/*
- * Enabling BIO_VMERGE_BOUNDARY forces us to turn off I/O MMU bypassing.  It is said that
- * BIO-level virtual merging can give up to 4% performance boost (not verified for ia64).
- * On the other hand, we know that I/O MMU bypassing gives ~8% performance improvement on
- * SPECweb-like workloads on zx1-based machines.  Thus, for now we favor I/O MMU bypassing
- * over BIO-level virtual merging.
- */
-extern unsigned long ia64_max_iommu_merge_mask;
-#if 1
-#define BIO_VMERGE_BOUNDARY	0
-#else
-/*
- * It makes no sense at all to have this BIO_VMERGE_BOUNDARY macro here.  Should be
- * replaced by dma_merge_mask() or something of that sort.  Note: the only way
- * BIO_VMERGE_BOUNDARY is used is to mask off bits.  Effectively, our definition gets
- * expanded into:
- *
- *	addr & ((ia64_max_iommu_merge_mask + 1) - 1) == (addr & ia64_max_iommu_vmerge_mask)
- *
- * which is precisely what we want.
- */
-#define BIO_VMERGE_BOUNDARY	(ia64_max_iommu_merge_mask + 1)
-#endif
 
 #endif /* _ASM_IA64_IO_H */

@@ -269,7 +269,7 @@ sn_io_slot_fixup(struct pci_dev *dev)
 
 			rom = ioremap(pci_resource_start(dev, PCI_ROM_RESOURCE),
 				      size + 1);
-			image_size = pci_get_rom_size(rom, size + 1);
+			image_size = pci_get_rom_size(dev, rom, size + 1);
 			dev->resource[PCI_ROM_RESOURCE].end =
 				dev->resource[PCI_ROM_RESOURCE].start +
 				image_size - 1;
@@ -292,7 +292,7 @@ EXPORT_SYMBOL(sn_io_slot_fixup);
  * sn_pci_controller_fixup() - This routine sets up a bus's resources
  *			       consistent with the Linux PCI abstraction layer.
  */
-static void
+static void __init
 sn_pci_controller_fixup(int segment, int busnum, struct pci_bus *bus)
 {
 	s64 status = 0;

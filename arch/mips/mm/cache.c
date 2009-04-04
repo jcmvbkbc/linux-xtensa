@@ -13,6 +13,7 @@
 #include <linux/linkage.h>
 #include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/syscalls.h>
 #include <linux/mm.h>
 
 #include <asm/cacheflush.h>
@@ -29,6 +30,7 @@ void (*flush_cache_range)(struct vm_area_struct *vma, unsigned long start,
 void (*flush_cache_page)(struct vm_area_struct *vma, unsigned long page,
 	unsigned long pfn);
 void (*flush_icache_range)(unsigned long start, unsigned long end);
+void (*local_flush_icache_range)(unsigned long start, unsigned long end);
 
 void (*__flush_cache_vmap)(void);
 void (*__flush_cache_vunmap)(void);
@@ -57,8 +59,8 @@ EXPORT_SYMBOL(_dma_cache_wback_inv);
  * We could optimize the case where the cache argument is not BCACHE but
  * that seems very atypical use ...
  */
-asmlinkage int sys_cacheflush(unsigned long addr,
-	unsigned long bytes, unsigned int cache)
+SYSCALL_DEFINE3(cacheflush, unsigned long, addr, unsigned long, bytes,
+	unsigned int, cache)
 {
 	if (bytes == 0)
 		return 0;
@@ -179,6 +181,12 @@ void __devinit cpu_cache_init(void)
 		extern void __weak tx39_cache_init(void);
 
 		tx39_cache_init();
+	}
+
+	if (cpu_has_octeon_cache) {
+		extern void __weak octeon_cache_init(void);
+
+		octeon_cache_init();
 	}
 
 	setup_protection_map();

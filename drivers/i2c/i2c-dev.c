@@ -35,6 +35,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <linux/smp_lock.h>
+#include <linux/jiffies.h>
 #include <asm/uaccess.h>
 
 static struct i2c_driver i2cdev_driver;
@@ -422,7 +423,10 @@ static long i2cdev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		client->adapter->retries = arg;
 		break;
 	case I2C_TIMEOUT:
-		client->adapter->timeout = arg;
+		/* For historical reasons, user-space sets the timeout
+		 * value in units of 10 ms.
+		 */
+		client->adapter->timeout = msecs_to_jiffies(arg * 10);
 		break;
 	default:
 		/* NOTE:  returning a fault code here could cause trouble
@@ -521,9 +525,9 @@ static int i2cdev_attach_adapter(struct i2c_adapter *adap)
 		return PTR_ERR(i2c_dev);
 
 	/* register this i2c device with the driver core */
-	i2c_dev->dev = device_create_drvdata(i2c_dev_class, &adap->dev,
-					     MKDEV(I2C_MAJOR, adap->nr),
-					     NULL, "i2c-%d", adap->nr);
+	i2c_dev->dev = device_create(i2c_dev_class, &adap->dev,
+				     MKDEV(I2C_MAJOR, adap->nr), NULL,
+				     "i2c-%d", adap->nr);
 	if (IS_ERR(i2c_dev->dev)) {
 		res = PTR_ERR(i2c_dev->dev);
 		goto error;
@@ -583,8 +587,10 @@ static int __init i2c_dev_init(void)
 		goto out;
 
 	i2c_dev_class = class_create(THIS_MODULE, "i2c-dev");
-	if (IS_ERR(i2c_dev_class))
+	if (IS_ERR(i2c_dev_class)) {
+		res = PTR_ERR(i2c_dev_class);
 		goto out_unreg_chrdev;
+	}
 
 	res = i2c_add_driver(&i2cdev_driver);
 	if (res)

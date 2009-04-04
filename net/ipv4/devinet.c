@@ -112,13 +112,7 @@ static inline void devinet_sysctl_unregister(struct in_device *idev)
 
 static struct in_ifaddr *inet_alloc_ifa(void)
 {
-	struct in_ifaddr *ifa = kzalloc(sizeof(*ifa), GFP_KERNEL);
-
-	if (ifa) {
-		INIT_RCU_HEAD(&ifa->rcu_head);
-	}
-
-	return ifa;
+	return kzalloc(sizeof(struct in_ifaddr), GFP_KERNEL);
 }
 
 static void inet_rcu_free_ifa(struct rcu_head *head)
@@ -161,7 +155,6 @@ static struct in_device *inetdev_init(struct net_device *dev)
 	in_dev = kzalloc(sizeof(*in_dev), GFP_KERNEL);
 	if (!in_dev)
 		goto out;
-	INIT_RCU_HEAD(&in_dev->rcu_head);
 	memcpy(&in_dev->cnf, dev_net(dev)->ipv4.devconf_dflt,
 			sizeof(in_dev->cnf));
 	in_dev->cnf.sysctl = NULL;
@@ -613,9 +606,7 @@ int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	if (colon)
 		*colon = 0;
 
-#ifdef CONFIG_KMOD
 	dev_load(net, ifr.ifr_name);
-#endif
 
 	switch (cmd) {
 	case SIOCGIFADDR:	/* Get interface address */
@@ -1029,6 +1020,11 @@ skip:
 	}
 }
 
+static inline bool inetdev_valid_mtu(unsigned mtu)
+{
+	return mtu >= 68;
+}
+
 /* Called only under RTNL semaphore */
 
 static int inetdev_event(struct notifier_block *this, unsigned long event,
@@ -1048,6 +1044,10 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
 				IN_DEV_CONF_SET(in_dev, NOXFRM, 1);
 				IN_DEV_CONF_SET(in_dev, NOPOLICY, 1);
 			}
+		} else if (event == NETDEV_CHANGEMTU) {
+			/* Re-enabling IP */
+			if (inetdev_valid_mtu(dev->mtu))
+				in_dev = inetdev_init(dev);
 		}
 		goto out;
 	}
@@ -1058,7 +1058,7 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
 		dev->ip_ptr = NULL;
 		break;
 	case NETDEV_UP:
-		if (dev->mtu < 68)
+		if (!inetdev_valid_mtu(dev->mtu))
 			break;
 		if (dev->flags & IFF_LOOPBACK) {
 			struct in_ifaddr *ifa;
@@ -1080,9 +1080,9 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
 		ip_mc_down(in_dev);
 		break;
 	case NETDEV_CHANGEMTU:
-		if (dev->mtu >= 68)
+		if (inetdev_valid_mtu(dev->mtu))
 			break;
-		/* MTU falled under 68, disable IP */
+		/* disable IP when MTU is not enough */
 	case NETDEV_UNREGISTER:
 		inetdev_destroy(in_dev);
 		break;
@@ -1101,7 +1101,7 @@ out:
 }
 
 static struct notifier_block ip_netdev_notifier = {
-	.notifier_call =inetdev_event,
+	.notifier_call = inetdev_event,
 };
 
 static inline size_t inet_nlmsg_size(void)
@@ -1188,7 +1188,7 @@ done:
 	return skb->len;
 }
 
-static void rtmsg_ifa(int event, struct in_ifaddr* ifa, struct nlmsghdr *nlh,
+static void rtmsg_ifa(int event, struct in_ifaddr *ifa, struct nlmsghdr *nlh,
 		      u32 pid)
 {
 	struct sk_buff *skb;
@@ -1255,7 +1255,7 @@ static void inet_forward_change(struct net *net)
 }
 
 static int devinet_conf_proc(ctl_table *ctl, int write,
-			     struct file* filp, void __user *buffer,
+			     struct file *filp, void __user *buffer,
 			     size_t *lenp, loff_t *ppos)
 {
 	int ret = proc_dointvec(ctl, write, filp, buffer, lenp, ppos);
@@ -1274,7 +1274,7 @@ static int devinet_conf_proc(ctl_table *ctl, int write,
 	return ret;
 }
 
-static int devinet_conf_sysctl(ctl_table *table, int __user *name, int nlen,
+static int devinet_conf_sysctl(ctl_table *table,
 			       void __user *oldval, size_t __user *oldlenp,
 			       void __user *newval, size_t newlen)
 {
@@ -1327,7 +1327,7 @@ static int devinet_conf_sysctl(ctl_table *table, int __user *name, int nlen,
 }
 
 static int devinet_sysctl_forward(ctl_table *ctl, int write,
-				  struct file* filp, void __user *buffer,
+				  struct file *filp, void __user *buffer,
 				  size_t *lenp, loff_t *ppos)
 {
 	int *valp = ctl->data;
@@ -1356,7 +1356,7 @@ static int devinet_sysctl_forward(ctl_table *ctl, int write,
 }
 
 int ipv4_doint_and_flush(ctl_table *ctl, int write,
-			 struct file* filp, void __user *buffer,
+			 struct file *filp, void __user *buffer,
 			 size_t *lenp, loff_t *ppos)
 {
 	int *valp = ctl->data;
@@ -1370,12 +1370,11 @@ int ipv4_doint_and_flush(ctl_table *ctl, int write,
 	return ret;
 }
 
-int ipv4_doint_and_flush_strategy(ctl_table *table, int __user *name, int nlen,
+int ipv4_doint_and_flush_strategy(ctl_table *table,
 				  void __user *oldval, size_t __user *oldlenp,
 				  void __user *newval, size_t newlen)
 {
-	int ret = devinet_conf_sysctl(table, name, nlen, oldval, oldlenp,
-				      newval, newlen);
+	int ret = devinet_conf_sysctl(table, oldval, oldlenp, newval, newlen);
 	struct net *net = table->extra2;
 
 	if (ret == 1)

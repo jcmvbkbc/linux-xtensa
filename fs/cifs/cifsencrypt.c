@@ -37,7 +37,7 @@
 
 extern void mdfour(unsigned char *out, unsigned char *in, int n);
 extern void E_md4hash(const unsigned char *passwd, unsigned char *p16);
-extern void SMBencrypt(unsigned char *passwd, unsigned char *c8,
+extern void SMBencrypt(unsigned char *passwd, const unsigned char *c8,
 		       unsigned char *p24);
 
 static int cifs_calculate_signature(const struct smb_hdr *cifs_pdu,
@@ -48,11 +48,11 @@ static int cifs_calculate_signature(const struct smb_hdr *cifs_pdu,
 	if ((cifs_pdu == NULL) || (signature == NULL) || (key == NULL))
 		return -EINVAL;
 
-	MD5Init(&context);
-	MD5Update(&context, (char *)&key->data, key->len);
-	MD5Update(&context, cifs_pdu->Protocol, cifs_pdu->smb_buf_length);
+	cifs_MD5_init(&context);
+	cifs_MD5_update(&context, (char *)&key->data, key->len);
+	cifs_MD5_update(&context, cifs_pdu->Protocol, cifs_pdu->smb_buf_length);
 
-	MD5Final(signature, &context);
+	cifs_MD5_final(signature, &context);
 	return 0;
 }
 
@@ -96,8 +96,8 @@ static int cifs_calc_signature2(const struct kvec *iov, int n_vec,
 	if ((iov == NULL) || (signature == NULL) || (key == NULL))
 		return -EINVAL;
 
-	MD5Init(&context);
-	MD5Update(&context, (char *)&key->data, key->len);
+	cifs_MD5_init(&context);
+	cifs_MD5_update(&context, (char *)&key->data, key->len);
 	for (i = 0; i < n_vec; i++) {
 		if (iov[i].iov_len == 0)
 			continue;
@@ -110,13 +110,13 @@ static int cifs_calc_signature2(const struct kvec *iov, int n_vec,
 		if (i == 0) {
 			if (iov[0].iov_len <= 8) /* cmd field at offset 9 */
 				break; /* nothing to sign or corrupt header */
-			MD5Update(&context, iov[0].iov_base+4,
+			cifs_MD5_update(&context, iov[0].iov_base+4,
 				  iov[0].iov_len-4);
 		} else
-			MD5Update(&context, iov[i].iov_base, iov[i].iov_len);
+			cifs_MD5_update(&context, iov[i].iov_base, iov[i].iov_len);
 	}
 
-	MD5Final(signature, &context);
+	cifs_MD5_final(signature, &context);
 
 	return 0;
 }
@@ -280,24 +280,22 @@ int CalcNTLMv2_partial_mac_key(struct cifsSesInfo *ses,
 }
 
 #ifdef CONFIG_CIFS_WEAK_PW_HASH
-void calc_lanman_hash(struct cifsSesInfo *ses, char *lnm_session_key)
+void calc_lanman_hash(const char *password, const char *cryptkey, bool encrypt,
+			char *lnm_session_key)
 {
 	int i;
 	char password_with_pad[CIFS_ENCPWD_SIZE];
 
-	if (ses->server == NULL)
-		return;
-
 	memset(password_with_pad, 0, CIFS_ENCPWD_SIZE);
-	if (ses->password)
-		strncpy(password_with_pad, ses->password, CIFS_ENCPWD_SIZE);
+	if (password)
+		strncpy(password_with_pad, password, CIFS_ENCPWD_SIZE);
 
-	if ((ses->server->secMode & SECMODE_PW_ENCRYPT) == 0)
-		if (extended_security & CIFSSEC_MAY_PLNTXT) {
-			memcpy(lnm_session_key, password_with_pad,
-				CIFS_ENCPWD_SIZE);
-			return;
-		}
+	if (!encrypt && extended_security & CIFSSEC_MAY_PLNTXT) {
+		memset(lnm_session_key, 0, CIFS_SESS_KEY_SIZE);
+		memcpy(lnm_session_key, password_with_pad,
+			CIFS_ENCPWD_SIZE);
+		return;
+	}
 
 	/* calculate old style session key */
 	/* calling toupper is less broken than repeatedly
@@ -313,7 +311,8 @@ void calc_lanman_hash(struct cifsSesInfo *ses, char *lnm_session_key)
 	for (i = 0; i < CIFS_ENCPWD_SIZE; i++)
 		password_with_pad[i] = toupper(password_with_pad[i]);
 
-	SMBencrypt(password_with_pad, ses->server->cryptKey, lnm_session_key);
+	SMBencrypt(password_with_pad, cryptkey, lnm_session_key);
+
 	/* clear password before we return/free memory */
 	memset(password_with_pad, 0, CIFS_ENCPWD_SIZE);
 }

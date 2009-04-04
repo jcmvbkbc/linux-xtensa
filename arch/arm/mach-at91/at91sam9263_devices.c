@@ -347,6 +347,111 @@ void __init at91_add_device_mmc(short mmc_id, struct at91_mmc_data *data)
 void __init at91_add_device_mmc(short mmc_id, struct at91_mmc_data *data) {}
 #endif
 
+/* --------------------------------------------------------------------
+ *  Compact Flash (PCMCIA or IDE)
+ * -------------------------------------------------------------------- */
+
+#if defined(CONFIG_AT91_CF) || defined(CONFIG_AT91_CF_MODULE) || \
+    defined(CONFIG_BLK_DEV_IDE_AT91) || defined(CONFIG_BLK_DEV_IDE_AT91_MODULE)
+
+static struct at91_cf_data cf0_data;
+
+static struct resource cf0_resources[] = {
+	[0] = {
+		.start	= AT91_CHIPSELECT_4,
+		.end	= AT91_CHIPSELECT_4 + SZ_256M - 1,
+		.flags	= IORESOURCE_MEM | IORESOURCE_MEM_8AND16BIT,
+	}
+};
+
+static struct platform_device cf0_device = {
+	.id		= 0,
+	.dev		= {
+				.platform_data	= &cf0_data,
+	},
+	.resource	= cf0_resources,
+	.num_resources	= ARRAY_SIZE(cf0_resources),
+};
+
+static struct at91_cf_data cf1_data;
+
+static struct resource cf1_resources[] = {
+	[0] = {
+		.start	= AT91_CHIPSELECT_5,
+		.end	= AT91_CHIPSELECT_5 + SZ_256M - 1,
+		.flags	= IORESOURCE_MEM | IORESOURCE_MEM_8AND16BIT,
+	}
+};
+
+static struct platform_device cf1_device = {
+	.id		= 1,
+	.dev		= {
+				.platform_data	= &cf1_data,
+	},
+	.resource	= cf1_resources,
+	.num_resources	= ARRAY_SIZE(cf1_resources),
+};
+
+void __init at91_add_device_cf(struct at91_cf_data *data)
+{
+	unsigned long ebi0_csa;
+	struct platform_device *pdev;
+
+	if (!data)
+		return;
+
+	/*
+	 * assign CS4 or CS5 to SMC with Compact Flash logic support,
+	 * we assume SMC timings are configured by board code,
+	 * except True IDE where timings are controlled by driver
+	 */
+	ebi0_csa = at91_sys_read(AT91_MATRIX_EBI0CSA);
+	switch (data->chipselect) {
+	case 4:
+		at91_set_A_periph(AT91_PIN_PD6, 0);  /* EBI0_NCS4/CFCS0 */
+		ebi0_csa |= AT91_MATRIX_EBI0_CS4A_SMC_CF1;
+		cf0_data = *data;
+		pdev = &cf0_device;
+		break;
+	case 5:
+		at91_set_A_periph(AT91_PIN_PD7, 0);  /* EBI0_NCS5/CFCS1 */
+		ebi0_csa |= AT91_MATRIX_EBI0_CS5A_SMC_CF2;
+		cf1_data = *data;
+		pdev = &cf1_device;
+		break;
+	default:
+		printk(KERN_ERR "AT91 CF: bad chip-select requested (%u)\n",
+		       data->chipselect);
+		return;
+	}
+	at91_sys_write(AT91_MATRIX_EBI0CSA, ebi0_csa);
+
+	if (data->det_pin) {
+		at91_set_gpio_input(data->det_pin, 1);
+		at91_set_deglitch(data->det_pin, 1);
+	}
+
+	if (data->irq_pin) {
+		at91_set_gpio_input(data->irq_pin, 1);
+		at91_set_deglitch(data->irq_pin, 1);
+	}
+
+	if (data->vcc_pin)
+		/* initially off */
+		at91_set_gpio_output(data->vcc_pin, 0);
+
+	/* enable EBI controlled pins */
+	at91_set_A_periph(AT91_PIN_PD5, 1);  /* NWAIT */
+	at91_set_A_periph(AT91_PIN_PD8, 0);  /* CFCE1 */
+	at91_set_A_periph(AT91_PIN_PD9, 0);  /* CFCE2 */
+	at91_set_A_periph(AT91_PIN_PD14, 0); /* CFNRW */
+
+	pdev->name = (data->flags & AT91_CF_TRUE_IDE) ? "at91_ide" : "at91_cf";
+	platform_device_register(pdev);
+}
+#else
+void __init at91_add_device_cf(struct at91_cf_data *data) {}
+#endif
 
 /* --------------------------------------------------------------------
  *  NAND / SmartMedia
@@ -382,28 +487,13 @@ static struct platform_device at91sam9263_nand_device = {
 
 void __init at91_add_device_nand(struct atmel_nand_data *data)
 {
-	unsigned long csa, mode;
+	unsigned long csa;
 
 	if (!data)
 		return;
 
 	csa = at91_sys_read(AT91_MATRIX_EBI0CSA);
 	at91_sys_write(AT91_MATRIX_EBI0CSA, csa | AT91_MATRIX_EBI0_CS3A_SMC_SMARTMEDIA);
-
-	/* set the bus interface characteristics */
-	at91_sys_write(AT91_SMC_SETUP(3), AT91_SMC_NWESETUP_(1) | AT91_SMC_NCS_WRSETUP_(0)
-			| AT91_SMC_NRDSETUP_(1) | AT91_SMC_NCS_RDSETUP_(0));
-
-	at91_sys_write(AT91_SMC_PULSE(3), AT91_SMC_NWEPULSE_(3) | AT91_SMC_NCS_WRPULSE_(3)
-			| AT91_SMC_NRDPULSE_(3) | AT91_SMC_NCS_RDPULSE_(3));
-
-	at91_sys_write(AT91_SMC_CYCLE(3), AT91_SMC_NWECYCLE_(5) | AT91_SMC_NRDCYCLE_(5));
-
-	if (data->bus_width_16)
-		mode = AT91_SMC_DBW_16;
-	else
-		mode = AT91_SMC_DBW_8;
-	at91_sys_write(AT91_SMC_MODE(3), mode | AT91_SMC_READMODE | AT91_SMC_WRITEMODE | AT91_SMC_EXNWMODE_DISABLE | AT91_SMC_TDF_(2));
 
 	/* enable pin */
 	if (data->enable_pin)
@@ -869,7 +959,7 @@ static void __init at91_add_device_rtt(void)
  *  Watchdog
  * -------------------------------------------------------------------- */
 
-#if defined(CONFIG_AT91SAM9_WATCHDOG) || defined(CONFIG_AT91SAM9_WATCHDOG_MODULE)
+#if defined(CONFIG_AT91SAM9X_WATCHDOG) || defined(CONFIG_AT91SAM9X_WATCHDOG_MODULE)
 static struct platform_device at91sam9263_wdt_device = {
 	.name		= "at91_wdt",
 	.id		= -1,
@@ -882,6 +972,59 @@ static void __init at91_add_device_watchdog(void)
 }
 #else
 static void __init at91_add_device_watchdog(void) {}
+#endif
+
+
+/* --------------------------------------------------------------------
+ *  PWM
+ * --------------------------------------------------------------------*/
+
+#if defined(CONFIG_ATMEL_PWM)
+static u32 pwm_mask;
+
+static struct resource pwm_resources[] = {
+	[0] = {
+		.start	= AT91SAM9263_BASE_PWMC,
+		.end	= AT91SAM9263_BASE_PWMC + SZ_16K - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+	[1] = {
+		.start	= AT91SAM9263_ID_PWMC,
+		.end	= AT91SAM9263_ID_PWMC,
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+static struct platform_device at91sam9263_pwm0_device = {
+	.name	= "atmel_pwm",
+	.id	= -1,
+	.dev	= {
+		.platform_data		= &pwm_mask,
+	},
+	.resource	= pwm_resources,
+	.num_resources	= ARRAY_SIZE(pwm_resources),
+};
+
+void __init at91_add_device_pwm(u32 mask)
+{
+	if (mask & (1 << AT91_PWM0))
+		at91_set_B_periph(AT91_PIN_PB7, 1);	/* enable PWM0 */
+
+	if (mask & (1 << AT91_PWM1))
+		at91_set_B_periph(AT91_PIN_PB8, 1);	/* enable PWM1 */
+
+	if (mask & (1 << AT91_PWM2))
+		at91_set_B_periph(AT91_PIN_PC29, 1);	/* enable PWM2 */
+
+	if (mask & (1 << AT91_PWM3))
+		at91_set_B_periph(AT91_PIN_PB29, 1);	/* enable PWM3 */
+
+	pwm_mask = mask;
+
+	platform_device_register(&at91sam9263_pwm0_device);
+}
+#else
+void __init at91_add_device_pwm(u32 mask) {}
 #endif
 
 

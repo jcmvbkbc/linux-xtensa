@@ -31,6 +31,7 @@
 #include <linux/spinlock.h>
 #include <linux/pm.h>
 #include <linux/pci.h>
+#include <linux/pci-acpi.h>
 #include <linux/acpi.h>
 #include <acpi/acpi_bus.h>
 #include <acpi/acpi_drivers.h>
@@ -190,9 +191,10 @@ static int __devinit acpi_pci_root_add(struct acpi_device *device)
 	struct acpi_pci_root *root = NULL;
 	struct acpi_pci_root *tmp;
 	acpi_status status = AE_OK;
-	unsigned long value = 0;
+	unsigned long long value = 0;
 	acpi_handle handle = NULL;
 	struct acpi_device *child;
+	u32 flags, base_flags;
 
 
 	if (!device)
@@ -206,9 +208,16 @@ static int __devinit acpi_pci_root_add(struct acpi_device *device)
 	root->device = device;
 	strcpy(acpi_device_name(device), ACPI_PCI_ROOT_DEVICE_NAME);
 	strcpy(acpi_device_class(device), ACPI_PCI_ROOT_CLASS);
-	acpi_driver_data(device) = root;
+	device->driver_data = root;
 
 	device->ops.bind = acpi_pci_bind;
+
+	/*
+	 * All supported architectures that use ACPI have support for
+	 * PCI domains, so we indicate this in _OSC support capabilities.
+	 */
+	flags = base_flags = OSC_PCI_SEGMENT_GROUPS_SUPPORT;
+	pci_acpi_osc_support(device->handle, flags);
 
 	/* 
 	 * Segment
@@ -335,6 +344,17 @@ static int __devinit acpi_pci_root_add(struct acpi_device *device)
 	list_for_each_entry(child, &device->children, node)
 		acpi_pci_bridge_scan(child);
 
+	/* Indicate support for various _OSC capabilities. */
+	if (pci_ext_cfg_avail(root->bus->self))
+		flags |= OSC_EXT_PCI_CONFIG_SUPPORT;
+	if (pcie_aspm_enabled())
+		flags |= OSC_ACTIVE_STATE_PWR_SUPPORT |
+			OSC_CLOCK_PWR_CAPABILITY_SUPPORT;
+	if (pci_msi_enabled())
+		flags |= OSC_MSI_SUPPORT;
+	if (flags != base_flags)
+		pci_acpi_osc_support(device->handle, flags);
+
       end:
 	if (result) {
 		if (!list_empty(&root->node))
@@ -376,14 +396,8 @@ static int acpi_pci_root_remove(struct acpi_device *device, int type)
 
 static int __init acpi_pci_root_init(void)
 {
-
 	if (acpi_pci_disabled)
 		return 0;
-
-	/* DEBUG:
-	   acpi_dbg_layer = ACPI_PCI_COMPONENT;
-	   acpi_dbg_level = 0xFFFFFFFF;
-	 */
 
 	if (acpi_bus_register_driver(&acpi_pci_root_driver) < 0)
 		return -ENODEV;

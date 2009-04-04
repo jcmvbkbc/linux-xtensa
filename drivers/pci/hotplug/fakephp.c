@@ -66,10 +66,10 @@ struct dummy_slot {
 	struct pci_dev *dev;
 	struct work_struct remove_work;
 	unsigned long removed;
-	char name[8];
 };
 
 static int debug;
+static int dup_slots;
 static LIST_HEAD(slot_list);
 static struct workqueue_struct *dummyphp_wq;
 
@@ -96,10 +96,13 @@ static void dummy_release(struct hotplug_slot *slot)
 	kfree(dslot);
 }
 
+#define SLOT_NAME_SIZE	8
+
 static int add_slot(struct pci_dev *dev)
 {
 	struct dummy_slot *dslot;
 	struct hotplug_slot *slot;
+	char name[SLOT_NAME_SIZE];
 	int retval = -ENOMEM;
 	static int count = 1;
 
@@ -119,19 +122,22 @@ static int add_slot(struct pci_dev *dev)
 	if (!dslot)
 		goto error_info;
 
-	slot->name = dslot->name;
-	snprintf(slot->name, sizeof(dslot->name), "fake%d", count++);
-	dbg("slot->name = %s\n", slot->name);
+	if (dup_slots)
+		snprintf(name, SLOT_NAME_SIZE, "fake");
+	else
+		snprintf(name, SLOT_NAME_SIZE, "fake%d", count++);
+	dbg("slot->name = %s\n", name);
 	slot->ops = &dummy_hotplug_slot_ops;
 	slot->release = &dummy_release;
 	slot->private = dslot;
 
-	retval = pci_hp_register(slot, dev->bus, PCI_SLOT(dev->devfn));
+	retval = pci_hp_register(slot, dev->bus, PCI_SLOT(dev->devfn), name);
 	if (retval) {
 		err("pci_hp_register failed with error %d\n", retval);
 		goto error_dslot;
 	}
 
+	dbg("slot->name = %s\n", hotplug_slot_name(slot));
 	dslot->slot = slot;
 	dslot->dev = pci_dev_get(dev);
 	list_add (&dslot->node, &slot_list);
@@ -167,10 +173,11 @@ static void remove_slot(struct dummy_slot *dslot)
 {
 	int retval;
 
-	dbg("removing slot %s\n", dslot->slot->name);
+	dbg("removing slot %s\n", hotplug_slot_name(dslot->slot));
 	retval = pci_hp_deregister(dslot->slot);
 	if (retval)
-		err("Problem unregistering a slot %s\n", dslot->slot->name);
+		err("Problem unregistering a slot %s\n",
+			hotplug_slot_name(dslot->slot));
 }
 
 /* called from the single-threaded workqueue handler to remove a slot */
@@ -188,13 +195,13 @@ static void remove_slot_worker(struct work_struct *work)
  * Tries hard not to re-enable already existing devices;
  * also handles scanning of subfunctions.
  */
-static void pci_rescan_slot(struct pci_dev *temp)
+static int pci_rescan_slot(struct pci_dev *temp)
 {
 	struct pci_bus *bus = temp->bus;
 	struct pci_dev *dev;
 	int func;
-	int retval;
 	u8 hdr_type;
+	int count = 0;
 
 	if (!pci_read_config_byte(temp, PCI_HEADER_TYPE, &hdr_type)) {
 		temp->hdr_type = hdr_type & 0x7f;
@@ -206,17 +213,12 @@ static void pci_rescan_slot(struct pci_dev *temp)
 				dbg("New device on %s function %x:%x\n",
 					bus->name, temp->devfn >> 3,
 					temp->devfn & 7);
-				retval = pci_bus_add_device(dev);
-				if (retval)
-					dev_err(&dev->dev, "error adding "
-						"device, continuing.\n");
-				else
-					add_slot(dev);
+				count++;
 			}
 		}
 		/* multifunction device? */
 		if (!(hdr_type & 0x80))
-			return;
+			return count;
 
 		/* continue scanning for other functions */
 		for (func = 1, temp->devfn++; func < 8; func++, temp->devfn++) {
@@ -232,16 +234,13 @@ static void pci_rescan_slot(struct pci_dev *temp)
 					dbg("New device on %s function %x:%x\n",
 						bus->name, temp->devfn >> 3,
 						temp->devfn & 7);
-					retval = pci_bus_add_device(dev);
-					if (retval)
-						dev_err(&dev->dev, "error adding "
-							"device, continuing.\n");
-					else
-						add_slot(dev);
+					count++;
 				}
 			}
 		}
 	}
+
+	return count;
 }
 
 
@@ -255,6 +254,8 @@ static void pci_rescan_bus(const struct pci_bus *bus)
 {
 	unsigned int devfn;
 	struct pci_dev *dev;
+	int retval;
+	int found = 0;
 	dev = alloc_pci_dev();
 	if (!dev)
 		return;
@@ -263,7 +264,23 @@ static void pci_rescan_bus(const struct pci_bus *bus)
 	dev->sysdata = bus->sysdata;
 	for (devfn = 0; devfn < 0x100; devfn += 8) {
 		dev->devfn = devfn;
-		pci_rescan_slot(dev);
+		found += pci_rescan_slot(dev);
+	}
+
+	if (found) {
+		pci_bus_assign_resources(bus);
+		list_for_each_entry(dev, &bus->devices, bus_list) {
+			/* Skip already-added devices */
+			if (dev->is_added)
+					continue;
+			retval = pci_bus_add_device(dev);
+			if (retval)
+				dev_err(&dev->dev,
+					"Error adding device, continuing\n");
+			else
+				add_slot(dev);
+		}
+		pci_bus_add_devices(bus);
 	}
 	kfree(dev);
 }
@@ -308,7 +325,7 @@ static int disable_slot(struct hotplug_slot *slot)
 		return -ENODEV;
 	dslot = slot->private;
 
-	dbg("%s - physical_slot = %s\n", __func__, slot->name);
+	dbg("%s - physical_slot = %s\n", __func__, hotplug_slot_name(slot));
 
 	for (func = 7; func >= 0; func--) {
 		dev = pci_get_slot(dslot->dev->bus, dslot->dev->devfn + func);
@@ -317,17 +334,18 @@ static int disable_slot(struct hotplug_slot *slot)
 
 		if (test_and_set_bit(0, &dslot->removed)) {
 			dbg("Slot already scheduled for removal\n");
+			pci_dev_put(dev);
 			return -ENODEV;
 		}
+
+		/* remove the device from the pci core */
+		pci_remove_bus_device(dev);
 
 		/* queue work item to blow away this sysfs entry and other
 		 * parts.
 		 */
 		INIT_WORK(&dslot->remove_work, remove_slot_worker);
 		queue_work(dummyphp_wq, &dslot->remove_work);
-
-		/* blow away this sysfs entry and other parts. */
-		remove_slot(dslot);
 
 		pci_dev_put(dev);
 	}
@@ -373,4 +391,5 @@ MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
 module_param(debug, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(debug, "Debugging mode enabled or not");
-
+module_param(dup_slots, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(dup_slots, "Force duplicate slot names for debugging");

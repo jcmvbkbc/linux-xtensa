@@ -102,6 +102,8 @@
 
 #define EP_UNACTIVE_PTR ((void *) -1L)
 
+#define EP_ITEM_COST (sizeof(struct epitem) + sizeof(struct eppoll_entry))
+
 struct epoll_filefd {
 	struct file *file;
 	int fd;
@@ -200,6 +202,9 @@ struct eventpoll {
 	 * holding ->lock.
 	 */
 	struct epitem *ovflist;
+
+	/* The user that created the eventpoll descriptor */
+	struct user_struct *user;
 };
 
 /* Wait structure used by the poll hooks */
@@ -227,9 +232,15 @@ struct ep_pqueue {
 };
 
 /*
+ * Configuration options available inside /proc/sys/fs/epoll/
+ */
+/* Maximum number of epoll watched descriptors, per user */
+static int max_user_watches __read_mostly;
+
+/*
  * This mutex is used to serialize ep_free() and eventpoll_release_file().
  */
-static struct mutex epmutex;
+static DEFINE_MUTEX(epmutex);
 
 /* Safe wake up implementation */
 static struct poll_safewake psw;
@@ -239,6 +250,25 @@ static struct kmem_cache *epi_cache __read_mostly;
 
 /* Slab cache used to allocate "struct eppoll_entry" */
 static struct kmem_cache *pwq_cache __read_mostly;
+
+#ifdef CONFIG_SYSCTL
+
+#include <linux/sysctl.h>
+
+static int zero;
+
+ctl_table epoll_table[] = {
+	{
+		.procname	= "max_user_watches",
+		.data		= &max_user_watches,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+	{ .ctl_name = 0 }
+};
+#endif /* CONFIG_SYSCTL */
 
 
 /* Setup the structure that is used as key for the RB tree */
@@ -402,6 +432,8 @@ static int ep_remove(struct eventpoll *ep, struct epitem *epi)
 	/* At this point it is safe to free the eventpoll item */
 	kmem_cache_free(epi_cache, epi);
 
+	atomic_dec(&ep->user->epoll_watches);
+
 	DNPRINTK(3, (KERN_INFO "[%p] eventpoll: ep_remove(%p, %p)\n",
 		     current, ep, file));
 
@@ -449,6 +481,7 @@ static void ep_free(struct eventpoll *ep)
 
 	mutex_unlock(&epmutex);
 	mutex_destroy(&ep->mtx);
+	free_uid(ep->user);
 	kfree(ep);
 }
 
@@ -532,10 +565,15 @@ void eventpoll_release_file(struct file *file)
 
 static int ep_alloc(struct eventpoll **pep)
 {
-	struct eventpoll *ep = kzalloc(sizeof(*ep), GFP_KERNEL);
+	int error;
+	struct user_struct *user;
+	struct eventpoll *ep;
 
-	if (!ep)
-		return -ENOMEM;
+	user = get_current_user();
+	error = -ENOMEM;
+	ep = kzalloc(sizeof(*ep), GFP_KERNEL);
+	if (unlikely(!ep))
+		goto free_uid;
 
 	spin_lock_init(&ep->lock);
 	mutex_init(&ep->mtx);
@@ -544,12 +582,17 @@ static int ep_alloc(struct eventpoll **pep)
 	INIT_LIST_HEAD(&ep->rdllist);
 	ep->rbr = RB_ROOT;
 	ep->ovflist = EP_UNACTIVE_PTR;
+	ep->user = user;
 
 	*pep = ep;
 
 	DNPRINTK(3, (KERN_INFO "[%p] eventpoll: ep_alloc() ep=%p\n",
 		     current, ep));
 	return 0;
+
+free_uid:
+	free_uid(user);
+	return error;
 }
 
 /*
@@ -703,9 +746,11 @@ static int ep_insert(struct eventpoll *ep, struct epoll_event *event,
 	struct epitem *epi;
 	struct ep_pqueue epq;
 
-	error = -ENOMEM;
+	if (unlikely(atomic_read(&ep->user->epoll_watches) >=
+		     max_user_watches))
+		return -ENOSPC;
 	if (!(epi = kmem_cache_alloc(epi_cache, GFP_KERNEL)))
-		goto error_return;
+		return -ENOMEM;
 
 	/* Item initialization follow here ... */
 	INIT_LIST_HEAD(&epi->rdllink);
@@ -735,6 +780,7 @@ static int ep_insert(struct eventpoll *ep, struct epoll_event *event,
 	 * install process. Namely an allocation for a wait queue failed due
 	 * high memory pressure.
 	 */
+	error = -ENOMEM;
 	if (epi->nwait < 0)
 		goto error_unregister;
 
@@ -765,6 +811,8 @@ static int ep_insert(struct eventpoll *ep, struct epoll_event *event,
 
 	spin_unlock_irqrestore(&ep->lock, flags);
 
+	atomic_inc(&ep->user->epoll_watches);
+
 	/* We have to call this outside the lock */
 	if (pwake)
 		ep_poll_safewake(&psw, &ep->poll_wait);
@@ -789,7 +837,7 @@ error_unregister:
 	spin_unlock_irqrestore(&ep->lock, flags);
 
 	kmem_cache_free(epi_cache, epi);
-error_return:
+
 	return error;
 }
 
@@ -927,12 +975,16 @@ errxit:
 	/*
 	 * During the time we spent in the loop above, some other events
 	 * might have been queued by the poll callback. We re-insert them
-	 * here (in case they are not already queued, or they're one-shot).
+	 * inside the main ready-list here.
 	 */
 	for (nepi = ep->ovflist; (epi = nepi) != NULL;
 	     nepi = epi->next, epi->next = EP_UNACTIVE_PTR) {
-		if (!ep_is_linked(&epi->rdllink) &&
-		    (epi->event.events & ~EP_PRIVATE_BITS))
+		/*
+		 * If the above loop quit with errors, the epoll item might still
+		 * be linked to "txlist", and the list_splice() done below will
+		 * take care of those cases.
+		 */
+		if (!ep_is_linked(&epi->rdllink))
 			list_add_tail(&epi->rdllink, &ep->rdllist);
 	}
 	/*
@@ -1043,7 +1095,7 @@ retry:
 /*
  * Open an eventpoll file descriptor.
  */
-asmlinkage long sys_epoll_create1(int flags)
+SYSCALL_DEFINE1(epoll_create1, int, flags)
 {
 	int error, fd = -1;
 	struct eventpoll *ep;
@@ -1082,7 +1134,7 @@ error_return:
 	return fd;
 }
 
-asmlinkage long sys_epoll_create(int size)
+SYSCALL_DEFINE1(epoll_create, int, size)
 {
 	if (size < 0)
 		return -EINVAL;
@@ -1095,8 +1147,8 @@ asmlinkage long sys_epoll_create(int size)
  * the eventpoll file that enables the insertion/removal/change of
  * file descriptors inside the interest set.
  */
-asmlinkage long sys_epoll_ctl(int epfd, int op, int fd,
-			      struct epoll_event __user *event)
+SYSCALL_DEFINE4(epoll_ctl, int, epfd, int, op, int, fd,
+		struct epoll_event __user *, event)
 {
 	int error;
 	struct file *file, *tfile;
@@ -1193,8 +1245,8 @@ error_return:
  * Implement the event wait interface for the eventpoll file. It is the kernel
  * part of the user space epoll_wait(2).
  */
-asmlinkage long sys_epoll_wait(int epfd, struct epoll_event __user *events,
-			       int maxevents, int timeout)
+SYSCALL_DEFINE4(epoll_wait, int, epfd, struct epoll_event __user *, events,
+		int, maxevents, int, timeout)
 {
 	int error;
 	struct file *file;
@@ -1251,9 +1303,9 @@ error_return:
  * Implement the event wait interface for the eventpoll file. It is the kernel
  * part of the user space epoll_pwait(2).
  */
-asmlinkage long sys_epoll_pwait(int epfd, struct epoll_event __user *events,
-		int maxevents, int timeout, const sigset_t __user *sigmask,
-		size_t sigsetsize)
+SYSCALL_DEFINE6(epoll_pwait, int, epfd, struct epoll_event __user *, events,
+		int, maxevents, int, timeout, const sigset_t __user *, sigmask,
+		size_t, sigsetsize)
 {
 	int error;
 	sigset_t ksigmask, sigsaved;
@@ -1295,7 +1347,14 @@ asmlinkage long sys_epoll_pwait(int epfd, struct epoll_event __user *events,
 
 static int __init eventpoll_init(void)
 {
-	mutex_init(&epmutex);
+	struct sysinfo si;
+
+	si_meminfo(&si);
+	/*
+	 * Allows top 4% of lomem to be allocated for epoll watches (per user).
+	 */
+	max_user_watches = (((si.totalram - si.totalhigh) / 25) << PAGE_SHIFT) /
+		EP_ITEM_COST;
 
 	/* Initialize the structure used to perform safe poll wait head wake ups */
 	ep_poll_safewake_init(&psw);

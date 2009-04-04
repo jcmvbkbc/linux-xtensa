@@ -3,15 +3,12 @@
 /* "Bogolock": stop the entire machine, disable interrupts.  This is a
    very heavy lock, which is equivalent to grabbing every spinlock
    (and more).  So the "read" side to such a lock is anything which
-   diables preeempt. */
+   disables preeempt. */
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
 #include <asm/system.h>
 
 #if defined(CONFIG_STOP_MACHINE) && defined(CONFIG_SMP)
-
-/* Deprecated, but useful for transition. */
-#define ALL_CPUS ~0U
 
 /**
  * stop_machine: freeze the machine on all CPUs and run this function
@@ -26,7 +23,7 @@
  *
  * This can be thought of as a very heavy write lock, equivalent to
  * grabbing every spinlock in the kernel. */
-int stop_machine(int (*fn)(void *), void *data, const cpumask_t *cpus);
+int stop_machine(int (*fn)(void *), void *data, const struct cpumask *cpus);
 
 /**
  * __stop_machine: freeze the machine on all CPUs and run this function
@@ -37,11 +34,29 @@ int stop_machine(int (*fn)(void *), void *data, const cpumask_t *cpus);
  * Description: This is a special version of the above, which assumes cpus
  * won't come or go while it's being called.  Used by hotplug cpu.
  */
-int __stop_machine(int (*fn)(void *), void *data, const cpumask_t *cpus);
+int __stop_machine(int (*fn)(void *), void *data, const struct cpumask *cpus);
+
+/**
+ * stop_machine_create: create all stop_machine threads
+ *
+ * Description: This causes all stop_machine threads to be created before
+ * stop_machine actually gets called. This can be used by subsystems that
+ * need a non failing stop_machine infrastructure.
+ */
+int stop_machine_create(void);
+
+/**
+ * stop_machine_destroy: destroy all stop_machine threads
+ *
+ * Description: This causes all stop_machine threads which were created with
+ * stop_machine_create to be destroyed again.
+ */
+void stop_machine_destroy(void);
+
 #else
 
 static inline int stop_machine(int (*fn)(void *), void *data,
-			       const cpumask_t *cpus)
+			       const struct cpumask *cpus)
 {
 	int ret;
 	local_irq_disable();
@@ -49,19 +64,9 @@ static inline int stop_machine(int (*fn)(void *), void *data,
 	local_irq_enable();
 	return ret;
 }
-#endif /* CONFIG_SMP */
 
-static inline int __deprecated stop_machine_run(int (*fn)(void *), void *data,
-						unsigned int cpu)
-{
-	/* If they don't care which cpu fn runs on, just pick one. */
-	if (cpu == NR_CPUS)
-		return stop_machine(fn, data, NULL);
-	else if (cpu == ~0U)
-		return stop_machine(fn, data, &cpu_possible_map);
-	else {
-		cpumask_t cpus = cpumask_of_cpu(cpu);
-		return stop_machine(fn, data, &cpus);
-	}
-}
+static inline int stop_machine_create(void) { return 0; }
+static inline void stop_machine_destroy(void) { }
+
+#endif /* CONFIG_SMP */
 #endif /* _LINUX_STOP_MACHINE */

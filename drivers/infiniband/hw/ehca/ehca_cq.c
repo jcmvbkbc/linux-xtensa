@@ -132,9 +132,9 @@ struct ib_cq *ehca_create_cq(struct ib_device *device, int cqe, int comp_vector,
 	if (cqe >= 0xFFFFFFFF - 64 - additional_cqe)
 		return ERR_PTR(-EINVAL);
 
-	if (!atomic_add_unless(&shca->num_cqs, 1, ehca_max_cq)) {
+	if (!atomic_add_unless(&shca->num_cqs, 1, shca->max_num_cqs)) {
 		ehca_err(device, "Unable to create CQ, max number of %i "
-			"CQs reached.", ehca_max_cq);
+			"CQs reached.", shca->max_num_cqs);
 		ehca_err(device, "To increase the maximum number of CQs "
 			"use the number_of_cqs module parameter.\n");
 		return ERR_PTR(-ENOSPC);
@@ -196,7 +196,7 @@ struct ib_cq *ehca_create_cq(struct ib_device *device, int cqe, int comp_vector,
 
 	if (h_ret != H_SUCCESS) {
 		ehca_err(device, "hipz_h_alloc_resource_cq() failed "
-			 "h_ret=%li device=%p", h_ret, device);
+			 "h_ret=%lli device=%p", h_ret, device);
 		cq = ERR_PTR(ehca2ib_return_code(h_ret));
 		goto create_cq_exit2;
 	}
@@ -232,7 +232,7 @@ struct ib_cq *ehca_create_cq(struct ib_device *device, int cqe, int comp_vector,
 
 		if (h_ret < H_SUCCESS) {
 			ehca_err(device, "hipz_h_register_rpage_cq() failed "
-				 "ehca_cq=%p cq_num=%x h_ret=%li counter=%i "
+				 "ehca_cq=%p cq_num=%x h_ret=%lli counter=%i "
 				 "act_pages=%i", my_cq, my_cq->cq_number,
 				 h_ret, counter, param.act_pages);
 			cq = ERR_PTR(-EINVAL);
@@ -244,7 +244,7 @@ struct ib_cq *ehca_create_cq(struct ib_device *device, int cqe, int comp_vector,
 			if ((h_ret != H_SUCCESS) || vpage) {
 				ehca_err(device, "Registration of pages not "
 					 "complete ehca_cq=%p cq_num=%x "
-					 "h_ret=%li", my_cq, my_cq->cq_number,
+					 "h_ret=%lli", my_cq, my_cq->cq_number,
 					 h_ret);
 				cq = ERR_PTR(-EAGAIN);
 				goto create_cq_exit4;
@@ -252,7 +252,7 @@ struct ib_cq *ehca_create_cq(struct ib_device *device, int cqe, int comp_vector,
 		} else {
 			if (h_ret != H_PAGE_REGISTERED) {
 				ehca_err(device, "Registration of page failed "
-					 "ehca_cq=%p cq_num=%x h_ret=%li "
+					 "ehca_cq=%p cq_num=%x h_ret=%lli "
 					 "counter=%i act_pages=%i",
 					 my_cq, my_cq->cq_number,
 					 h_ret, counter, param.act_pages);
@@ -266,7 +266,7 @@ struct ib_cq *ehca_create_cq(struct ib_device *device, int cqe, int comp_vector,
 
 	gal = my_cq->galpas.kernel;
 	cqx_fec = hipz_galpa_load(gal, CQTEMM_OFFSET(cqx_fec));
-	ehca_dbg(device, "ehca_cq=%p cq_num=%x CQX_FEC=%lx",
+	ehca_dbg(device, "ehca_cq=%p cq_num=%x CQX_FEC=%llx",
 		 my_cq, my_cq->cq_number, cqx_fec);
 
 	my_cq->ib_cq.cqe = my_cq->nr_of_entries =
@@ -275,6 +275,9 @@ struct ib_cq *ehca_create_cq(struct ib_device *device, int cqe, int comp_vector,
 
 	for (i = 0; i < QP_HASHTAB_LEN; i++)
 		INIT_HLIST_HEAD(&my_cq->qp_hashtab[i]);
+
+	INIT_LIST_HEAD(&my_cq->sqp_err_list);
+	INIT_LIST_HEAD(&my_cq->rqp_err_list);
 
 	if (context) {
 		struct ipz_queue *ipz_queue = &my_cq->ipz_queue;
@@ -304,7 +307,7 @@ create_cq_exit3:
 	h_ret = hipz_h_destroy_cq(adapter_handle, my_cq, 1);
 	if (h_ret != H_SUCCESS)
 		ehca_err(device, "hipz_h_destroy_cq() failed ehca_cq=%p "
-			 "cq_num=%x h_ret=%li", my_cq, my_cq->cq_number, h_ret);
+			 "cq_num=%x h_ret=%lli", my_cq, my_cq->cq_number, h_ret);
 
 create_cq_exit2:
 	write_lock_irqsave(&ehca_cq_idr_lock, flags);
@@ -352,7 +355,7 @@ int ehca_destroy_cq(struct ib_cq *cq)
 	h_ret = hipz_h_destroy_cq(adapter_handle, my_cq, 0);
 	if (h_ret == H_R_STATE) {
 		/* cq in err: read err data and destroy it forcibly */
-		ehca_dbg(device, "ehca_cq=%p cq_num=%x ressource=%lx in err "
+		ehca_dbg(device, "ehca_cq=%p cq_num=%x resource=%llx in err "
 			 "state. Try to delete it forcibly.",
 			 my_cq, cq_num, my_cq->ipz_cq_handle.handle);
 		ehca_error_data(shca, my_cq, my_cq->ipz_cq_handle.handle);
@@ -362,7 +365,7 @@ int ehca_destroy_cq(struct ib_cq *cq)
 				 cq_num);
 	}
 	if (h_ret != H_SUCCESS) {
-		ehca_err(device, "hipz_h_destroy_cq() failed h_ret=%li "
+		ehca_err(device, "hipz_h_destroy_cq() failed h_ret=%lli "
 			 "ehca_cq=%p cq_num=%x", h_ret, my_cq, cq_num);
 		return ehca2ib_return_code(h_ret);
 	}

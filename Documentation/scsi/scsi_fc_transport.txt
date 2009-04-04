@@ -191,7 +191,7 @@ Vport States:
       This is equivalent to a driver "attach" on an adapter, which is
       independent of the adapter's link state.
     - Instantiation of the vport on the FC link via ELS traffic, etc.
-      This is equivalent to a "link up" and successfull link initialization.
+      This is equivalent to a "link up" and successful link initialization.
   Further information can be found in the interfaces section below for
   Vport Creation.
 
@@ -320,7 +320,7 @@ Vport Creation:
       This is equivalent to a driver "attach" on an adapter, which is
       independent of the adapter's link state.
     - Instantiation of the vport on the FC link via ELS traffic, etc.
-      This is equivalent to a "link up" and successfull link initialization.
+      This is equivalent to a "link up" and successful link initialization.
 
   The LLDD's vport_create() function will not synchronously wait for both
   parts to be fully completed before returning. It must validate that the
@@ -434,6 +434,42 @@ Other:
     scsi_remove_host().  This allows the fc_host to tear down all remote
     ports prior the scsi_host being torn down.  The fc_remove_host() call
     was updated to remove all vports for the fc_host as well.
+
+
+Transport supplied functions
+----------------------------
+
+The following functions are supplied by the FC-transport for use by LLDs.
+
+   fc_vport_create - create a vport
+   fc_vport_terminate - detach and remove a vport
+
+Details:
+
+/**
+ * fc_vport_create - Admin App or LLDD requests creation of a vport
+ * @shost:     scsi host the virtual port is connected to.
+ * @ids:       The world wide names, FC4 port roles, etc for
+ *              the virtual port.
+ *
+ * Notes:
+ *     This routine assumes no locks are held on entry.
+ */
+struct fc_vport *
+fc_vport_create(struct Scsi_Host *shost, struct fc_vport_identifiers *ids)
+
+/**
+ * fc_vport_terminate - Admin App or LLDD requests termination of a vport
+ * @vport:      fc_vport to be terminated
+ *
+ * Calls the LLDD vport_delete() function, then deallocates and removes
+ * the vport from the shost and object tree.
+ *
+ * Notes:
+ *      This routine assumes no locks are held on entry.
+ */
+int
+fc_vport_terminate(struct fc_vport *vport)
 
 
 Credits

@@ -112,7 +112,7 @@ static void egpio_handler(unsigned int irq, struct irq_desc *desc)
 		/* Run irq handler */
 		pr_debug("got IRQ %d\n", irqpin);
 		irq = ei->irq_start + irqpin;
-		desc = &irq_desc[irq];
+		desc = irq_to_desc(irq);
 		desc->handle_irq(irq, desc);
 	}
 }
@@ -286,10 +286,10 @@ static int __init egpio_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		goto fail;
-	ei->base_addr = ioremap_nocache(res->start, res->end - res->start);
+	ei->base_addr = ioremap_nocache(res->start, resource_size(res));
 	if (!ei->base_addr)
 		goto fail;
-	pr_debug("EGPIO phys=%08x virt=%p\n", res->start, ei->base_addr);
+	pr_debug("EGPIO phys=%08x virt=%p\n", (u32)res->start, ei->base_addr);
 
 	if ((pdata->bus_width != 16) && (pdata->bus_width != 32))
 		goto fail;
@@ -307,7 +307,7 @@ static int __init egpio_probe(struct platform_device *pdev)
 
 	ei->nchips = pdata->num_chips;
 	ei->chip = kzalloc(sizeof(struct egpio_chip) * ei->nchips, GFP_KERNEL);
-	if (!ei) {
+	if (!ei->chip) {
 		ret = -ENOMEM;
 		goto fail;
 	}

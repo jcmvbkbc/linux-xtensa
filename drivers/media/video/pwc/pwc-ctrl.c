@@ -41,7 +41,6 @@
 #include <asm/uaccess.h>
 #endif
 #include <asm/errno.h>
-#include <linux/version.h>
 
 #include "pwc.h"
 #include "pwc-uncompress.h"
@@ -1267,9 +1266,9 @@ int pwc_get_cmos_sensor(struct pwc_device *pdev, int *sensor)
 /* copy local variable to arg */
 #define ARG_OUT(ARG_name) /* nothing */
 
-int pwc_ioctl(struct pwc_device *pdev, unsigned int cmd, void *arg)
+long pwc_ioctl(struct pwc_device *pdev, unsigned int cmd, void *arg)
 {
-	int ret = 0;
+	long ret = 0;
 
 	switch(cmd) {
 	case VIDIOCPWCRUSER:
@@ -1635,15 +1634,15 @@ int pwc_ioctl(struct pwc_device *pdev, unsigned int cmd, void *arg)
 
 	case VIDIOCPWCGVIDCMD:
 	{
-		ARG_DEF(struct pwc_video_command, cmd);
+		ARG_DEF(struct pwc_video_command, vcmd);
 
-		ARGR(cmd).type = pdev->type;
-		ARGR(cmd).release = pdev->release;
-		ARGR(cmd).command_len = pdev->cmd_len;
-		memcpy(&ARGR(cmd).command_buf, pdev->cmd_buf, pdev->cmd_len);
-		ARGR(cmd).bandlength = pdev->vbandlength;
-		ARGR(cmd).frame_size = pdev->frame_size;
-		ARG_OUT(cmd)
+		ARGR(vcmd).type = pdev->type;
+		ARGR(vcmd).release = pdev->release;
+		ARGR(vcmd).command_len = pdev->cmd_len;
+		memcpy(&ARGR(vcmd).command_buf, pdev->cmd_buf, pdev->cmd_len);
+		ARGR(vcmd).bandlength = pdev->vbandlength;
+		ARGR(vcmd).frame_size = pdev->frame_size;
+		ARG_OUT(vcmd)
 		break;
 	}
 	/*

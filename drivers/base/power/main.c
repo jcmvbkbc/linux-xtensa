@@ -67,35 +67,27 @@ void device_pm_unlock(void)
  *	device_pm_add - add a device to the list of active devices
  *	@dev:	Device to be added to the list
  */
-int device_pm_add(struct device *dev)
+void device_pm_add(struct device *dev)
 {
-	int error;
-
 	pr_debug("PM: Adding info for %s:%s\n",
 		 dev->bus ? dev->bus->name : "No Bus",
 		 kobject_name(&dev->kobj));
 	mutex_lock(&dpm_list_mtx);
 	if (dev->parent) {
-		if (dev->parent->power.status >= DPM_SUSPENDING) {
-			dev_warn(dev, "parent %s is sleeping, will not add\n",
-				dev->parent->bus_id);
-			WARN_ON(true);
-		}
+		if (dev->parent->power.status >= DPM_SUSPENDING)
+			dev_warn(dev, "parent %s should not be sleeping\n",
+				 dev_name(dev->parent));
 	} else if (transition_started) {
 		/*
 		 * We refuse to register parentless devices while a PM
 		 * transition is in progress in order to avoid leaving them
 		 * unhandled down the road
 		 */
-		WARN_ON(true);
+		dev_WARN(dev, "Parentless device registered during a PM transaction\n");
 	}
-	error = dpm_sysfs_add(dev);
-	if (!error) {
-		dev->power.status = DPM_ON;
-		list_add_tail(&dev->power.entry, &dpm_list);
-	}
+
+	list_add_tail(&dev->power.entry, &dpm_list);
 	mutex_unlock(&dpm_list_mtx);
-	return error;
 }
 
 /**
@@ -110,7 +102,6 @@ void device_pm_remove(struct device *dev)
 		 dev->bus ? dev->bus->name : "No Bus",
 		 kobject_name(&dev->kobj));
 	mutex_lock(&dpm_list_mtx);
-	dpm_sysfs_remove(dev);
 	list_del_init(&dev->power.entry);
 	mutex_unlock(&dpm_list_mtx);
 }
@@ -121,7 +112,8 @@ void device_pm_remove(struct device *dev)
  *	@ops:	PM operations to choose from.
  *	@state:	PM transition of the system being carried out.
  */
-static int pm_op(struct device *dev, struct pm_ops *ops, pm_message_t state)
+static int pm_op(struct device *dev, struct dev_pm_ops *ops,
+			pm_message_t state)
 {
 	int error = 0;
 
@@ -183,7 +175,7 @@ static int pm_op(struct device *dev, struct pm_ops *ops, pm_message_t state)
  *	The operation is executed with interrupts disabled by the only remaining
  *	functional CPU in the system.
  */
-static int pm_noirq_op(struct device *dev, struct pm_ext_ops *ops,
+static int pm_noirq_op(struct device *dev, struct dev_pm_ops *ops,
 			pm_message_t state)
 {
 	int error = 0;
@@ -341,7 +333,6 @@ static void dpm_power_up(pm_message_t state)
  */
 void device_power_up(pm_message_t state)
 {
-	sysdev_resume();
 	dpm_power_up(state);
 }
 EXPORT_SYMBOL_GPL(device_power_up);
@@ -363,7 +354,7 @@ static int resume_device(struct device *dev, pm_message_t state)
 	if (dev->bus) {
 		if (dev->bus->pm) {
 			pm_dev_dbg(dev, state, "");
-			error = pm_op(dev, &dev->bus->pm->base, state);
+			error = pm_op(dev, dev->bus->pm, state);
 		} else if (dev->bus->resume) {
 			pm_dev_dbg(dev, state, "legacy ");
 			error = dev->bus->resume(dev);
@@ -460,9 +451,9 @@ static void complete_device(struct device *dev, pm_message_t state)
 		dev->type->pm->complete(dev);
 	}
 
-	if (dev->bus && dev->bus->pm && dev->bus->pm->base.complete) {
+	if (dev->bus && dev->bus->pm && dev->bus->pm->complete) {
 		pm_dev_dbg(dev, state, "completing ");
-		dev->bus->pm->base.complete(dev);
+		dev->bus->pm->complete(dev);
 	}
 
 	up(&dev->sem);
@@ -585,8 +576,6 @@ int device_power_down(pm_message_t state)
 		}
 		dev->power.status = DPM_OFF_IRQ;
 	}
-	if (!error)
-		error = sysdev_suspend(state);
 	if (error)
 		dpm_power_up(resume_event(state));
 	return error;
@@ -633,7 +622,7 @@ static int suspend_device(struct device *dev, pm_message_t state)
 	if (dev->bus) {
 		if (dev->bus->pm) {
 			pm_dev_dbg(dev, state, "");
-			error = pm_op(dev, &dev->bus->pm->base, state);
+			error = pm_op(dev, dev->bus->pm, state);
 		} else if (dev->bus->suspend) {
 			pm_dev_dbg(dev, state, "legacy ");
 			error = dev->bus->suspend(dev, state);
@@ -694,10 +683,10 @@ static int prepare_device(struct device *dev, pm_message_t state)
 
 	down(&dev->sem);
 
-	if (dev->bus && dev->bus->pm && dev->bus->pm->base.prepare) {
+	if (dev->bus && dev->bus->pm && dev->bus->pm->prepare) {
 		pm_dev_dbg(dev, state, "preparing ");
-		error = dev->bus->pm->base.prepare(dev);
-		suspend_report_result(dev->bus->pm->base.prepare, error);
+		error = dev->bus->pm->prepare(dev);
+		suspend_report_result(dev->bus->pm->prepare, error);
 		if (error)
 			goto End;
 	}
@@ -787,10 +776,7 @@ EXPORT_SYMBOL_GPL(device_suspend);
 
 void __suspend_report_result(const char *function, void *fn, int ret)
 {
-	if (ret) {
-		printk(KERN_ERR "%s(): ", function);
-		print_fn_descriptor_symbol("%s returns ", fn);
-		printk("%d\n", ret);
-	}
+	if (ret)
+		printk(KERN_ERR "%s(): %pF returns %d\n", function, fn, ret);
 }
 EXPORT_SYMBOL_GPL(__suspend_report_result);

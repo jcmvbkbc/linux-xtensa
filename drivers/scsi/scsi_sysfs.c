@@ -34,6 +34,7 @@ static const struct {
 	{ SDEV_QUIESCE, "quiesce" },
 	{ SDEV_OFFLINE,	"offline" },
 	{ SDEV_BLOCK,	"blocked" },
+	{ SDEV_CREATED_BLOCK, "created-blocked" },
 };
 
 const char *scsi_device_state_name(enum scsi_device_state state)
@@ -560,12 +561,15 @@ sdev_rd_attr (vendor, "%.8s\n");
 sdev_rd_attr (model, "%.16s\n");
 sdev_rd_attr (rev, "%.4s\n");
 
+/*
+ * TODO: can we make these symlinks to the block layer ones?
+ */
 static ssize_t
 sdev_show_timeout (struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev;
 	sdev = to_scsi_device(dev);
-	return snprintf (buf, 20, "%d\n", sdev->timeout / HZ);
+	return snprintf(buf, 20, "%d\n", sdev->request_queue->rq_timeout / HZ);
 }
 
 static ssize_t
@@ -576,7 +580,7 @@ sdev_store_timeout (struct device *dev, struct device_attribute *attr,
 	int timeout;
 	sdev = to_scsi_device(dev);
 	sscanf (buf, "%d\n", &timeout);
-	sdev->timeout = timeout * HZ;
+	blk_queue_rq_timeout(sdev->request_queue, timeout * HZ);
 	return count;
 }
 static DEVICE_ATTR(timeout, S_IRUGO | S_IWUSR, sdev_show_timeout, sdev_store_timeout);
@@ -1075,16 +1079,14 @@ void scsi_sysfs_device_initialize(struct scsi_device *sdev)
 	device_initialize(&sdev->sdev_gendev);
 	sdev->sdev_gendev.bus = &scsi_bus_type;
 	sdev->sdev_gendev.type = &scsi_dev_type;
-	sprintf(sdev->sdev_gendev.bus_id,"%d:%d:%d:%d",
-		sdev->host->host_no, sdev->channel, sdev->id,
-		sdev->lun);
-	
+	dev_set_name(&sdev->sdev_gendev, "%d:%d:%d:%d",
+		     sdev->host->host_no, sdev->channel, sdev->id, sdev->lun);
+
 	device_initialize(&sdev->sdev_dev);
 	sdev->sdev_dev.parent = &sdev->sdev_gendev;
 	sdev->sdev_dev.class = &sdev_class;
-	snprintf(sdev->sdev_dev.bus_id, BUS_ID_SIZE,
-		 "%d:%d:%d:%d", sdev->host->host_no,
-		 sdev->channel, sdev->id, sdev->lun);
+	dev_set_name(&sdev->sdev_dev, "%d:%d:%d:%d",
+		     sdev->host->host_no, sdev->channel, sdev->id, sdev->lun);
 	sdev->scsi_level = starget->scsi_level;
 	transport_setup_device(&sdev->sdev_gendev);
 	spin_lock_irqsave(shost->host_lock, flags);

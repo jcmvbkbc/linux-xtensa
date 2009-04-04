@@ -24,39 +24,37 @@ struct percpu_counter {
 	s32 *counters;
 };
 
-#if NR_CPUS >= 16
-#define FBC_BATCH	(NR_CPUS*2)
-#else
-#define FBC_BATCH	(NR_CPUS*4)
-#endif
+extern int percpu_counter_batch;
 
-int percpu_counter_init(struct percpu_counter *fbc, s64 amount);
-int percpu_counter_init_irq(struct percpu_counter *fbc, s64 amount);
+int __percpu_counter_init(struct percpu_counter *fbc, s64 amount,
+			  struct lock_class_key *key);
+
+#define percpu_counter_init(fbc, value)					\
+	({								\
+		static struct lock_class_key __key;			\
+									\
+		__percpu_counter_init(fbc, value, &__key);		\
+	})
+
 void percpu_counter_destroy(struct percpu_counter *fbc);
 void percpu_counter_set(struct percpu_counter *fbc, s64 amount);
 void __percpu_counter_add(struct percpu_counter *fbc, s64 amount, s32 batch);
-s64 __percpu_counter_sum(struct percpu_counter *fbc, int set);
+s64 __percpu_counter_sum(struct percpu_counter *fbc);
 
 static inline void percpu_counter_add(struct percpu_counter *fbc, s64 amount)
 {
-	__percpu_counter_add(fbc, amount, FBC_BATCH);
+	__percpu_counter_add(fbc, amount, percpu_counter_batch);
 }
 
 static inline s64 percpu_counter_sum_positive(struct percpu_counter *fbc)
 {
-	s64 ret = __percpu_counter_sum(fbc, 0);
+	s64 ret = __percpu_counter_sum(fbc);
 	return ret < 0 ? 0 : ret;
 }
 
-static inline s64 percpu_counter_sum_and_set(struct percpu_counter *fbc)
-{
-	return __percpu_counter_sum(fbc, 1);
-}
-
-
 static inline s64 percpu_counter_sum(struct percpu_counter *fbc)
 {
-	return __percpu_counter_sum(fbc, 0);
+	return __percpu_counter_sum(fbc);
 }
 
 static inline s64 percpu_counter_read(struct percpu_counter *fbc)
@@ -90,8 +88,6 @@ static inline int percpu_counter_init(struct percpu_counter *fbc, s64 amount)
 	fbc->count = amount;
 	return 0;
 }
-
-#define percpu_counter_init_irq percpu_counter_init
 
 static inline void percpu_counter_destroy(struct percpu_counter *fbc)
 {

@@ -9,7 +9,11 @@
  *
  * Undefined if no set bit exists, so code should check against 0 first.
  */
+#if 1
 static inline unsigned long __fls(unsigned long word)
+#else
+static __always_inline unsigned long __fls(unsigned long word)
+#endif
 {
 	int num = BITS_PER_LONG - 1;
 

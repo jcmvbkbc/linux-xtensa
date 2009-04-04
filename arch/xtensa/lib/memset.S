@@ -11,7 +11,7 @@
  *  Copyright (C) 2009 Tensilica Inc.
  */
 
-#include <asm/variant/core.h>
+#include <variant/core.h>
 #include <asm/core.h>
 
 /*

@@ -47,8 +47,12 @@ static int flexcop_i2c_read4(struct flexcop_i2c_adapter *i2c,
 	int len = r100.tw_sm_c_100.total_bytes, /* remember total_bytes is buflen-1 */
 		ret;
 
-	r100.tw_sm_c_100.no_base_addr_ack_error = i2c->no_base_addr;
 	ret = flexcop_i2c_operation(i2c->fc, &r100);
+	if (ret != 0) {
+		deb_i2c("Retrying operation\n");
+		r100.tw_sm_c_100.no_base_addr_ack_error = i2c->no_base_addr;
+		ret = flexcop_i2c_operation(i2c->fc, &r100);
+	}
 	if (ret != 0) {
 		deb_i2c("read failed. %d\n", ret);
 		return ret;
@@ -221,12 +225,12 @@ int flexcop_i2c_init(struct flexcop_device *fc)
 	fc->fc_i2c_adap[1].port = FC_I2C_PORT_EEPROM;
 	fc->fc_i2c_adap[2].port = FC_I2C_PORT_TUNER;
 
-	strncpy(fc->fc_i2c_adap[0].i2c_adap.name,
-		"B2C2 FlexCop I2C to demod", I2C_NAME_SIZE);
-	strncpy(fc->fc_i2c_adap[1].i2c_adap.name,
-		"B2C2 FlexCop I2C to eeprom", I2C_NAME_SIZE);
-	strncpy(fc->fc_i2c_adap[2].i2c_adap.name,
-		"B2C2 FlexCop I2C to tuner", I2C_NAME_SIZE);
+	strlcpy(fc->fc_i2c_adap[0].i2c_adap.name, "B2C2 FlexCop I2C to demod",
+		sizeof(fc->fc_i2c_adap[0].i2c_adap.name));
+	strlcpy(fc->fc_i2c_adap[1].i2c_adap.name, "B2C2 FlexCop I2C to eeprom",
+		sizeof(fc->fc_i2c_adap[1].i2c_adap.name));
+	strlcpy(fc->fc_i2c_adap[2].i2c_adap.name, "B2C2 FlexCop I2C to tuner",
+		sizeof(fc->fc_i2c_adap[2].i2c_adap.name));
 
 	i2c_set_adapdata(&fc->fc_i2c_adap[0].i2c_adap, &fc->fc_i2c_adap[0]);
 	i2c_set_adapdata(&fc->fc_i2c_adap[1].i2c_adap, &fc->fc_i2c_adap[1]);

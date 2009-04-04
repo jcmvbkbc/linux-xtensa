@@ -360,6 +360,7 @@ typedef struct elf64_shdr {
 #define NT_PPC_SPE	0x101		/* PowerPC SPE/EVR registers */
 #define NT_PPC_VSX	0x102		/* PowerPC VSX registers */
 #define NT_386_TLS	0x200		/* i386 TLS slots (struct user_desc) */
+#define NT_386_IOPERM	0x201		/* x86 io permission bitmap (1=deny) */
 
 
 /* Note header in a PT_NOTE section */
@@ -376,6 +377,7 @@ typedef struct elf64_note {
   Elf64_Word n_type;	/* Content type */
 } Elf64_Nhdr;
 
+#ifdef __KERNEL__
 #if ELF_CLASS == ELFCLASS32
 
 extern Elf32_Dyn _DYNAMIC [];
@@ -403,5 +405,5 @@ static inline int elf_coredump_extra_notes_write(struct file *file,
 extern int elf_coredump_extra_notes_size(void);
 extern int elf_coredump_extra_notes_write(struct file *file, loff_t *foffset);
 #endif
-
+#endif /* __KERNEL__ */
 #endif /* _LINUX_ELF_H */

@@ -18,9 +18,10 @@
 #include <linux/device.h>
 #include <linux/serial_8250.h>
 #include <linux/ata_platform.h>
+#include <linux/io.h>
+#include <linux/i2c.h>
 
 #include <asm/elf.h>
-#include <asm/io.h>
 #include <asm/mach-types.h>
 #include <mach/hardware.h>
 #include <asm/page.h>
@@ -201,8 +202,13 @@ static struct platform_device *devs[] __initdata = {
 	&pata_device,
 };
 
+static struct i2c_board_info i2c_rtc = {
+	I2C_BOARD_INFO("pcf8583", 0x50)
+};
+
 static int __init rpc_init(void)
 {
+	i2c_register_board_info(0, &i2c_rtc, 1);
 	return platform_add_devices(devs, ARRAY_SIZE(devs));
 }
 

@@ -233,7 +233,7 @@ static void __hash_remove(struct hash_cell *hc)
 	}
 
 	if (hc->new_map)
-		dm_table_put(hc->new_map);
+		dm_table_destroy(hc->new_map);
 	dm_put(hc->md);
 	free_cell(hc);
 }
@@ -426,7 +426,7 @@ static int list_devices(struct dm_ioctl *param, size_t param_size)
 				old_nl->next = (uint32_t) ((void *) nl -
 							   (void *) old_nl);
 			disk = dm_disk(hc->md);
-			nl->dev = huge_encode_dev(MKDEV(disk->major, disk->first_minor));
+			nl->dev = huge_encode_dev(disk_devt(disk));
 			nl->next = 0;
 			strcpy(nl->name, hc->name);
 
@@ -539,7 +539,7 @@ static int __dev_status(struct mapped_device *md, struct dm_ioctl *param)
 	if (dm_suspended(md))
 		param->flags |= DM_SUSPEND_FLAG;
 
-	param->dev = huge_encode_dev(MKDEV(disk->major, disk->first_minor));
+	param->dev = huge_encode_dev(disk_devt(disk));
 
 	/*
 	 * Yes, this will be out of date by the time it gets back
@@ -548,7 +548,7 @@ static int __dev_status(struct mapped_device *md, struct dm_ioctl *param)
 	 */
 	param->open_count = dm_open_count(md);
 
-	if (disk->policy)
+	if (get_disk_ro(disk))
 		param->flags |= DM_READONLY_FLAG;
 
 	param->event_nr = dm_get_event_nr(md);
@@ -827,8 +827,8 @@ static int do_resume(struct dm_ioctl *param)
 
 		r = dm_swap_table(md, new_map);
 		if (r) {
+			dm_table_destroy(new_map);
 			dm_put(md);
-			dm_table_put(new_map);
 			return r;
 		}
 
@@ -836,8 +836,6 @@ static int do_resume(struct dm_ioctl *param)
 			set_disk_ro(dm_disk(md), 0);
 		else
 			set_disk_ro(dm_disk(md), 1);
-
-		dm_table_put(new_map);
 	}
 
 	if (dm_suspended(md))
@@ -988,9 +986,9 @@ static int dev_wait(struct dm_ioctl *param, size_t param_size)
 	return r;
 }
 
-static inline int get_mode(struct dm_ioctl *param)
+static inline fmode_t get_mode(struct dm_ioctl *param)
 {
-	int mode = FMODE_READ | FMODE_WRITE;
+	fmode_t mode = FMODE_READ | FMODE_WRITE;
 
 	if (param->flags & DM_READONLY_FLAG)
 		mode = FMODE_READ;
@@ -1080,7 +1078,7 @@ static int table_load(struct dm_ioctl *param, size_t param_size)
 	}
 
 	if (hc->new_map)
-		dm_table_put(hc->new_map);
+		dm_table_destroy(hc->new_map);
 	hc->new_map = t;
 	up_write(&_hash_lock);
 
@@ -1109,7 +1107,7 @@ static int table_clear(struct dm_ioctl *param, size_t param_size)
 	}
 
 	if (hc->new_map) {
-		dm_table_put(hc->new_map);
+		dm_table_destroy(hc->new_map);
 		hc->new_map = NULL;
 	}
 
@@ -1131,7 +1129,7 @@ static void retrieve_deps(struct dm_table *table,
 	unsigned int count = 0;
 	struct list_head *tmp;
 	size_t len, needed;
-	struct dm_dev *dd;
+	struct dm_dev_internal *dd;
 	struct dm_target_deps *deps;
 
 	deps = get_result_buffer(param, param_size, &len);
@@ -1157,7 +1155,7 @@ static void retrieve_deps(struct dm_table *table,
 	deps->count = count;
 	count = 0;
 	list_for_each_entry (dd, dm_table_get_devices(table), list)
-		deps->dev[count++] = huge_encode_dev(dd->bdev->bd_dev);
+		deps->dev[count++] = huge_encode_dev(dd->dm_dev.bdev->bd_dev);
 
 	param->data_size = param->data_start + needed;
 }
@@ -1550,8 +1548,10 @@ int dm_copy_name_and_uuid(struct mapped_device *md, char *name, char *uuid)
 		goto out;
 	}
 
-	strcpy(name, hc->name);
-	strcpy(uuid, hc->uuid ? : "");
+	if (name)
+		strcpy(name, hc->name);
+	if (uuid)
+		strcpy(uuid, hc->uuid ? : "");
 
 out:
 	up_read(&_hash_lock);

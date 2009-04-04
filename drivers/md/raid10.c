@@ -19,6 +19,7 @@
  */
 
 #include "dm-bio-list.h"
+#include <linux/delay.h>
 #include <linux/raid/raid10.h>
 #include <linux/raid/bitmap.h>
 
@@ -789,6 +790,7 @@ static int make_request(struct request_queue *q, struct bio * bio)
 	mirror_info_t *mirror;
 	r10bio_t *r10_bio;
 	struct bio *read_bio;
+	int cpu;
 	int i;
 	int chunk_sects = conf->chunk_mask + 1;
 	const int rw = bio_data_dir(bio);
@@ -816,7 +818,7 @@ static int make_request(struct request_queue *q, struct bio * bio)
 		/* This is a one page bio that upper layers
 		 * refuse to split for us, so we need to split it.
 		 */
-		bp = bio_split(bio, bio_split_pool,
+		bp = bio_split(bio,
 			       chunk_sects - (bio->bi_sector & (chunk_sects - 1)) );
 		if (make_request(q, &bp->bio1))
 			generic_make_request(&bp->bio1);
@@ -843,8 +845,11 @@ static int make_request(struct request_queue *q, struct bio * bio)
 	 */
 	wait_barrier(conf);
 
-	disk_stat_inc(mddev->gendisk, ios[rw]);
-	disk_stat_add(mddev->gendisk, sectors[rw], bio_sectors(bio));
+	cpu = part_stat_lock();
+	part_stat_inc(cpu, &mddev->gendisk->part0, ios[rw]);
+	part_stat_add(cpu, &mddev->gendisk->part0, sectors[rw],
+		      bio_sectors(bio));
+	part_stat_unlock();
 
 	r10_bio = mempool_alloc(conf->r10bio_pool, GFP_NOIO);
 
@@ -1132,7 +1137,7 @@ static int raid10_add_disk(mddev_t *mddev, mdk_rdev_t *rdev)
 	if (!enough(conf))
 		return -EINVAL;
 
-	if (rdev->raid_disk)
+	if (rdev->raid_disk >= 0)
 		first = last = rdev->raid_disk;
 
 	if (rdev->saved_raid_disk >= 0 &&
@@ -1231,6 +1236,7 @@ static void end_sync_read(struct bio *bio, int error)
 	/* for reconstruct, we always reschedule after a read.
 	 * for resync, only after all reads
 	 */
+	rdev_dec_pending(conf->mirrors[d].rdev, conf->mddev);
 	if (test_bit(R10BIO_IsRecover, &r10_bio->state) ||
 	    atomic_dec_and_test(&r10_bio->remaining)) {
 		/* we have read all the blocks,
@@ -1238,7 +1244,6 @@ static void end_sync_read(struct bio *bio, int error)
 		 */
 		reschedule_retry(r10_bio);
 	}
-	rdev_dec_pending(conf->mirrors[d].rdev, conf->mddev);
 }
 
 static void end_sync_write(struct bio *bio, int error)
@@ -1259,11 +1264,13 @@ static void end_sync_write(struct bio *bio, int error)
 
 	update_head_pos(i, r10_bio);
 
+	rdev_dec_pending(conf->mirrors[d].rdev, mddev);
 	while (atomic_dec_and_test(&r10_bio->remaining)) {
 		if (r10_bio->master_bio == NULL) {
 			/* the primary of several recovery bios */
-			md_done_sync(mddev, r10_bio->sectors, 1);
+			sector_t s = r10_bio->sectors;
 			put_buf(r10_bio);
+			md_done_sync(mddev, s, 1);
 			break;
 		} else {
 			r10bio_t *r10_bio2 = (r10bio_t *)r10_bio->master_bio;
@@ -1271,7 +1278,6 @@ static void end_sync_write(struct bio *bio, int error)
 			r10_bio = r10_bio2;
 		}
 	}
-	rdev_dec_pending(conf->mirrors[d].rdev, mddev);
 }
 
 /*
@@ -1345,9 +1351,6 @@ static void sync_request_write(mddev_t *mddev, r10bio_t *r10_bio)
 		tbio->bi_size = r10_bio->sectors << 9;
 		tbio->bi_idx = 0;
 		tbio->bi_phys_segments = 0;
-		tbio->bi_hw_segments = 0;
-		tbio->bi_hw_front_size = 0;
-		tbio->bi_hw_back_size = 0;
 		tbio->bi_flags &= ~(BIO_POOL_MASK - 1);
 		tbio->bi_flags |= 1 << BIO_UPTODATE;
 		tbio->bi_next = NULL;
@@ -1747,8 +1750,6 @@ static sector_t sync_request(mddev_t *mddev, sector_t sector_nr, int *skipped, i
 	if (!go_faster && conf->nr_waiting)
 		msleep_interruptible(1000);
 
-	bitmap_cond_end_sync(mddev->bitmap, sector_nr);
-
 	/* Again, very different code for resync and recovery.
 	 * Both must result in an r10bio with a list of bios that
 	 * have bi_end_io, bi_sector, bi_bdev set,
@@ -1884,6 +1885,8 @@ static sector_t sync_request(mddev_t *mddev, sector_t sector_nr, int *skipped, i
 		/* resync. Schedule a read for every block at this virt offset */
 		int count = 0;
 
+		bitmap_cond_end_sync(mddev->bitmap, sector_nr);
+
 		if (!bitmap_start_sync(mddev->bitmap, sector_nr,
 				       &sync_blocks, mddev->degraded) &&
 		    !conf->fullsync && !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery)) {
@@ -1947,7 +1950,6 @@ static sector_t sync_request(mddev_t *mddev, sector_t sector_nr, int *skipped, i
 		bio->bi_vcnt = 0;
 		bio->bi_idx = 0;
 		bio->bi_phys_segments = 0;
-		bio->bi_hw_segments = 0;
 		bio->bi_size = 0;
 	}
 
@@ -2009,13 +2011,13 @@ static sector_t sync_request(mddev_t *mddev, sector_t sector_nr, int *skipped, i
 	/* There is nowhere to write, so all non-sync
 	 * drives must be failed, so try the next chunk...
 	 */
-	{
-	sector_t sec = max_sector - sector_nr;
-	sectors_skipped += sec;
+	if (sector_nr + max_sync < max_sector)
+		max_sector = sector_nr + max_sync;
+
+	sectors_skipped += (max_sector - sector_nr);
 	chunks_skipped ++;
 	sector_nr = max_sector;
 	goto skipped;
-	}
 }
 
 static int run(mddev_t *mddev)
@@ -2024,12 +2026,12 @@ static int run(mddev_t *mddev)
 	int i, disk_idx;
 	mirror_info_t *disk;
 	mdk_rdev_t *rdev;
-	struct list_head *tmp;
 	int nc, fc, fo;
 	sector_t stride, size;
 
-	if (mddev->chunk_size == 0) {
-		printk(KERN_ERR "md/raid10: non-zero chunk size required.\n");
+	if (mddev->chunk_size < PAGE_SIZE) {
+		printk(KERN_ERR "md/raid10: chunk size must be "
+		       "at least PAGE_SIZE(%ld).\n", PAGE_SIZE);
 		return -EINVAL;
 	}
 
@@ -2106,7 +2108,7 @@ static int run(mddev_t *mddev)
 	spin_lock_init(&conf->device_lock);
 	mddev->queue->queue_lock = &conf->device_lock;
 
-	rdev_for_each(rdev, tmp, mddev) {
+	list_for_each_entry(rdev, &mddev->disks, same_set) {
 		disk_idx = rdev->raid_disk;
 		if (disk_idx >= mddev->raid_disks
 		    || disk_idx < 0)

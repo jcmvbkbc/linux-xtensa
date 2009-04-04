@@ -569,7 +569,7 @@ static void camellia_setup_tail(u32 *subkey, u32 *subL, u32 *subR, int max)
 		SUBKEY_R(i + 2) = SUBKEY_L(i + 2) ^ dw; SUBKEY_L(i + 2) = dw;
 		dw = SUBKEY_L(i + 3) ^ SUBKEY_R(i + 3); dw = rol32(dw, 8);/* round 4 */
 		SUBKEY_R(i + 3) = SUBKEY_L(i + 3) ^ dw; SUBKEY_L(i + 3) = dw;
-		dw = SUBKEY_L(i + 4) ^ SUBKEY_R(i + 4); dw = rol32(dw, 9);/* round 5 */
+		dw = SUBKEY_L(i + 4) ^ SUBKEY_R(i + 4); dw = rol32(dw, 8);/* round 5 */
 		SUBKEY_R(i + 4) = SUBKEY_L(i + 4) ^ dw; SUBKEY_L(i + 4) = dw;
 		dw = SUBKEY_L(i + 5) ^ SUBKEY_R(i + 5); dw = rol32(dw, 8);/* round 6 */
 		SUBKEY_R(i + 5) = SUBKEY_L(i + 5) ^ dw; SUBKEY_L(i + 5) = dw;

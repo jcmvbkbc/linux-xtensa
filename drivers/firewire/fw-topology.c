@@ -355,6 +355,9 @@ report_lost_node(struct fw_card *card,
 {
 	fw_node_event(card, node, FW_NODE_DESTROYED);
 	fw_node_put(node);
+
+	/* Topology has changed - reset bus manager retry counter */
+	card->bm_retries = 0;
 }
 
 static void
@@ -374,6 +377,9 @@ report_found_node(struct fw_card *card,
 	}
 
 	fw_node_event(card, node, FW_NODE_CREATED);
+
+	/* Topology has changed - reset bus manager retry counter */
+	card->bm_retries = 0;
 }
 
 void fw_destroy_nodes(struct fw_card *card)
@@ -413,7 +419,7 @@ static void
 update_tree(struct fw_card *card, struct fw_node *root)
 {
 	struct list_head list0, list1;
-	struct fw_node *node0, *node1;
+	struct fw_node *node0, *node1, *next1;
 	int i, event;
 
 	INIT_LIST_HEAD(&list0);
@@ -485,7 +491,9 @@ update_tree(struct fw_card *card, struct fw_node *root)
 		}
 
 		node0 = fw_node(node0->link.next);
-		node1 = fw_node(node1->link.next);
+		next1 = fw_node(node1->link.next);
+		fw_node_put(node1);
+		node1 = next1;
 	}
 }
 
@@ -510,15 +518,19 @@ fw_core_handle_bus_reset(struct fw_card *card,
 	struct fw_node *local_node;
 	unsigned long flags;
 
-	spin_lock_irqsave(&card->lock, flags);
-
 	/*
-	 * If the new topology has a different self_id_count the topology
-	 * changed, either nodes were added or removed. In that case we
-	 * reset the IRM reset counter.
+	 * If the selfID buffer is not the immediate successor of the
+	 * previously processed one, we cannot reliably compare the
+	 * old and new topologies.
 	 */
-	if (card->self_id_count != self_id_count)
+	if (!is_next_generation(generation, card->generation) &&
+	    card->local_node != NULL) {
+		fw_notify("skipped bus generations, destroying all nodes\n");
+		fw_destroy_nodes(card);
 		card->bm_retries = 0;
+	}
+
+	spin_lock_irqsave(&card->lock, flags);
 
 	card->node_id = node_id;
 	/*
@@ -528,7 +540,7 @@ fw_core_handle_bus_reset(struct fw_card *card,
 	smp_wmb();
 	card->generation = generation;
 	card->reset_jiffies = jiffies;
-	schedule_delayed_work(&card->work, 0);
+	fw_schedule_bm_work(card, 0);
 
 	local_node = build_tree(card, self_ids, self_id_count);
 

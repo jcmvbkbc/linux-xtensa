@@ -24,8 +24,8 @@
 #include <asm/thread_info.h>
 #include <asm/asm-offsets.h>
 
-#include <asm/arch/hwregs/asm/reg_map_asm.h>
-#include <asm/arch/hwregs/asm/intr_vect_defs_asm.h>
+#include <hwregs/asm/reg_map_asm.h>
+#include <hwregs/asm/intr_vect_defs_asm.h>
 
 	;; Exported functions.
 	.globl system_call
@@ -614,7 +614,7 @@ sys_call_table:
 	.long sys_uselib
 	.long sys_swapon
 	.long sys_reboot
-	.long old_readdir
+	.long sys_old_readdir
 	.long old_mmap		/* 90 */
 	.long sys_munmap
 	.long sys_truncate

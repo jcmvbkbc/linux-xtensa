@@ -3,6 +3,8 @@
  * Author(s)......: Holger Smolinski <Holger.Smolinski@de.ibm.com>
  * Bugreports.to..: <Linux390@de.ibm.com>
  * (C) IBM Corporation, IBM Deutschland Entwicklung GmbH, 1999,2000
+ * EMC Symmetrix ioctl Copyright EMC Corporation, 2008
+ * Author.........: Nigel Hislop <hislop_nigel@emc.com>
  *
  * This file is the interface of the DASD device driver, which is exported to user space
  * any future changes wrt the API will result in a change of the APIVERSION reported
@@ -12,6 +14,7 @@
 
 #ifndef DASD_H
 #define DASD_H
+#include <linux/types.h>
 #include <linux/ioctl.h>
 
 #define DASD_IOCTL_LETTER 'D'
@@ -76,6 +79,7 @@ typedef struct dasd_information2_t {
 #define DASD_FEATURE_USEDIAG	     0x02
 #define DASD_FEATURE_INITIAL_ONLINE  0x04
 #define DASD_FEATURE_ERPLOG	     0x08
+#define DASD_FEATURE_FAILFAST	     0x10
 
 #define DASD_PARTN_BITS 2
 
@@ -202,6 +206,16 @@ typedef struct attrib_data_t {
 #define DASD_SEQ_PRESTAGE  0x4
 #define DASD_REC_ACCESS    0x5
 
+/*
+ * Perform EMC Symmetrix I/O
+ */
+typedef struct dasd_symmio_parms {
+	unsigned char reserved[8];	/* compat with older releases */
+	unsigned long long psf_data;	/* char * cast to u64 */
+	unsigned long long rssd_result; /* char * cast to u64 */
+	int psf_data_len;
+	int rssd_result_len;
+} __attribute__ ((packed)) dasd_symmio_parms_t;
 
 /********************************************************************************
  * SECTION: Definition of IOCTLs
@@ -247,6 +261,7 @@ typedef struct attrib_data_t {
 /* Set Attributes (cache operations) */
 #define BIODASDSATTR   _IOW(DASD_IOCTL_LETTER,2,attrib_data_t) 
 
+#define BIODASDSYMMIO  _IOWR(DASD_IOCTL_LETTER, 240, dasd_symmio_parms_t)
 
 #endif				/* DASD_H */
 

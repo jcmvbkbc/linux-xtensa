@@ -64,6 +64,8 @@
 #define OCFS2_INODE_SIGNATURE		"INODE01"
 #define OCFS2_EXTENT_BLOCK_SIGNATURE	"EXBLK01"
 #define OCFS2_GROUP_DESC_SIGNATURE      "GROUP01"
+#define OCFS2_XATTR_BLOCK_SIGNATURE	"XATTR01"
+#define OCFS2_DIR_TRAILER_SIGNATURE	"DIRTRL1"
 
 /* Compatibility flags */
 #define OCFS2_HAS_COMPAT_FEATURE(sb,mask)			\
@@ -85,13 +87,18 @@
 #define OCFS2_CLEAR_INCOMPAT_FEATURE(sb,mask)			\
 	OCFS2_SB(sb)->s_feature_incompat &= ~(mask)
 
-#define OCFS2_FEATURE_COMPAT_SUPP	OCFS2_FEATURE_COMPAT_BACKUP_SB
+#define OCFS2_FEATURE_COMPAT_SUPP	(OCFS2_FEATURE_COMPAT_BACKUP_SB	\
+					 | OCFS2_FEATURE_COMPAT_JBD2_SB)
 #define OCFS2_FEATURE_INCOMPAT_SUPP	(OCFS2_FEATURE_INCOMPAT_LOCAL_MOUNT \
 					 | OCFS2_FEATURE_INCOMPAT_SPARSE_ALLOC \
 					 | OCFS2_FEATURE_INCOMPAT_INLINE_DATA \
 					 | OCFS2_FEATURE_INCOMPAT_EXTENDED_SLOT_MAP \
-					 | OCFS2_FEATURE_INCOMPAT_USERSPACE_STACK)
-#define OCFS2_FEATURE_RO_COMPAT_SUPP	OCFS2_FEATURE_RO_COMPAT_UNWRITTEN
+					 | OCFS2_FEATURE_INCOMPAT_USERSPACE_STACK \
+					 | OCFS2_FEATURE_INCOMPAT_XATTR \
+					 | OCFS2_FEATURE_INCOMPAT_META_ECC)
+#define OCFS2_FEATURE_RO_COMPAT_SUPP	(OCFS2_FEATURE_RO_COMPAT_UNWRITTEN \
+					 | OCFS2_FEATURE_RO_COMPAT_USRQUOTA \
+					 | OCFS2_FEATURE_RO_COMPAT_GRPQUOTA)
 
 /*
  * Heartbeat-only devices are missing journals and other files.  The
@@ -127,10 +134,6 @@
 /* Support for data packed into inode blocks */
 #define OCFS2_FEATURE_INCOMPAT_INLINE_DATA	0x0040
 
-/* Support for the extended slot map */
-#define OCFS2_FEATURE_INCOMPAT_EXTENDED_SLOT_MAP 0x100
-
-
 /*
  * Support for alternate, userspace cluster stacks.  If set, the superblock
  * field s_cluster_info contains a tag for the alternate stack in use as
@@ -142,6 +145,15 @@
  */
 #define OCFS2_FEATURE_INCOMPAT_USERSPACE_STACK	0x0080
 
+/* Support for the extended slot map */
+#define OCFS2_FEATURE_INCOMPAT_EXTENDED_SLOT_MAP 0x100
+
+/* Support for extended attributes */
+#define OCFS2_FEATURE_INCOMPAT_XATTR		0x0200
+
+/* Metadata checksum and error correction */
+#define OCFS2_FEATURE_INCOMPAT_META_ECC		0x0800
+
 /*
  * backup superblock flag is used to indicate that this volume
  * has backup superblocks.
@@ -149,9 +161,20 @@
 #define OCFS2_FEATURE_COMPAT_BACKUP_SB		0x0001
 
 /*
+ * The filesystem will correctly handle journal feature bits.
+ */
+#define OCFS2_FEATURE_COMPAT_JBD2_SB		0x0002
+
+/*
  * Unwritten extents support.
  */
 #define OCFS2_FEATURE_RO_COMPAT_UNWRITTEN	0x0001
+
+/*
+ * Maintain quota information for this filesystem
+ */
+#define OCFS2_FEATURE_RO_COMPAT_USRQUOTA	0x0002
+#define OCFS2_FEATURE_RO_COMPAT_GRPQUOTA	0x0004
 
 /* The byte offset of the first backup block will be 1G.
  * The following will be 4G, 16G, 64G, 256G and 1T.
@@ -182,6 +205,7 @@
 #define OCFS2_HEARTBEAT_FL	(0x00000200)	/* Heartbeat area */
 #define OCFS2_CHAIN_FL		(0x00000400)	/* Chain allocator */
 #define OCFS2_DEALLOC_FL	(0x00000800)	/* Truncate log */
+#define OCFS2_QUOTA_FL		(0x00001000)	/* Quota file */
 
 /*
  * Flags on ocfs2_dinode.i_dyn_features
@@ -299,6 +323,12 @@ struct ocfs2_new_group_input {
  */
 #define OCFS2_DEFAULT_LOCAL_ALLOC_SIZE	8
 
+/*
+ * Inline extended attribute size (in bytes)
+ * The value chosen should be aligned to 16 byte boundaries.
+ */
+#define OCFS2_MIN_XATTR_INLINE_SIZE     256
+
 struct ocfs2_system_inode_info {
 	char	*si_name;
 	int	si_iflags;
@@ -313,13 +343,17 @@ enum {
 #define OCFS2_FIRST_ONLINE_SYSTEM_INODE SLOT_MAP_SYSTEM_INODE
 	HEARTBEAT_SYSTEM_INODE,
 	GLOBAL_BITMAP_SYSTEM_INODE,
-#define OCFS2_LAST_GLOBAL_SYSTEM_INODE GLOBAL_BITMAP_SYSTEM_INODE
+	USER_QUOTA_SYSTEM_INODE,
+	GROUP_QUOTA_SYSTEM_INODE,
+#define OCFS2_LAST_GLOBAL_SYSTEM_INODE GROUP_QUOTA_SYSTEM_INODE
 	ORPHAN_DIR_SYSTEM_INODE,
 	EXTENT_ALLOC_SYSTEM_INODE,
 	INODE_ALLOC_SYSTEM_INODE,
 	JOURNAL_SYSTEM_INODE,
 	LOCAL_ALLOC_SYSTEM_INODE,
 	TRUNCATE_LOG_SYSTEM_INODE,
+	LOCAL_USER_QUOTA_SYSTEM_INODE,
+	LOCAL_GROUP_QUOTA_SYSTEM_INODE,
 	NUM_SYSTEM_INODES
 };
 
@@ -333,6 +367,8 @@ static struct ocfs2_system_inode_info ocfs2_system_inodes[NUM_SYSTEM_INODES] = {
 	[SLOT_MAP_SYSTEM_INODE]			= { "slot_map", 0, S_IFREG | 0644 },
 	[HEARTBEAT_SYSTEM_INODE]		= { "heartbeat", OCFS2_HEARTBEAT_FL, S_IFREG | 0644 },
 	[GLOBAL_BITMAP_SYSTEM_INODE]		= { "global_bitmap", 0, S_IFREG | 0644 },
+	[USER_QUOTA_SYSTEM_INODE]		= { "aquota.user", OCFS2_QUOTA_FL, S_IFREG | 0644 },
+	[GROUP_QUOTA_SYSTEM_INODE]		= { "aquota.group", OCFS2_QUOTA_FL, S_IFREG | 0644 },
 
 	/* Slot-specific system inodes (one copy per slot) */
 	[ORPHAN_DIR_SYSTEM_INODE]		= { "orphan_dir:%04d", 0, S_IFDIR | 0755 },
@@ -340,7 +376,9 @@ static struct ocfs2_system_inode_info ocfs2_system_inodes[NUM_SYSTEM_INODES] = {
 	[INODE_ALLOC_SYSTEM_INODE]		= { "inode_alloc:%04d", OCFS2_BITMAP_FL | OCFS2_CHAIN_FL, S_IFREG | 0644 },
 	[JOURNAL_SYSTEM_INODE]			= { "journal:%04d", OCFS2_JOURNAL_FL, S_IFREG | 0644 },
 	[LOCAL_ALLOC_SYSTEM_INODE]		= { "local_alloc:%04d", OCFS2_BITMAP_FL | OCFS2_LOCAL_ALLOC_FL, S_IFREG | 0644 },
-	[TRUNCATE_LOG_SYSTEM_INODE]		= { "truncate_log:%04d", OCFS2_DEALLOC_FL, S_IFREG | 0644 }
+	[TRUNCATE_LOG_SYSTEM_INODE]		= { "truncate_log:%04d", OCFS2_DEALLOC_FL, S_IFREG | 0644 },
+	[LOCAL_USER_QUOTA_SYSTEM_INODE]		= { "aquota.user:%04d", OCFS2_QUOTA_FL, S_IFREG | 0644 },
+	[LOCAL_GROUP_QUOTA_SYSTEM_INODE]	= { "aquota.group:%04d", OCFS2_QUOTA_FL, S_IFREG | 0644 },
 };
 
 /* Parameter passed from mount.ocfs2 to module */
@@ -392,6 +430,22 @@ static unsigned char ocfs2_type_by_mode[S_IFMT >> S_SHIFT] = {
  * Convenience casts
  */
 #define OCFS2_RAW_SB(dinode)		(&((dinode)->id2.i_super))
+
+/*
+ * Block checking structure.  This is used in metadata to validate the
+ * contents.  If OCFS2_FEATURE_INCOMPAT_META_ECC is not set, it is all
+ * zeros.
+ */
+struct ocfs2_block_check {
+/*00*/	__le32 bc_crc32e;	/* 802.3 Ethernet II CRC32 */
+	__le16 bc_ecc;		/* Single-error-correction parity vector.
+				   This is a simple Hamming code dependant
+				   on the blocksize.  OCFS2's maximum
+				   blocksize, 4K, requires 16 parity bits,
+				   so we fit in __le16. */
+	__le16 bc_reserved1;
+/*08*/
+};
 
 /*
  * On disk extent record for OCFS2
@@ -480,7 +534,7 @@ struct ocfs2_truncate_log {
 struct ocfs2_extent_block
 {
 /*00*/	__u8 h_signature[8];		/* Signature for verification */
-	__le64 h_reserved1;
+	struct ocfs2_block_check h_check;	/* Error checking */
 /*10*/	__le16 h_suballoc_slot;		/* Slot suballocator this
 					   extent_header belongs to */
 	__le16 h_suballoc_bit;		/* Bit offset in suballocator
@@ -563,7 +617,7 @@ struct ocfs2_super_block {
 /*40*/	__le16 s_max_slots;		/* Max number of simultaneous mounts
 					   before tunefs required */
 	__le16 s_tunefs_flag;
-	__le32 s_reserved1;
+	__le32 s_uuid_hash;		/* hash value of uuid */
 	__le64 s_first_cluster_group;	/* Block offset of 1st cluster
 					 * group header */
 /*50*/	__u8  s_label[OCFS2_MAX_VOL_LABEL_LEN];	/* Label for mounting, etc. */
@@ -571,7 +625,11 @@ struct ocfs2_super_block {
 /*A0*/  struct ocfs2_cluster_info s_cluster_info; /* Selected userspace
 						     stack.  Only valid
 						     with INCOMPAT flag. */
-/*B8*/  __le64 s_reserved2[17];		/* Fill out superblock */
+/*B8*/	__le16 s_xattr_inline_size;	/* extended attribute inline size
+					   for this fs*/
+	__le16 s_reserved0;
+	__le32 s_reserved1;
+/*C0*/  __le64 s_reserved2[16];		/* Fill out superblock */
 /*140*/
 
 	/*
@@ -621,7 +679,8 @@ struct ocfs2_dinode {
 					   belongs to */
 	__le16 i_suballoc_bit;		/* Bit offset in suballocator
 					   block group */
-/*10*/	__le32 i_reserved0;
+/*10*/	__le16 i_reserved0;
+	__le16 i_xattr_inline_size;
 	__le32 i_clusters;		/* Cluster count */
 	__le32 i_uid;			/* Owner UID */
 	__le32 i_gid;			/* Owning GID */
@@ -640,11 +699,13 @@ struct ocfs2_dinode {
 	__le32 i_atime_nsec;
 	__le32 i_ctime_nsec;
 	__le32 i_mtime_nsec;
-	__le32 i_attr;
+/*70*/	__le32 i_attr;
 	__le16 i_orphaned_slot;		/* Only valid when OCFS2_ORPHANED_FL
 					   was set in i_flags */
 	__le16 i_dyn_features;
-/*70*/	__le64 i_reserved2[8];
+	__le64 i_xattr_loc;
+/*80*/	struct ocfs2_block_check i_check;	/* Error checking */
+/*88*/	__le64 i_reserved2[6];
 /*B8*/	union {
 		__le64 i_pad1;		/* Generic way to refer to this
 					   64bit union */
@@ -693,6 +754,34 @@ struct ocfs2_dir_entry {
 } __attribute__ ((packed));
 
 /*
+ * Per-block record for the unindexed directory btree. This is carefully
+ * crafted so that the rec_len and name_len records of an ocfs2_dir_entry are
+ * mirrored. That way, the directory manipulation code needs a minimal amount
+ * of update.
+ *
+ * NOTE: Keep this structure aligned to a multiple of 4 bytes.
+ */
+struct ocfs2_dir_block_trailer {
+/*00*/	__le64		db_compat_inode;	/* Always zero. Was inode */
+
+	__le16		db_compat_rec_len;	/* Backwards compatible with
+						 * ocfs2_dir_entry. */
+	__u8		db_compat_name_len;	/* Always zero. Was name_len */
+	__u8		db_reserved0;
+	__le16		db_reserved1;
+	__le16		db_free_rec_len;	/* Size of largest empty hole
+						 * in this block. (unused) */
+/*10*/	__u8		db_signature[8];	/* Signature for verification */
+	__le64		db_reserved2;
+	__le64		db_free_next;		/* Next block in list (unused) */
+/*20*/	__le64		db_blkno;		/* Offset on disk, in blocks */
+	__le64		db_parent_dinode;	/* dinode which owns me, in
+						   blocks */
+/*30*/	struct ocfs2_block_check db_check;	/* Error checking */
+/*40*/
+};
+
+/*
  * On disk allocator group structure for OCFS2
  */
 struct ocfs2_group_desc
@@ -711,9 +800,268 @@ struct ocfs2_group_desc
 /*20*/	__le64   bg_parent_dinode;       /* dinode which owns me, in
 					   blocks */
 	__le64   bg_blkno;               /* Offset on disk, in blocks */
-/*30*/	__le64   bg_reserved2[2];
+/*30*/	struct ocfs2_block_check bg_check;	/* Error checking */
+	__le64   bg_reserved2;
 /*40*/	__u8    bg_bitmap[0];
 };
+
+/*
+ * On disk extended attribute structure for OCFS2.
+ */
+
+/*
+ * ocfs2_xattr_entry indicates one extend attribute.
+ *
+ * Note that it can be stored in inode, one block or one xattr bucket.
+ */
+struct ocfs2_xattr_entry {
+	__le32	xe_name_hash;    /* hash value of xattr prefix+suffix. */
+	__le16	xe_name_offset;  /* byte offset from the 1st entry in the
+				    local xattr storage(inode, xattr block or
+				    xattr bucket). */
+	__u8	xe_name_len;	 /* xattr name len, does't include prefix. */
+	__u8	xe_type;         /* the low 7 bits indicate the name prefix
+				  * type and the highest bit indicates whether
+				  * the EA is stored in the local storage. */
+	__le64	xe_value_size;	 /* real xattr value length. */
+};
+
+/*
+ * On disk structure for xattr header.
+ *
+ * One ocfs2_xattr_header describes how many ocfs2_xattr_entry records in
+ * the local xattr storage.
+ */
+struct ocfs2_xattr_header {
+	__le16	xh_count;                       /* contains the count of how
+						   many records are in the
+						   local xattr storage. */
+	__le16	xh_free_start;                  /* current offset for storing
+						   xattr. */
+	__le16	xh_name_value_len;              /* total length of name/value
+						   length in this bucket. */
+	__le16	xh_num_buckets;                 /* Number of xattr buckets
+						   in this extent record,
+						   only valid in the first
+						   bucket. */
+	struct ocfs2_block_check xh_check;	/* Error checking
+						   (Note, this is only
+						    used for xattr
+						    buckets.  A block uses
+						    xb_check and sets
+						    this field to zero.) */
+	struct ocfs2_xattr_entry xh_entries[0]; /* xattr entry list. */
+};
+
+/*
+ * On disk structure for xattr value root.
+ *
+ * When an xattr's value is large enough, it is stored in an external
+ * b-tree like file data.  The xattr value root points to this structure.
+ */
+struct ocfs2_xattr_value_root {
+/*00*/	__le32	xr_clusters;              /* clusters covered by xattr value. */
+	__le32	xr_reserved0;
+	__le64	xr_last_eb_blk;           /* Pointer to last extent block */
+/*10*/	struct ocfs2_extent_list xr_list; /* Extent record list */
+};
+
+/*
+ * On disk structure for xattr tree root.
+ *
+ * It is used when there are too many extended attributes for one file. These
+ * attributes will be organized and stored in an indexed-btree.
+ */
+struct ocfs2_xattr_tree_root {
+/*00*/	__le32	xt_clusters;              /* clusters covered by xattr. */
+	__le32	xt_reserved0;
+	__le64	xt_last_eb_blk;           /* Pointer to last extent block */
+/*10*/	struct ocfs2_extent_list xt_list; /* Extent record list */
+};
+
+#define OCFS2_XATTR_INDEXED	0x1
+#define OCFS2_HASH_SHIFT	5
+#define OCFS2_XATTR_ROUND	3
+#define OCFS2_XATTR_SIZE(size)	(((size) + OCFS2_XATTR_ROUND) & \
+				~(OCFS2_XATTR_ROUND))
+
+#define OCFS2_XATTR_BUCKET_SIZE			4096
+#define OCFS2_XATTR_MAX_BLOCKS_PER_BUCKET 	(OCFS2_XATTR_BUCKET_SIZE \
+						 / OCFS2_MIN_BLOCKSIZE)
+
+/*
+ * On disk structure for xattr block.
+ */
+struct ocfs2_xattr_block {
+/*00*/	__u8	xb_signature[8];     /* Signature for verification */
+	__le16	xb_suballoc_slot;    /* Slot suballocator this
+					block belongs to. */
+	__le16	xb_suballoc_bit;     /* Bit offset in suballocator
+					block group */
+	__le32	xb_fs_generation;    /* Must match super block */
+/*10*/	__le64	xb_blkno;            /* Offset on disk, in blocks */
+	struct ocfs2_block_check xb_check;	/* Error checking */
+/*20*/	__le16	xb_flags;            /* Indicates whether this block contains
+					real xattr or a xattr tree. */
+	__le16	xb_reserved0;
+	__le32  xb_reserved1;
+	__le64	xb_reserved2;
+/*30*/	union {
+		struct ocfs2_xattr_header xb_header; /* xattr header if this
+							block contains xattr */
+		struct ocfs2_xattr_tree_root xb_root;/* xattr tree root if this
+							block cotains xattr
+							tree. */
+	} xb_attrs;
+};
+
+#define OCFS2_XATTR_ENTRY_LOCAL		0x80
+#define OCFS2_XATTR_TYPE_MASK		0x7F
+static inline void ocfs2_xattr_set_local(struct ocfs2_xattr_entry *xe,
+					 int local)
+{
+	if (local)
+		xe->xe_type |= OCFS2_XATTR_ENTRY_LOCAL;
+	else
+		xe->xe_type &= ~OCFS2_XATTR_ENTRY_LOCAL;
+}
+
+static inline int ocfs2_xattr_is_local(struct ocfs2_xattr_entry *xe)
+{
+	return xe->xe_type & OCFS2_XATTR_ENTRY_LOCAL;
+}
+
+static inline void ocfs2_xattr_set_type(struct ocfs2_xattr_entry *xe, int type)
+{
+	xe->xe_type |= type & OCFS2_XATTR_TYPE_MASK;
+}
+
+static inline int ocfs2_xattr_get_type(struct ocfs2_xattr_entry *xe)
+{
+	return xe->xe_type & OCFS2_XATTR_TYPE_MASK;
+}
+
+/*
+ *  On disk structures for global quota file
+ */
+
+/* Magic numbers and known versions for global quota files */
+#define OCFS2_GLOBAL_QMAGICS {\
+	0x0cf52470, /* USRQUOTA */ \
+	0x0cf52471  /* GRPQUOTA */ \
+}
+
+#define OCFS2_GLOBAL_QVERSIONS {\
+	0, \
+	0, \
+}
+
+
+/* Each block of each quota file has a certain fixed number of bytes reserved
+ * for OCFS2 internal use at its end. OCFS2 can use it for things like
+ * checksums, etc. */
+#define OCFS2_QBLK_RESERVED_SPACE 8
+
+/* Generic header of all quota files */
+struct ocfs2_disk_dqheader {
+	__le32 dqh_magic;	/* Magic number identifying file */
+	__le32 dqh_version;	/* Quota format version */
+};
+
+#define OCFS2_GLOBAL_INFO_OFF (sizeof(struct ocfs2_disk_dqheader))
+
+/* Information header of global quota file (immediately follows the generic
+ * header) */
+struct ocfs2_global_disk_dqinfo {
+/*00*/	__le32 dqi_bgrace;	/* Grace time for space softlimit excess */
+	__le32 dqi_igrace;	/* Grace time for inode softlimit excess */
+	__le32 dqi_syncms;	/* Time after which we sync local changes to
+				 * global quota file */
+	__le32 dqi_blocks;	/* Number of blocks in quota file */
+/*10*/	__le32 dqi_free_blk;	/* First free block in quota file */
+	__le32 dqi_free_entry;	/* First block with free dquot entry in quota
+				 * file */
+};
+
+/* Structure with global user / group information. We reserve some space
+ * for future use. */
+struct ocfs2_global_disk_dqblk {
+/*00*/	__le32 dqb_id;          /* ID the structure belongs to */
+	__le32 dqb_use_count;   /* Number of nodes having reference to this structure */
+	__le64 dqb_ihardlimit;  /* absolute limit on allocated inodes */
+/*10*/	__le64 dqb_isoftlimit;  /* preferred inode limit */
+	__le64 dqb_curinodes;   /* current # allocated inodes */
+/*20*/	__le64 dqb_bhardlimit;  /* absolute limit on disk space */
+	__le64 dqb_bsoftlimit;  /* preferred limit on disk space */
+/*30*/	__le64 dqb_curspace;    /* current space occupied */
+	__le64 dqb_btime;       /* time limit for excessive disk use */
+/*40*/	__le64 dqb_itime;       /* time limit for excessive inode use */
+	__le64 dqb_pad1;
+/*50*/	__le64 dqb_pad2;
+};
+
+/*
+ *  On-disk structures for local quota file
+ */
+
+/* Magic numbers and known versions for local quota files */
+#define OCFS2_LOCAL_QMAGICS {\
+	0x0cf524c0, /* USRQUOTA */ \
+	0x0cf524c1  /* GRPQUOTA */ \
+}
+
+#define OCFS2_LOCAL_QVERSIONS {\
+	0, \
+	0, \
+}
+
+/* Quota flags in dqinfo header */
+#define OLQF_CLEAN	0x0001	/* Quota file is empty (this should be after\
+				 * quota has been cleanly turned off) */
+
+#define OCFS2_LOCAL_INFO_OFF (sizeof(struct ocfs2_disk_dqheader))
+
+/* Information header of local quota file (immediately follows the generic
+ * header) */
+struct ocfs2_local_disk_dqinfo {
+	__le32 dqi_flags;	/* Flags for quota file */
+	__le32 dqi_chunks;	/* Number of chunks of quota structures
+				 * with a bitmap */
+	__le32 dqi_blocks;	/* Number of blocks allocated for quota file */
+};
+
+/* Header of one chunk of a quota file */
+struct ocfs2_local_disk_chunk {
+	__le32 dqc_free;	/* Number of free entries in the bitmap */
+	u8 dqc_bitmap[0];	/* Bitmap of entries in the corresponding
+				 * chunk of quota file */
+};
+
+/* One entry in local quota file */
+struct ocfs2_local_disk_dqblk {
+/*00*/	__le64 dqb_id;		/* id this quota applies to */
+	__le64 dqb_spacemod;	/* Change in the amount of used space */
+/*10*/	__le64 dqb_inodemod;	/* Change in the amount of used inodes */
+};
+
+
+/*
+ * The quota trailer lives at the end of each quota block.
+ */
+
+struct ocfs2_disk_dqtrailer {
+/*00*/	struct ocfs2_block_check dq_check;	/* Error checking */
+/*08*/	/* Cannot be larger than OCFS2_QBLK_RESERVED_SPACE */
+};
+
+static inline struct ocfs2_disk_dqtrailer *ocfs2_block_dqtrailer(int blocksize,
+								 void *buf)
+{
+	char *ptr = buf;
+	ptr += blocksize - OCFS2_QBLK_RESERVED_SPACE;
+
+	return (struct ocfs2_disk_dqtrailer *)ptr;
+}
 
 #ifdef __KERNEL__
 static inline int ocfs2_fast_symlink_chars(struct super_block *sb)
@@ -728,12 +1076,44 @@ static inline int ocfs2_max_inline_data(struct super_block *sb)
 		offsetof(struct ocfs2_dinode, id2.i_data.id_data);
 }
 
+static inline int ocfs2_max_inline_data_with_xattr(struct super_block *sb,
+						   struct ocfs2_dinode *di)
+{
+	unsigned int xattrsize = le16_to_cpu(di->i_xattr_inline_size);
+
+	if (le16_to_cpu(di->i_dyn_features) & OCFS2_INLINE_XATTR_FL)
+		return sb->s_blocksize -
+			offsetof(struct ocfs2_dinode, id2.i_data.id_data) -
+			xattrsize;
+	else
+		return sb->s_blocksize -
+			offsetof(struct ocfs2_dinode, id2.i_data.id_data);
+}
+
 static inline int ocfs2_extent_recs_per_inode(struct super_block *sb)
 {
 	int size;
 
 	size = sb->s_blocksize -
 		offsetof(struct ocfs2_dinode, id2.i_list.l_recs);
+
+	return size / sizeof(struct ocfs2_extent_rec);
+}
+
+static inline int ocfs2_extent_recs_per_inode_with_xattr(
+						struct super_block *sb,
+						struct ocfs2_dinode *di)
+{
+	int size;
+	unsigned int xattrsize = le16_to_cpu(di->i_xattr_inline_size);
+
+	if (le16_to_cpu(di->i_dyn_features) & OCFS2_INLINE_XATTR_FL)
+		size = sb->s_blocksize -
+			offsetof(struct ocfs2_dinode, id2.i_list.l_recs) -
+			xattrsize;
+	else
+		size = sb->s_blocksize -
+			offsetof(struct ocfs2_dinode, id2.i_list.l_recs);
 
 	return size / sizeof(struct ocfs2_extent_rec);
 }
@@ -800,6 +1180,17 @@ static inline u64 ocfs2_backup_super_blkno(struct super_block *sb, int index)
 
 	return 0;
 
+}
+
+static inline u16 ocfs2_xattr_recs_per_xb(struct super_block *sb)
+{
+	int size;
+
+	size = sb->s_blocksize -
+		offsetof(struct ocfs2_xattr_block,
+			 xb_attrs.xb_root.xt_list.l_recs);
+
+	return size / sizeof(struct ocfs2_extent_rec);
 }
 #else
 static inline int ocfs2_fast_symlink_chars(int blocksize)
@@ -883,6 +1274,17 @@ static inline uint64_t ocfs2_backup_super_blkno(int blocksize, int index)
 	}
 
 	return 0;
+}
+
+static inline int ocfs2_xattr_recs_per_xb(int blocksize)
+{
+	int size;
+
+	size = blocksize -
+		offsetof(struct ocfs2_xattr_block,
+			 xb_attrs.xb_root.xt_list.l_recs);
+
+	return size / sizeof(struct ocfs2_extent_rec);
 }
 #endif  /* __KERNEL__ */
 

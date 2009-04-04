@@ -15,13 +15,8 @@
  * Size of kernel stack for each process
  */
 #ifndef __s390x__
-#ifndef __SMALL_STACK
 #define THREAD_ORDER 1
 #define ASYNC_ORDER  1
-#else
-#define THREAD_ORDER 0
-#define ASYNC_ORDER  0
-#endif
 #else /* __s390x__ */
 #ifndef __SMALL_STACK
 #define THREAD_ORDER 2
@@ -52,6 +47,8 @@ struct thread_info {
 	unsigned int		cpu;		/* current CPU */
 	int			preempt_count;	/* 0 => preemptable, <0 => BUG */
 	struct restart_block	restart_block;
+	__u64			user_timer;
+	__u64			system_timer;
 };
 
 /*
@@ -86,6 +83,7 @@ static inline struct thread_info *current_thread_info(void)
  * thread information flags bit numbers
  */
 #define TIF_SYSCALL_TRACE	0	/* syscall trace active */
+#define TIF_NOTIFY_RESUME	1	/* callback before returning to user */
 #define TIF_SIGPENDING		2	/* signal pending */
 #define TIF_NEED_RESCHED	3	/* rescheduling necessary */
 #define TIF_RESTART_SVC		4	/* restart svc with new svc number */
@@ -98,8 +96,10 @@ static inline struct thread_info *current_thread_info(void)
 #define TIF_31BIT		18	/* 32bit process */ 
 #define TIF_MEMDIE		19
 #define TIF_RESTORE_SIGMASK	20	/* restore signal mask in do_signal() */
+#define TIF_FREEZE		21	/* thread is freezing for suspend */
 
 #define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)
+#define _TIF_NOTIFY_RESUME	(1<<TIF_NOTIFY_RESUME)
 #define _TIF_RESTORE_SIGMASK	(1<<TIF_RESTORE_SIGMASK)
 #define _TIF_SIGPENDING		(1<<TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1<<TIF_NEED_RESCHED)
@@ -110,6 +110,7 @@ static inline struct thread_info *current_thread_info(void)
 #define _TIF_USEDFPU		(1<<TIF_USEDFPU)
 #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
 #define _TIF_31BIT		(1<<TIF_31BIT)
+#define _TIF_FREEZE		(1<<TIF_FREEZE)
 
 #endif /* __KERNEL__ */
 

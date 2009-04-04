@@ -8,6 +8,8 @@
 #ifndef _PCI_ACPI_H_
 #define _PCI_ACPI_H_
 
+#include <linux/acpi.h>
+
 #define OSC_QUERY_TYPE			0
 #define OSC_SUPPORT_TYPE 		1
 #define OSC_CONTROL_TYPE		2
@@ -48,14 +50,24 @@
 
 #ifdef CONFIG_ACPI
 extern acpi_status pci_osc_control_set(acpi_handle handle, u32 flags);
-extern acpi_status __pci_osc_support_set(u32 flags, const char *hid);
-static inline acpi_status pci_osc_support_set(u32 flags)
+int pci_acpi_osc_support(acpi_handle handle, u32 flags);
+static inline acpi_handle acpi_find_root_bridge_handle(struct pci_dev *pdev)
 {
-	return __pci_osc_support_set(flags, PCI_ROOT_HID_STRING);
+	/* Find root host bridge */
+	while (pdev->bus->self)
+		pdev = pdev->bus->self;
+
+	return acpi_get_pci_rootbridge_handle(pci_domain_nr(pdev->bus),
+			pdev->bus->number);
 }
-static inline acpi_status pcie_osc_support_set(u32 flags)
+
+static inline acpi_handle acpi_pci_get_bridge_handle(struct pci_bus *pbus)
 {
-	return __pci_osc_support_set(flags, PCI_EXPRESS_ROOT_HID_STRING);
+	int seg = pci_domain_nr(pbus), busnr = pbus->number;
+	struct pci_dev *bridge = pbus->self;
+	if (bridge)
+		return DEVICE_ACPI_HANDLE(&(bridge->dev));
+	return acpi_get_pci_rootbridge_handle(seg, busnr);
 }
 #else
 #if !defined(AE_ERROR)
@@ -64,8 +76,8 @@ typedef u32 		acpi_status;
 #endif    
 static inline acpi_status pci_osc_control_set(acpi_handle handle, u32 flags)
 {return AE_ERROR;}
-static inline acpi_status pci_osc_support_set(u32 flags) {return AE_ERROR;} 
-static inline acpi_status pcie_osc_support_set(u32 flags) {return AE_ERROR;}
+static inline acpi_handle acpi_find_root_bridge_handle(struct pci_dev *pdev)
+{ return NULL; }
 #endif
 
 #endif	/* _PCI_ACPI_H_ */

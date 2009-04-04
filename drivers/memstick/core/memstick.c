@@ -185,7 +185,7 @@ static void memstick_free(struct device *dev)
 }
 
 static struct class memstick_host_class = {
-	.name       = "memstick_host",
+	.name        = "memstick_host",
 	.dev_release = memstick_free
 };
 
@@ -264,7 +264,7 @@ EXPORT_SYMBOL(memstick_new_req);
  * @sg - TPC argument
  */
 void memstick_init_req_sg(struct memstick_request *mrq, unsigned char tpc,
-			  struct scatterlist *sg)
+			  const struct scatterlist *sg)
 {
 	mrq->tpc = tpc;
 	if (tpc & 8)
@@ -294,7 +294,7 @@ EXPORT_SYMBOL(memstick_init_req_sg);
  * user supplied buffer.
  */
 void memstick_init_req(struct memstick_request *mrq, unsigned char tpc,
-		       void *buf, size_t length)
+		       const void *buf, size_t length)
 {
 	mrq->tpc = tpc;
 	if (tpc & 8)
@@ -385,8 +385,7 @@ static struct memstick_dev *memstick_alloc_card(struct memstick_host *host)
 
 	if (card) {
 		card->host = host;
-		snprintf(card->dev.bus_id, sizeof(card->dev.bus_id),
-			 "%s", host->dev.bus_id);
+		dev_set_name(&card->dev, "%s", dev_name(&host->dev));
 		card->dev.parent = &host->dev;
 		card->dev.bus = &memstick_bus_type;
 		card->dev.release = memstick_free_card;
@@ -439,7 +438,7 @@ static void memstick_check(struct work_struct *work)
 	if (!host->card) {
 		if (memstick_power_on(host))
 			goto out_power_off;
-	} else
+	} else if (host->card->stop)
 		host->card->stop(host->card);
 
 	card = memstick_alloc_card(host);
@@ -458,7 +457,7 @@ static void memstick_check(struct work_struct *work)
 			    || !(host->card->check(host->card))) {
 				device_unregister(&host->card->dev);
 				host->card = NULL;
-			} else
+			} else if (host->card->start)
 				host->card->start(host->card);
 		}
 
@@ -519,7 +518,7 @@ int memstick_add_host(struct memstick_host *host)
 	if (rc)
 		return rc;
 
-	snprintf(host->dev.bus_id, BUS_ID_SIZE, "memstick%u", host->id);
+	dev_set_name(&host->dev, "memstick%u", host->id);
 
 	rc = device_add(&host->dev);
 	if (rc) {

@@ -3,7 +3,7 @@
 # License.  See the file "COPYING" in the main directory of this archive
 # for more details.
 #
-# Copyright (C) 2001 - 2008  Tensilica Inc.
+# Copyright (C) 2001 - 2009  Tensilica Inc.
 #
 # This file is included by the global makefile so that you can add your own
 # architecture-specific flags and dependencies. Remember to do have actions
@@ -12,30 +12,34 @@
 
 # Core and platform configurations
 
+#
+# Remove Quotes from Variant and Platform Names;
+# as well as Extra CFLAGS if Optimized for Debugging.
+#
+VARIANT_HASCODE	:= $(strip $(subst ",,$(CONFIG_XTENSA_VARIANT_HASCODE)))#")))
 VARIANT		:= $(strip $(subst ",,$(CONFIG_XTENSA_VARIANT_NAME)))#")))
 PLATFORM	:= $(strip $(subst ",,$(CONFIG_XTENSA_PLATFORM_NAME)))#")))
+DEBUG_CFLAGS	:= $(strip $(subst ",,$(CONFIG_CC_DEBUGGING_CFLAGS)))#")))
 
 UTS_MACHINE	:= xtensa_$(VARIANT)
 
 # temporarily until string.h is fixed
 KBUILD_CFLAGS += -ffreestanding
 
-KBUILD_CFLAGS += -pipe -mlongcalls
-KBUILD_DEFCONFIG := iss_defconfig
+KBUILD_CFLAGS += -mlongcalls $(DEBUG_CFLAGS) -pipe
+KBUILD_AFLAGS += -mlongcalls $(DEBUG_CFLAGS)
 
-#
-# This would be better in the common kernel Makefile,
-# as it can prevent the compiler being passed -O2/-Os
-# followed by -O0. Likely best to leave it here until
-# Jason gets a CFLAGS change for the kgdb option that
-# we can share.
-#
-# Using a small shell script from Amit's kgdb patch to
-# remove the double quotes from the CC_DEBUGGING_CFLAGS.
-# 
-ifdef CONFIG_CC_OPTIMIZE_FOR_DEBUGGING
-KBUILD_CFLAGS   += $(shell echo $(CONFIG_CC_DEBUGGING_CFLAGS) | sed -e 's/"//g')
+# KBUILD_DEFCONFIG := iss_defconfig
+
+VARIANT_DIR := $(patsubst %,arch/xtensa/variants/%/,$(VARIANT))
+PLATFORM_DIR := $(patsubst %,arch/xtensa/platforms/%/,$(PLATFORM))
+
+ifeq ($(KBUILD_SRC),)
+KBUILD_CPPFLAGS += $(patsubst %,-I%include,$(VARIANT_DIR) $(PLATFORM_DIR))
+else
+KBUILD_CPPFLAGS += $(patsubst %,-I$(srctree)/%include,$(VARIANT_DIR) $(PLATFORM_DIR))
 endif
+
 
 # Test for cross compiling. Allow xtensa-*-* and xtensa_<variant>-*-*
 
@@ -56,23 +60,54 @@ endif
 
 head-y		:= arch/xtensa/kernel/head.o
 core-y		+= arch/xtensa/kernel/ arch/xtensa/mm/
+ifneq ($(VARIANT_HASCODE),)
+core-y		+= arch/xtensa/variants/$(VARIANT)/
+endif
 ifneq ($(PLATFORM),)
 core-y		+= arch/xtensa/platforms/$(PLATFORM)/
 endif
 libs-y		+= arch/xtensa/lib/ $(LIBGCC)
 
 boot		:= arch/xtensa/boot
-archinc		:= include/asm-xtensa
 
-archprepare: checkbin $(archinc)/.configured
+# archprepare: checkbin $(archinc)/.configured
 
+archprepare: checkbin 
+
+#
+# Test for a Xtnesa Compiler and print Significant Env Variables
+# if make started with V=1
+#
 checkbin:
 ifneq ($(strip $(VARIANT)),)
 	@if test "$(call cc-option-yn,-mlongcalls)" = "n" ; then \
-		echo '*** Default compiler does not target an Xtensa core'; \
-		echo -n '*** Please put an appropriate Xtensa toolchain '; \
-		echo '($(VARIANT) variant) on your PATH'; \
+		echo '*** Default compiler does not appear to target an Xtensa core.'; \
+		echo '*** It didn't understand the '-mlongcalls' GCC option; \
+		echo '*** Please put an appropriate Xtensa toolchain on your PATH'; \
+		echo '';\
+		echo 'CROSS_COMPILE:                    $(CROSS_COMPILE) '; \
+		echo 'PLATFORM:                         $(PLATFORM) '; \
+		echo 'VARIANT:                          $(VARIANT) '; \
+		echo 'KBUILD_CFLAGS:                    $(KBUILD_CFLAGS) '; \
+		echo 'VARIANT_DIR:                      $(VARIANT_DIR) '; \
+		echo 'PLATFORM_DIR:                     $(PLATFORM_DIR) '; \
+		echo ''; \
 		false; \
+	fi
+	@if test "$(KBUILD_VERBOSE)" != 0 ; then  \
+		echo 'CROSS_COMPILE:                    $(CROSS_COMPILE) '; \
+		echo 'CONFIG_XTENSA_PLATFORM_NAME:      $(CONFIG_XTENSA_PLATFORM_NAME) '; \
+		echo 'PLATFORM:                         $(PLATFORM) '; \
+		echo 'CONFIG_XTENSA_VARIANT_NAME:       $(CONFIG_XTENSA_VARIANT_NAME) '; \
+		echo 'VARIANT_HASCODE:                  $(VARIANT_HASCODE) '; \
+		echo 'VARIANT:                          $(VARIANT) '; \
+		echo 'CONFIG_CC_DEBUGGING_CFLAGS:       $(CONFIG_CC_DEBUGGING_CFLAGS) '; \
+		echo 'DEBUG_CFLAGS:                     $(DEBUG_CFLAGS) '; \
+		echo 'KBUILD_CFLAGS:                    $(KBUILD_CFLAGS) '; \
+		echo 'VARIANT_DIR:                      $(VARIANT_DIR) '; \
+		echo 'PLATFORM_DIR:                     $(PLATFORM_DIR) '; \
+		echo ''; \
+		true; \
 	fi
 else
 	@echo '*** Xtensa core variant name cannot be empty (check config)' ; \
@@ -81,24 +116,14 @@ endif
 
 drivers-$(CONFIG_OPROFILE)	+= arch/xtensa/oprofile/
 
-# Update processor variant and platform symlinks if something which affects them changed.
-
-$(archinc)/.configured: $(wildcard include/config/arch/*.h) include/config/auto.conf
-	@echo '  SYMLINK $(archinc)/variant -> $(archinc)/variant-$(VARIANT)'
-	$(Q)mkdir -p $(archinc)
-	$(Q)ln -fsn $(srctree)/$(archinc)/variant-$(VARIANT) $(archinc)/variant
-	@echo '  SYMLINK $(archinc)/platform -> $(archinc)/platform-$(PLATFORM)'
-	$(Q)ln -fsn $(srctree)/$(archinc)/platform-$(PLATFORM) $(archinc)/platform
-	@touch $@
-
 all: zImage
 
 zImage zImage.initrd: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $@
 
-CLEAN_FILES	+= arch/xtensa/vmlinux.lds                      \
-		   $(archinc)/platform $(archinc)/variant	\
-		   $(archinc)/.configured
+# CLEAN_FILES	+= arch/xtensa/vmlinux.lds                      \
+#		   $(archinc)/platform $(archinc)/variant	\
+# 		   $(archinc)/.configured
 
 define archhelp
   @echo '* zImage      - Compressed kernel image'

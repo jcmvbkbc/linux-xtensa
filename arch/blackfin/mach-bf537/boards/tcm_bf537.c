@@ -108,9 +108,9 @@ static struct bfin5xx_spi_chip ad9960_spi_chip_info = {
 };
 #endif
 
-#if defined(CONFIG_SPI_MMC) || defined(CONFIG_SPI_MMC_MODULE)
-static struct bfin5xx_spi_chip spi_mmc_chip_info = {
-	.enable_dma = 1,
+#if defined(CONFIG_MMC_SPI) || defined(CONFIG_MMC_SPI_MODULE)
+static struct bfin5xx_spi_chip mmc_spi_chip_info = {
+	.enable_dma = 0,
 	.bits_per_word = 8,
 };
 #endif
@@ -160,23 +160,13 @@ static struct spi_board_info bfin_spi_board_info[] __initdata = {
 	},
 #endif
 
-#if defined(CONFIG_SPI_MMC) || defined(CONFIG_SPI_MMC_MODULE)
+#if defined(CONFIG_MMC_SPI) || defined(CONFIG_MMC_SPI_MODULE)
 	{
-		.modalias = "spi_mmc_dummy",
+		.modalias = "mmc_spi",
 		.max_speed_hz = 25000000,     /* max spi clock (SCK) speed in HZ */
 		.bus_num = 0,
-		.chip_select = 7,
-		.platform_data = NULL,
-		.controller_data = &spi_mmc_chip_info,
-		.mode = SPI_MODE_3,
-	},
-	{
-		.modalias = "spi_mmc",
-		.max_speed_hz = 25000000,     /* max spi clock (SCK) speed in HZ */
-		.bus_num = 0,
-		.chip_select = CONFIG_SPI_MMC_CS_CHAN,
-		.platform_data = NULL,
-		.controller_data = &spi_mmc_chip_info,
+		.chip_select = 5,
+		.controller_data = &mmc_spi_chip_info,
 		.mode = SPI_MODE_3,
 	},
 #endif
@@ -308,6 +298,19 @@ static struct platform_device net2272_bfin_device = {
 };
 #endif
 
+static struct resource bfin_gpios_resources = {
+	.start = 0,
+	.end   = MAX_BLACKFIN_GPIOS - 1,
+	.flags = IORESOURCE_IRQ,
+};
+
+static struct platform_device bfin_gpios_device = {
+	.name = "simple-gpio",
+	.id = -1,
+	.num_resources = 1,
+	.resource = &bfin_gpios_resources,
+};
+
 #if defined(CONFIG_MTD_GPIO_ADDR) || defined(CONFIG_MTD_GPIO_ADDR_MODULE)
 static struct mtd_partition cm_partitions[] = {
 	{
@@ -379,29 +382,58 @@ static struct platform_device bfin_uart_device = {
 #endif
 
 #if defined(CONFIG_BFIN_SIR) || defined(CONFIG_BFIN_SIR_MODULE)
-static struct resource bfin_sir_resources[] = {
 #ifdef CONFIG_BFIN_SIR0
+static struct resource bfin_sir0_resources[] = {
 	{
 		.start = 0xFFC00400,
 		.end = 0xFFC004FF,
 		.flags = IORESOURCE_MEM,
 	},
+	{
+		.start = IRQ_UART0_RX,
+		.end = IRQ_UART0_RX+1,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.start = CH_UART0_RX,
+		.end = CH_UART0_RX+1,
+		.flags = IORESOURCE_DMA,
+	},
+};
+
+static struct platform_device bfin_sir0_device = {
+	.name = "bfin_sir",
+	.id = 0,
+	.num_resources = ARRAY_SIZE(bfin_sir0_resources),
+	.resource = bfin_sir0_resources,
+};
 #endif
 #ifdef CONFIG_BFIN_SIR1
+static struct resource bfin_sir1_resources[] = {
 	{
 		.start = 0xFFC02000,
 		.end = 0xFFC020FF,
 		.flags = IORESOURCE_MEM,
 	},
-#endif
+	{
+		.start = IRQ_UART1_RX,
+		.end = IRQ_UART1_RX+1,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.start = CH_UART1_RX,
+		.end = CH_UART1_RX+1,
+		.flags = IORESOURCE_DMA,
+	},
 };
 
-static struct platform_device bfin_sir_device = {
+static struct platform_device bfin_sir1_device = {
 	.name = "bfin_sir",
-	.id = 0,
-	.num_resources = ARRAY_SIZE(bfin_sir_resources),
-	.resource = bfin_sir_resources,
+	.id = 1,
+	.num_resources = ARRAY_SIZE(bfin_sir1_resources),
+	.resource = bfin_sir1_resources,
 };
+#endif
 #endif
 
 #if defined(CONFIG_I2C_BLACKFIN_TWI) || defined(CONFIG_I2C_BLACKFIN_TWI_MODULE)
@@ -439,8 +471,13 @@ static struct platform_device bfin_sport1_uart_device = {
 #endif
 
 #if defined(CONFIG_BFIN_MAC) || defined(CONFIG_BFIN_MAC_MODULE)
+static struct platform_device bfin_mii_bus = {
+	.name = "bfin_mii_bus",
+};
+
 static struct platform_device bfin_mac_device = {
 	.name = "bfin_mac",
+	.dev.platform_data = &bfin_mii_bus,
 };
 #endif
 
@@ -525,7 +562,12 @@ static struct platform_device *cm_bf537_devices[] __initdata = {
 #endif
 
 #if defined(CONFIG_BFIN_SIR) || defined(CONFIG_BFIN_SIR_MODULE)
-	&bfin_sir_device,
+#ifdef CONFIG_BFIN_SIR0
+	&bfin_sir0_device,
+#endif
+#ifdef CONFIG_BFIN_SIR1
+	&bfin_sir1_device,
+#endif
 #endif
 
 #if defined(CONFIG_I2C_BLACKFIN_TWI) || defined(CONFIG_I2C_BLACKFIN_TWI_MODULE)
@@ -546,6 +588,7 @@ static struct platform_device *cm_bf537_devices[] __initdata = {
 #endif
 
 #if defined(CONFIG_BFIN_MAC) || defined(CONFIG_BFIN_MAC_MODULE)
+	&bfin_mii_bus,
 	&bfin_mac_device,
 #endif
 
@@ -564,9 +607,11 @@ static struct platform_device *cm_bf537_devices[] __initdata = {
 #if defined(CONFIG_MTD_GPIO_ADDR) || defined(CONFIG_MTD_GPIO_ADDR_MODULE)
 	&cm_flash_device,
 #endif
+
+	&bfin_gpios_device,
 };
 
-static int __init cm_bf537_init(void)
+static int __init tcm_bf537_init(void)
 {
 	printk(KERN_INFO "%s(): registering device resources\n", __func__);
 	platform_add_devices(cm_bf537_devices, ARRAY_SIZE(cm_bf537_devices));
@@ -580,7 +625,7 @@ static int __init cm_bf537_init(void)
 	return 0;
 }
 
-arch_initcall(cm_bf537_init);
+arch_initcall(tcm_bf537_init);
 
 void bfin_get_ether_addr(char *addr)
 {

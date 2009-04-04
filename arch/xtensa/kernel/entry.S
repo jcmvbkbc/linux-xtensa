@@ -26,7 +26,7 @@
 #include <asm/page.h>
 #include <asm/signal.h>
 #include <asm/tlbflush.h>
-#include <asm/variant/tie-asm.h>
+#include <variant/tie-asm.h>
 
 /* Unimplemented features. */
 
@@ -1736,6 +1736,7 @@ ENTRY(_spill_registers)
 	callx0	a0		# should not return
 1:	j	1b
 
+#ifdef CONFIG_MMU
 /*
  * We should never get here. Bail out!
  */
@@ -2042,7 +2043,7 @@ ENTRY(fast_store_prohibited)
 	bbsi.l	a2, PS_UM_BIT, 1f
 	j	_kernel_exception
 1:	j	_user_exception
-
+#endif /* CONFIG_MMU */
 
 /*
  * System Calls.

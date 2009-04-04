@@ -51,6 +51,7 @@ asmlinkage long mipsmt_sys_sched_setaffinity(pid_t pid, unsigned int len,
 	int retval;
 	struct task_struct *p;
 	struct thread_info *ti;
+	uid_t euid;
 
 	if (len < sizeof(new_mask))
 		return -EINVAL;
@@ -76,9 +77,10 @@ asmlinkage long mipsmt_sys_sched_setaffinity(pid_t pid, unsigned int len,
 	 */
 	get_task_struct(p);
 
+	euid = current_euid();
 	retval = -EPERM;
-	if ((current->euid != p->euid) && (current->euid != p->uid) &&
-			!capable(CAP_SYS_NICE)) {
+	if (euid != p->cred->euid && euid != p->cred->uid &&
+	    !capable(CAP_SYS_NICE)) {
 		read_unlock(&tasklist_lock);
 		goto out_unlock;
 	}
@@ -159,7 +161,7 @@ __setup("fpaff=", fpaff_thresh);
 /*
  * FPU Use Factor empirically derived from experiments on 34K
  */
-#define FPUSEFACTOR 333
+#define FPUSEFACTOR 2000
 
 static __init int mt_fp_affinity_init(void)
 {

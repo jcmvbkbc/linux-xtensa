@@ -114,7 +114,7 @@ void coprocessor_flush_all(struct thread_info *ti, unsigned long cpenable)
 
 #endif
 
-#ifdef CONFIG_DEBUG_KERNEL
+#if defined(CONFIG_DEBUG_KERNEL) && defined(CONFIG_SMP)
 unsigned long idle_jiffies[NR_CPUS];
 unsigned long idle_count[NR_CPUS];
 
@@ -142,16 +142,10 @@ void cpu_idle_monitor(int sched)
 	} else 
 		printk("%s: cpu:%d is Bizzare!\n", __func__, cpu);
 }
+# define CPU_IDLE_MONITOR(sched) cpu_idle_monitor(sched)
+#else
+# define CPU_IDLE_MONITOR(sched)
 #endif
-
-/*
- * Function for gdb macro to indicate it doesn't know what pc is.
- */
-void running_on_somewhere_on_another_cpu(void)
-{
-}
-			
-
 
 /*
  * Powermanagement idle function, if any is provided by the platform.
@@ -164,12 +158,10 @@ void cpu_idle(void)
 	while (1) {
 		while (!need_resched()) {
 			platform_idle();
-#ifdef CONFIG_DEBUG_KERNEL
-			cpu_idle_monitor(0);
-#endif
+			CPU_IDLE_MONITOR(0);
 		}
 		preempt_enable_no_resched();
-		cpu_idle_monitor(1);
+		CPU_IDLE_MONITOR(1);
 		schedule();
 		preempt_disable();
 	}

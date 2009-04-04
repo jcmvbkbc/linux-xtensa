@@ -21,11 +21,11 @@
 #include <linux/errno.h>
 #include <linux/delay.h>
 #include <linux/clk.h>
-#include <asm/bitops.h>
-
-#include <asm/io.h>
+#include <linux/io.h>
+#include <linux/bitops.h>
 
 #include <mach/clock.h>
+#include <mach/clockdomain.h>
 #include <mach/sram.h>
 #include <mach/cpu.h>
 #include <asm/div64.h>
@@ -62,8 +62,34 @@
 u8 cpu_mask;
 
 /*-------------------------------------------------------------------------
- * Omap2 specific clock functions
+ * OMAP2/3 specific clock functions
  *-------------------------------------------------------------------------*/
+
+/**
+ * omap2_init_clk_clkdm - look up a clockdomain name, store pointer in clk
+ * @clk: OMAP clock struct ptr to use
+ *
+ * Convert a clockdomain name stored in a struct clk 'clk' into a
+ * clockdomain pointer, and save it into the struct clk.  Intended to be
+ * called during clk_register().  No return value.
+ */
+void omap2_init_clk_clkdm(struct clk *clk)
+{
+	struct clockdomain *clkdm;
+
+	if (!clk->clkdm_name)
+		return;
+
+	clkdm = clkdm_lookup(clk->clkdm_name);
+	if (clkdm) {
+		pr_debug("clock: associated clk %s to clkdm %s\n",
+			 clk->name, clk->clkdm_name);
+		clk->clkdm = clkdm;
+	} else {
+		pr_debug("clock: could not associate clk %s to "
+			 "clkdm %s\n", clk->name, clk->clkdm_name);
+	}
+}
 
 /**
  * omap2_init_clksel_parent - set a clksel clk's parent field from the hardware
@@ -251,7 +277,7 @@ int _omap2_clk_enable(struct clk *clk)
 	if (clk->enable)
 		return clk->enable(clk);
 
-	if (unlikely(clk->enable_reg == 0)) {
+	if (unlikely(clk->enable_reg == NULL)) {
 		printk(KERN_ERR "clock.c: Enable for %s without enable code\n",
 		       clk->name);
 		return 0; /* REVISIT: -EINVAL */
@@ -283,7 +309,7 @@ void _omap2_clk_disable(struct clk *clk)
 		return;
 	}
 
-	if (clk->enable_reg == 0) {
+	if (clk->enable_reg == NULL) {
 		/*
 		 * 'Independent' here refers to a clock which is not
 		 * controlled by its parent.
@@ -308,6 +334,9 @@ void omap2_clk_disable(struct clk *clk)
 		_omap2_clk_disable(clk);
 		if (likely((u32)clk->parent))
 			omap2_clk_disable(clk->parent);
+		if (clk->clkdm)
+			omap2_clkdm_clk_disable(clk->clkdm, clk);
+
 	}
 }
 
@@ -324,11 +353,19 @@ int omap2_clk_enable(struct clk *clk)
 			return ret;
 		}
 
+		if (clk->clkdm)
+			omap2_clkdm_clk_enable(clk->clkdm, clk);
+
 		ret = _omap2_clk_enable(clk);
 
-		if (unlikely(ret != 0) && clk->parent) {
-			omap2_clk_disable(clk->parent);
-			clk->usecount--;
+		if (unlikely(ret != 0)) {
+			if (clk->clkdm)
+				omap2_clkdm_clk_disable(clk->clkdm, clk);
+
+			if (clk->parent) {
+				omap2_clk_disable(clk->parent);
+				clk->usecount--;
+			}
 		}
 	}
 
@@ -477,7 +514,7 @@ long omap2_clksel_round_rate(struct clk *clk, unsigned long target_rate)
 /* Given a clock and a rate apply a clock specific rounding function */
 long omap2_clk_round_rate(struct clk *clk, unsigned long rate)
 {
-	if (clk->round_rate != 0)
+	if (clk->round_rate != NULL)
 		return clk->round_rate(clk, rate);
 
 	if (clk->flags & RATE_FIXED)
@@ -528,7 +565,7 @@ u32 omap2_clksel_to_divisor(struct clk *clk, u32 field_val)
  *
  * Given a struct clk of a rate-selectable clksel clock, and a clock divisor,
  * find the corresponding register field value.  The return register value is
- * the value before left-shifting.  Returns 0xffffffff on error
+ * the value before left-shifting.  Returns ~0 on error
  */
 u32 omap2_divisor_to_clksel(struct clk *clk, u32 div)
 {
@@ -540,7 +577,7 @@ u32 omap2_divisor_to_clksel(struct clk *clk, u32 div)
 
 	clks = omap2_get_clksel_by_parent(clk, clk->parent);
 	if (clks == NULL)
-		return 0;
+		return ~0;
 
 	for (clkr = clks->rates; clkr->div; clkr++) {
 		if ((clkr->flags & cpu_mask) && (clkr->div == div))
@@ -551,7 +588,7 @@ u32 omap2_divisor_to_clksel(struct clk *clk, u32 div)
 		printk(KERN_ERR "clock: Could not find divisor %d for "
 		       "clock %s parent %s\n", div, clk->name,
 		       clk->parent->name);
-		return 0;
+		return ~0;
 	}
 
 	return clkr->val;
@@ -566,7 +603,7 @@ u32 omap2_divisor_to_clksel(struct clk *clk, u32 div)
  */
 void __iomem *omap2_get_clksel(struct clk *clk, u32 *field_mask)
 {
-	if (unlikely((clk->clksel_reg == 0) || (clk->clksel_mask == 0)))
+	if (unlikely((clk->clksel_reg == NULL) || (clk->clksel_mask == NULL)))
 		return NULL;
 
 	*field_mask = clk->clksel_mask;
@@ -586,7 +623,7 @@ u32 omap2_clksel_get_divisor(struct clk *clk)
 	void __iomem *div_addr;
 
 	div_addr = omap2_get_clksel(clk, &field_mask);
-	if (div_addr == 0)
+	if (div_addr == NULL)
 		return 0;
 
 	field_val = __raw_readl(div_addr) & field_mask;
@@ -605,7 +642,7 @@ int omap2_clksel_set_rate(struct clk *clk, unsigned long rate)
 		return -EINVAL;
 
 	div_addr = omap2_get_clksel(clk, &field_mask);
-	if (div_addr == 0)
+	if (div_addr == NULL)
 		return -EINVAL;
 
 	field_val = omap2_divisor_to_clksel(clk, new_div);
@@ -643,7 +680,7 @@ int omap2_clk_set_rate(struct clk *clk, unsigned long rate)
 		return -EINVAL;
 
 	/* dpll_ck, core_ck, virt_prcm_set; plus all clksel clocks */
-	if (clk->set_rate != 0)
+	if (clk->set_rate != NULL)
 		ret = clk->set_rate(clk, rate);
 
 	if (unlikely(ret == 0 && (clk->flags & RATE_PROPAGATES)))
@@ -664,14 +701,14 @@ static u32 omap2_clksel_get_src_field(void __iomem **src_addr,
 	const struct clksel_rate *clkr;
 
 	*parent_div = 0;
-	*src_addr = 0;
+	*src_addr = NULL;
 
 	clks = omap2_get_clksel_by_parent(clk, src_clk);
 	if (clks == NULL)
 		return 0;
 
 	for (clkr = clks->rates; clkr->div; clkr++) {
-		if (clkr->flags & (cpu_mask | DEFAULT_RATE))
+		if (clkr->flags & cpu_mask && clkr->flags & DEFAULT_RATE)
 			break; /* Found the default rate for this platform */
 	}
 
@@ -705,11 +742,11 @@ int omap2_clk_set_parent(struct clk *clk, struct clk *new_parent)
 
 	field_val = omap2_clksel_get_src_field(&src_addr, new_parent,
 					       &field_mask, clk, &parent_div);
-	if (src_addr == 0)
+	if (src_addr == NULL)
 		return -EINVAL;
 
 	if (clk->usecount > 0)
-		_omap2_clk_disable(clk);
+		omap2_clk_disable(clk);
 
 	/* Set new source value (previous dividers if any in effect) */
 	reg_val = __raw_readl(src_addr) & ~field_mask;
@@ -722,10 +759,10 @@ int omap2_clk_set_parent(struct clk *clk, struct clk *new_parent)
 		wmb();
 	}
 
-	if (clk->usecount > 0)
-		_omap2_clk_enable(clk);
-
 	clk->parent = new_parent;
+
+	if (clk->usecount > 0)
+		omap2_clk_enable(clk);
 
 	/* CLKSEL clocks follow their parents' rates, divided by a divisor */
 	clk->rate = new_parent->rate;

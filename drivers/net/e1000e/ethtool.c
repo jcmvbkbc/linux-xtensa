@@ -173,11 +173,8 @@ static int e1000_get_settings(struct net_device *netdev,
 static u32 e1000_get_link(struct net_device *netdev)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
-	struct e1000_hw *hw = &adapter->hw;
-	u32 status;
-	
-	status = er32(STATUS);
-	return (status & E1000_STATUS_LU);
+
+	return e1000_has_link(adapter);
 }
 
 static int e1000_set_spd_dplx(struct e1000_adapter *adapter, u16 spddplx)
@@ -249,7 +246,7 @@ static int e1000_set_settings(struct net_device *netdev,
 						     ADVERTISED_Autoneg;
 		ecmd->advertising = hw->phy.autoneg_advertised;
 		if (adapter->fc_autoneg)
-			hw->fc.original_type = e1000_fc_default;
+			hw->fc.requested_mode = e1000_fc_default;
 	} else {
 		if (e1000_set_spd_dplx(adapter, ecmd->speed + ecmd->duplex)) {
 			clear_bit(__E1000_RESETTING, &adapter->state);
@@ -279,11 +276,11 @@ static void e1000_get_pauseparam(struct net_device *netdev,
 	pause->autoneg =
 		(adapter->fc_autoneg ? AUTONEG_ENABLE : AUTONEG_DISABLE);
 
-	if (hw->fc.type == e1000_fc_rx_pause) {
+	if (hw->fc.current_mode == e1000_fc_rx_pause) {
 		pause->rx_pause = 1;
-	} else if (hw->fc.type == e1000_fc_tx_pause) {
+	} else if (hw->fc.current_mode == e1000_fc_tx_pause) {
 		pause->tx_pause = 1;
-	} else if (hw->fc.type == e1000_fc_full) {
+	} else if (hw->fc.current_mode == e1000_fc_full) {
 		pause->rx_pause = 1;
 		pause->tx_pause = 1;
 	}
@@ -301,19 +298,8 @@ static int e1000_set_pauseparam(struct net_device *netdev,
 	while (test_and_set_bit(__E1000_RESETTING, &adapter->state))
 		msleep(1);
 
-	if (pause->rx_pause && pause->tx_pause)
-		hw->fc.type = e1000_fc_full;
-	else if (pause->rx_pause && !pause->tx_pause)
-		hw->fc.type = e1000_fc_rx_pause;
-	else if (!pause->rx_pause && pause->tx_pause)
-		hw->fc.type = e1000_fc_tx_pause;
-	else if (!pause->rx_pause && !pause->tx_pause)
-		hw->fc.type = e1000_fc_none;
-
-	hw->fc.original_type = hw->fc.type;
-
 	if (adapter->fc_autoneg == AUTONEG_ENABLE) {
-		hw->fc.type = e1000_fc_default;
+		hw->fc.requested_mode = e1000_fc_default;
 		if (netif_running(adapter->netdev)) {
 			e1000e_down(adapter);
 			e1000e_up(adapter);
@@ -321,6 +307,17 @@ static int e1000_set_pauseparam(struct net_device *netdev,
 			e1000e_reset(adapter);
 		}
 	} else {
+		if (pause->rx_pause && pause->tx_pause)
+			hw->fc.requested_mode = e1000_fc_full;
+		else if (pause->rx_pause && !pause->tx_pause)
+			hw->fc.requested_mode = e1000_fc_rx_pause;
+		else if (!pause->rx_pause && pause->tx_pause)
+			hw->fc.requested_mode = e1000_fc_tx_pause;
+		else if (!pause->rx_pause && !pause->tx_pause)
+			hw->fc.requested_mode = e1000_fc_none;
+
+		hw->fc.current_mode = hw->fc.requested_mode;
+
 		retval = ((hw->phy.media_type == e1000_media_type_fiber) ?
 			  hw->mac.ops.setup_link(hw) : e1000e_force_mac_fc(hw));
 	}
@@ -432,6 +429,10 @@ static void e1000_get_regs(struct net_device *netdev,
 	regs_buff[11] = er32(TIDV);
 
 	regs_buff[12] = adapter->hw.phy.type;  /* PHY type (IGP=1, M88=0) */
+
+	/* ethtool doesn't use anything past this point, so all this
+	 * code is likely legacy junk for apps that may or may not
+	 * exist */
 	if (hw->phy.type == e1000_phy_m88) {
 		e1e_rphy(hw, M88E1000_PHY_SPEC_STATUS, &phy_data);
 		regs_buff[13] = (u32)phy_data; /* cable length */
@@ -447,7 +448,7 @@ static void e1000_get_regs(struct net_device *netdev,
 		regs_buff[22] = adapter->phy_stats.receive_errors;
 		regs_buff[23] = regs_buff[13]; /* mdix mode */
 	}
-	regs_buff[21] = adapter->phy_stats.idle_errors;  /* phy idle errors */
+	regs_buff[21] = 0; /* was idle_errors */
 	e1e_rphy(hw, PHY_1000T_STATUS, &phy_data);
 	regs_buff[24] = (u32)phy_data;  /* phy local receiver status */
 	regs_buff[25] = regs_buff[24];  /* phy remote receiver status */
@@ -491,18 +492,19 @@ static int e1000_get_eeprom(struct net_device *netdev,
 		for (i = 0; i < last_word - first_word + 1; i++) {
 			ret_val = e1000_read_nvm(hw, first_word + i, 1,
 						      &eeprom_buff[i]);
-			if (ret_val) {
-				/* a read error occurred, throw away the
-				 * result */
-				memset(eeprom_buff, 0xff, sizeof(eeprom_buff));
+			if (ret_val)
 				break;
-			}
 		}
 	}
 
-	/* Device's eeprom is always little-endian, word addressable */
-	for (i = 0; i < last_word - first_word + 1; i++)
-		le16_to_cpus(&eeprom_buff[i]);
+	if (ret_val) {
+		/* a read error occurred, throw away the result */
+		memset(eeprom_buff, 0xff, sizeof(eeprom_buff));
+	} else {
+		/* Device's eeprom is always little-endian, word addressable */
+		for (i = 0; i < last_word - first_word + 1; i++)
+			le16_to_cpus(&eeprom_buff[i]);
+	}
 
 	memcpy(bytes, (u8 *)eeprom_buff + (eeprom->offset & 1), eeprom->len);
 	kfree(eeprom_buff);
@@ -529,6 +531,9 @@ static int e1000_set_eeprom(struct net_device *netdev,
 	if (eeprom->magic != (adapter->pdev->vendor | (adapter->pdev->device << 16)))
 		return -EFAULT;
 
+	if (adapter->flags & FLAG_READ_ONLY_NVM)
+		return -EINVAL;
+
 	max_len = hw->nvm.word_size * 2;
 
 	first_word = eeprom->offset >> 1;
@@ -551,6 +556,9 @@ static int e1000_set_eeprom(struct net_device *netdev,
 		ret_val = e1000_read_nvm(hw, last_word, 1,
 				  &eeprom_buff[last_word - first_word]);
 
+	if (ret_val)
+		goto out;
+
 	/* Device's eeprom is always little-endian, word addressable */
 	for (i = 0; i < last_word - first_word + 1; i++)
 		le16_to_cpus(&eeprom_buff[i]);
@@ -563,14 +571,18 @@ static int e1000_set_eeprom(struct net_device *netdev,
 	ret_val = e1000_write_nvm(hw, first_word,
 				  last_word - first_word + 1, eeprom_buff);
 
+	if (ret_val)
+		goto out;
+
 	/*
 	 * Update the checksum over the first part of the EEPROM if needed
-	 * and flush shadow RAM for 82573 controllers
+	 * and flush shadow RAM for applicable controllers
 	 */
-	if ((ret_val == 0) && ((first_word <= NVM_CHECKSUM_REG) ||
-			       (hw->mac.type == e1000_82573)))
-		e1000e_update_nvm_checksum(hw);
+	if ((first_word <= NVM_CHECKSUM_REG) ||
+	    (hw->mac.type == e1000_82574) || (hw->mac.type == e1000_82573))
+		ret_val = e1000e_update_nvm_checksum(hw);
 
+out:
 	kfree(eeprom_buff);
 	return ret_val;
 }
@@ -580,7 +592,6 @@ static void e1000_get_drvinfo(struct net_device *netdev,
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 	char firmware_version[32];
-	u16 eeprom_data;
 
 	strncpy(drvinfo->driver,  e1000e_driver_name, 32);
 	strncpy(drvinfo->version, e1000e_driver_version, 32);
@@ -589,11 +600,10 @@ static void e1000_get_drvinfo(struct net_device *netdev,
 	 * EEPROM image version # is reported as firmware version # for
 	 * PCI-E controllers
 	 */
-	e1000_read_nvm(&adapter->hw, 5, 1, &eeprom_data);
 	sprintf(firmware_version, "%d.%d-%d",
-		(eeprom_data & 0xF000) >> 12,
-		(eeprom_data & 0x0FF0) >> 4,
-		eeprom_data & 0x000F);
+		(adapter->eeprom_vers & 0xF000) >> 12,
+		(adapter->eeprom_vers & 0x0FF0) >> 4,
+		(adapter->eeprom_vers & 0x000F));
 
 	strncpy(drvinfo->fw_version, firmware_version, 32);
 	strncpy(drvinfo->bus_info, pci_name(adapter->pdev), 32);
@@ -779,8 +789,10 @@ static int e1000_reg_test(struct e1000_adapter *adapter, u64 *data)
 		toggle = 0x7FFFF3FF;
 		break;
 	case e1000_82573:
+	case e1000_82574:
 	case e1000_ich8lan:
 	case e1000_ich9lan:
+	case e1000_ich10lan:
 		toggle = 0x7FFFF033;
 		break;
 	default:
@@ -833,7 +845,9 @@ static int e1000_reg_test(struct e1000_adapter *adapter, u64 *data)
 	REG_PATTERN_TEST(E1000_TIDV, 0x0000FFFF, 0x0000FFFF);
 	for (i = 0; i < mac->rar_entry_count; i++)
 		REG_PATTERN_TEST_ARRAY(E1000_RA, ((i << 1) + 1),
-				       0x8003FFFF, 0xFFFFFFFF);
+				       ((mac->type == e1000_ich10lan) ?
+					   0x8007FFFF : 0x8003FFFF),
+				       0xFFFFFFFF);
 
 	for (i = 0; i < mac->mta_reg_count; i++)
 		REG_PATTERN_TEST_ARRAY(E1000_MTA, i, 0xFFFFFFFF, 0xFFFFFFFF);
@@ -853,7 +867,7 @@ static int e1000_eeprom_test(struct e1000_adapter *adapter, u64 *data)
 	for (i = 0; i < (NVM_CHECKSUM_REG + 1); i++) {
 		if ((e1000_read_nvm(&adapter->hw, i, 1, &temp)) < 0) {
 			*data = 1;
-			break;
+			return *data;
 		}
 		checksum += temp;
 	}
@@ -884,10 +898,18 @@ static int e1000_intr_test(struct e1000_adapter *adapter, u64 *data)
 	u32 shared_int = 1;
 	u32 irq = adapter->pdev->irq;
 	int i;
+	int ret_val = 0;
+	int int_mode = E1000E_INT_MODE_LEGACY;
 
 	*data = 0;
 
-	/* NOTE: we don't test MSI interrupts here, yet */
+	/* NOTE: we don't test MSI/MSI-X interrupts here, yet */
+	if (adapter->int_mode == E1000E_INT_MODE_MSIX) {
+		int_mode = adapter->int_mode;
+		e1000e_reset_interrupt_capability(adapter);
+		adapter->int_mode = E1000E_INT_MODE_LEGACY;
+		e1000e_set_interrupt_capability(adapter);
+	}
 	/* Hook up test interrupt handler just for this test */
 	if (!request_irq(irq, &e1000_test_intr, IRQF_PROBE_SHARED, netdev->name,
 			 netdev)) {
@@ -895,7 +917,8 @@ static int e1000_intr_test(struct e1000_adapter *adapter, u64 *data)
 	} else if (request_irq(irq, &e1000_test_intr, IRQF_SHARED,
 		 netdev->name, netdev)) {
 		*data = 1;
-		return -1;
+		ret_val = -1;
+		goto out;
 	}
 	e_info("testing %s interrupt\n", (shared_int ? "shared" : "unshared"));
 
@@ -905,11 +928,22 @@ static int e1000_intr_test(struct e1000_adapter *adapter, u64 *data)
 
 	/* Test each interrupt */
 	for (i = 0; i < 10; i++) {
-		if ((adapter->flags & FLAG_IS_ICH) && (i == 8))
-			continue;
-
 		/* Interrupt to test */
 		mask = 1 << i;
+
+		if (adapter->flags & FLAG_IS_ICH) {
+			switch (mask) {
+			case E1000_ICR_RXSEQ:
+				continue;
+			case 0x00000100:
+				if (adapter->hw.mac.type == e1000_ich8lan ||
+				    adapter->hw.mac.type == e1000_ich9lan)
+					continue;
+				break;
+			default:
+				break;
+			}
+		}
 
 		if (!shared_int) {
 			/*
@@ -974,7 +1008,14 @@ static int e1000_intr_test(struct e1000_adapter *adapter, u64 *data)
 	/* Unhook test interrupt handler */
 	free_irq(irq, netdev);
 
-	return *data;
+out:
+	if (int_mode == E1000E_INT_MODE_MSIX) {
+		e1000e_reset_interrupt_capability(adapter);
+		adapter->int_mode = int_mode;
+		e1000e_set_interrupt_capability(adapter);
+	}
+
+	return ret_val;
 }
 
 static void e1000_free_desc_rings(struct e1000_adapter *adapter)
@@ -1674,7 +1715,8 @@ static void e1000_get_wol(struct net_device *netdev,
 	wol->supported = 0;
 	wol->wolopts = 0;
 
-	if (!(adapter->flags & FLAG_HAS_WOL))
+	if (!(adapter->flags & FLAG_HAS_WOL) ||
+	    !device_can_wakeup(&adapter->pdev->dev))
 		return;
 
 	wol->supported = WAKE_UCAST | WAKE_MCAST |
@@ -1712,7 +1754,8 @@ static int e1000_set_wol(struct net_device *netdev,
 	if (wol->wolopts & WAKE_MAGICSECURE)
 		return -EOPNOTSUPP;
 
-	if (!(adapter->flags & FLAG_HAS_WOL))
+	if (!(adapter->flags & FLAG_HAS_WOL) ||
+	    !device_can_wakeup(&adapter->pdev->dev))
 		return wol->wolopts ? -EOPNOTSUPP : 0;
 
 	/* these settings will always override what we currently have */
@@ -1730,6 +1773,8 @@ static int e1000_set_wol(struct net_device *netdev,
 		adapter->wol |= E1000_WUFC_LNKC;
 	if (wol->wolopts & WAKE_ARP)
 		adapter->wol |= E1000_WUFC_ARP;
+
+	device_set_wakeup_enable(&adapter->pdev->dev, adapter->wol);
 
 	return 0;
 }
@@ -1755,11 +1800,13 @@ static void e1000_led_blink_callback(unsigned long data)
 static int e1000_phys_id(struct net_device *netdev, u32 data)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
+	struct e1000_hw *hw = &adapter->hw;
 
 	if (!data)
 		data = INT_MAX;
 
-	if (adapter->hw.phy.type == e1000_phy_ife) {
+	if ((hw->phy.type == e1000_phy_ife) ||
+	    (hw->mac.type == e1000_82574)) {
 		if (!adapter->blink_timer.function) {
 			init_timer(&adapter->blink_timer);
 			adapter->blink_timer.function =
@@ -1769,16 +1816,16 @@ static int e1000_phys_id(struct net_device *netdev, u32 data)
 		mod_timer(&adapter->blink_timer, jiffies);
 		msleep_interruptible(data * 1000);
 		del_timer_sync(&adapter->blink_timer);
-		e1e_wphy(&adapter->hw,
-				    IFE_PHY_SPECIAL_CONTROL_LED, 0);
+		if (hw->phy.type == e1000_phy_ife)
+			e1e_wphy(hw, IFE_PHY_SPECIAL_CONTROL_LED, 0);
 	} else {
-		e1000e_blink_led(&adapter->hw);
+		e1000e_blink_led(hw);
 		msleep_interruptible(data * 1000);
 	}
 
-	adapter->hw.mac.ops.led_off(&adapter->hw);
+	hw->mac.ops.led_off(hw);
 	clear_bit(E1000_LED_ON, &adapter->led_status);
-	adapter->hw.mac.ops.cleanup_led(&adapter->hw);
+	hw->mac.ops.cleanup_led(hw);
 
 	return 0;
 }

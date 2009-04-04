@@ -84,12 +84,17 @@ static void msmtc_cpus_done(void)
 
 static void __init msmtc_smp_setup(void)
 {
-	mipsmt_build_cpu_map(0);
+	/*
+	 * we won't get the definitive value until
+	 * we've run smtc_prepare_cpus later, but
+	 * we would appear to need an upper bound now.
+	 */
+	smp_num_siblings = smtc_build_cpu_map(0);
 }
 
 static void __init msmtc_prepare_cpus(unsigned int max_cpus)
 {
-	mipsmt_prepare_cpus();
+	smtc_prepare_cpus(max_cpus);
 }
 
 struct plat_smp_ops msmtc_smp_ops = {
@@ -109,9 +114,9 @@ struct plat_smp_ops msmtc_smp_ops = {
  */
 
 
-void plat_set_irq_affinity(unsigned int irq, cpumask_t affinity)
+void plat_set_irq_affinity(unsigned int irq, const struct cpumask *affinity)
 {
-	cpumask_t tmask = affinity;
+	cpumask_t tmask = *affinity;
 	int cpu = 0;
 	void smtc_set_irq_affinity(unsigned int irq, cpumask_t aff);
 
@@ -134,7 +139,7 @@ void plat_set_irq_affinity(unsigned int irq, cpumask_t affinity)
 	 * be made to forward to an offline "CPU".
 	 */
 
-	for_each_cpu_mask(cpu, affinity) {
+	for_each_cpu(cpu, affinity) {
 		if ((cpu_data[cpu].vpe_id != 0) || !cpu_online(cpu))
 			cpu_clear(cpu, tmask);
 	}

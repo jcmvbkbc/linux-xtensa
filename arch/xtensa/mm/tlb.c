@@ -103,6 +103,7 @@ void local_flush_tlb_range (struct vm_area_struct *vma,
 
 	if (end-start + (PAGE_SIZE-1) <= _TLB_ENTRIES << PAGE_SHIFT) {
 		int oldpid = get_rasid_register();
+
 		set_rasid_register (ASID_INSERT(mm->context.asid[cpu]));
 		start &= PAGE_MASK;
  		if (vma->vm_flags & VM_EXEC)

@@ -13,7 +13,6 @@
 
 struct dm_target;
 struct dm_table;
-struct dm_dev;
 struct mapped_device;
 struct bio_vec;
 
@@ -46,6 +45,8 @@ typedef void (*dm_dtr_fn) (struct dm_target *ti);
  */
 typedef int (*dm_map_fn) (struct dm_target *ti, struct bio *bio,
 			  union map_info *map_context);
+typedef int (*dm_map_request_fn) (struct dm_target *ti, struct request *clone,
+				  union map_info *map_context);
 
 /*
  * Returns:
@@ -58,6 +59,9 @@ typedef int (*dm_map_fn) (struct dm_target *ti, struct bio *bio,
 typedef int (*dm_endio_fn) (struct dm_target *ti,
 			    struct bio *bio, int error,
 			    union map_info *map_context);
+typedef int (*dm_request_endio_fn) (struct dm_target *ti,
+				    struct request *clone, int error,
+				    union map_info *map_context);
 
 typedef void (*dm_flush_fn) (struct dm_target *ti);
 typedef void (*dm_presuspend_fn) (struct dm_target *ti);
@@ -70,12 +74,18 @@ typedef int (*dm_status_fn) (struct dm_target *ti, status_type_t status_type,
 
 typedef int (*dm_message_fn) (struct dm_target *ti, unsigned argc, char **argv);
 
-typedef int (*dm_ioctl_fn) (struct dm_target *ti, struct inode *inode,
-			    struct file *filp, unsigned int cmd,
+typedef int (*dm_ioctl_fn) (struct dm_target *ti, unsigned int cmd,
 			    unsigned long arg);
 
 typedef int (*dm_merge_fn) (struct dm_target *ti, struct bvec_merge_data *bvm,
 			    struct bio_vec *biovec, int max_size);
+
+/*
+ * Returns:
+ *    0: The target can handle the next I/O immediately.
+ *    1: The target can't handle the next I/O immediately.
+ */
+typedef int (*dm_busy_fn) (struct dm_target *ti);
 
 void dm_error(const char *message);
 
@@ -84,26 +94,41 @@ void dm_error(const char *message);
  */
 void dm_set_device_limits(struct dm_target *ti, struct block_device *bdev);
 
+struct dm_dev {
+	struct block_device *bdev;
+	fmode_t mode;
+	char name[16];
+};
+
 /*
  * Constructors should call these functions to ensure destination devices
  * are opened/closed correctly.
  * FIXME: too many arguments.
  */
 int dm_get_device(struct dm_target *ti, const char *path, sector_t start,
-		  sector_t len, int mode, struct dm_dev **result);
+		  sector_t len, fmode_t mode, struct dm_dev **result);
 void dm_put_device(struct dm_target *ti, struct dm_dev *d);
 
 /*
  * Information about a target type
  */
+
+/*
+ * Target features
+ */
+#define DM_TARGET_SUPPORTS_BARRIERS 0x00000001
+
 struct target_type {
+	uint64_t features;
 	const char *name;
 	struct module *module;
 	unsigned version[3];
 	dm_ctr_fn ctr;
 	dm_dtr_fn dtr;
 	dm_map_fn map;
+	dm_map_request_fn map_rq;
 	dm_endio_fn end_io;
+	dm_request_endio_fn rq_end_io;
 	dm_flush_fn flush;
 	dm_presuspend_fn presuspend;
 	dm_postsuspend_fn postsuspend;
@@ -113,6 +138,7 @@ struct target_type {
 	dm_message_fn message;
 	dm_ioctl_fn ioctl;
 	dm_merge_fn merge;
+	dm_busy_fn busy;
 };
 
 struct io_restrictions {
@@ -153,8 +179,7 @@ struct dm_target {
 };
 
 int dm_register_target(struct target_type *t);
-int dm_unregister_target(struct target_type *t);
-
+void dm_unregister_target(struct target_type *t);
 
 /*-----------------------------------------------------------------
  * Functions for creating and manipulating mapped devices.
@@ -202,6 +227,7 @@ int dm_copy_name_and_uuid(struct mapped_device *md, char *name, char *uuid);
 struct gendisk *dm_disk(struct mapped_device *md);
 int dm_suspended(struct mapped_device *md);
 int dm_noflush_suspending(struct dm_target *ti);
+union map_info *dm_get_mapinfo(struct bio *bio);
 
 /*
  * Geometry functions.
@@ -217,7 +243,7 @@ int dm_set_geometry(struct mapped_device *md, struct hd_geometry *geo);
 /*
  * First create an empty table.
  */
-int dm_table_create(struct dm_table **result, int mode,
+int dm_table_create(struct dm_table **result, fmode_t mode,
 		    unsigned num_targets, struct mapped_device *md);
 
 /*
@@ -232,6 +258,11 @@ int dm_table_add_target(struct dm_table *t, const char *type,
 int dm_table_complete(struct dm_table *t);
 
 /*
+ * Unplug all devices in a table.
+ */
+void dm_table_unplug_all(struct dm_table *t);
+
+/*
  * Table reference counting.
  */
 struct dm_table *dm_get_table(struct mapped_device *md);
@@ -243,7 +274,7 @@ void dm_table_put(struct dm_table *t);
  */
 sector_t dm_table_get_size(struct dm_table *t);
 unsigned int dm_table_get_num_targets(struct dm_table *t);
-int dm_table_get_mode(struct dm_table *t);
+fmode_t dm_table_get_mode(struct dm_table *t);
 struct mapped_device *dm_table_get_md(struct dm_table *t);
 
 /*
@@ -256,10 +287,18 @@ void dm_table_event(struct dm_table *t);
  */
 int dm_swap_table(struct mapped_device *md, struct dm_table *t);
 
+/*
+ * A wrapper around vmalloc.
+ */
+void *dm_vcalloc(unsigned long nmemb, unsigned long elem_size);
+
 /*-----------------------------------------------------------------
  * Macros.
  *---------------------------------------------------------------*/
 #define DM_NAME "device-mapper"
+
+#define DMCRIT(f, arg...) \
+	printk(KERN_CRIT DM_NAME ": " DM_MSG_PREFIX ": " f "\n", ## arg)
 
 #define DMERR(f, arg...) \
 	printk(KERN_ERR DM_NAME ": " DM_MSG_PREFIX ": " f "\n", ## arg)
@@ -337,6 +376,9 @@ int dm_swap_table(struct mapped_device *md, struct dm_table *t);
  * ceiling(n / size) * size
  */
 #define dm_round_up(n, sz) (dm_div_up((n), (sz)) * (sz))
+
+#define dm_array_too_big(fixed, obj, num) \
+	((num) > (UINT_MAX - (fixed)) / (obj))
 
 static inline sector_t to_sector(unsigned long n)
 {

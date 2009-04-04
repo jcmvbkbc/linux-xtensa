@@ -41,6 +41,7 @@
 #include <asm/uaccess.h>
 #include <asm/unaligned.h>
 #include <asm/cacheflush.h>
+#include <asm/page.h>
 
 /****************************************************************************/
 
@@ -52,6 +53,12 @@
 #define	DBG_FLT(a...)	printk(a)
 #else
 #define	DBG_FLT(a...)
+#endif
+
+#ifdef ARCH_SLAB_MINALIGN
+#define FLAT_DATA_ALIGN	(ARCH_SLAB_MINALIGN)
+#else
+#define FLAT_DATA_ALIGN	(sizeof(void *))
 #endif
 
 #define RELOC_FAILED 0xff00ff01		/* Relocation incorrect somewhere */
@@ -114,20 +121,18 @@ static unsigned long create_flat_tables(
 	int envc = bprm->envc;
 	char uninitialized_var(dummy);
 
-	sp = (unsigned long *) ((-(unsigned long)sizeof(char *))&(unsigned long) p);
+	sp = (unsigned long *)p;
+	sp -= (envc + argc + 2) + 1 + (flat_argvp_envp_on_stack() ? 2 : 0);
+	sp = (unsigned long *) ((unsigned long)sp & -FLAT_DATA_ALIGN);
+	argv = sp + 1 + (flat_argvp_envp_on_stack() ? 2 : 0);
+	envp = argv + (argc + 1);
 
-	sp -= envc+1;
-	envp = sp;
-	sp -= argc+1;
-	argv = sp;
-
-	flat_stack_align(sp);
 	if (flat_argvp_envp_on_stack()) {
-		--sp; put_user((unsigned long) envp, sp);
-		--sp; put_user((unsigned long) argv, sp);
+		put_user((unsigned long) envp, sp + 2);
+		put_user((unsigned long) argv, sp + 1);
 	}
 
-	put_user(argc,--sp);
+	put_user(argc,sp);
 	current->mm->arg_start = (unsigned long) p;
 	while (argc-->0) {
 		put_user((unsigned long) p, argv++);
@@ -229,13 +234,13 @@ static int decompress_exec(
 	ret = 10;
 	if (buf[3] & EXTRA_FIELD) {
 		ret += 2 + buf[10] + (buf[11] << 8);
-		if (unlikely(LBUFSIZE == ret)) {
+		if (unlikely(LBUFSIZE <= ret)) {
 			DBG_FLT("binfmt_flat: buffer overflow (EXTRA)?\n");
 			goto out_free_buf;
 		}
 	}
 	if (buf[3] & ORIG_NAME) {
-		for (; ret < LBUFSIZE && (buf[ret] != 0); ret++)
+		while (ret < LBUFSIZE && buf[ret++] != 0)
 			;
 		if (unlikely(LBUFSIZE == ret)) {
 			DBG_FLT("binfmt_flat: buffer overflow (ORIG_NAME)?\n");
@@ -243,7 +248,7 @@ static int decompress_exec(
 		}
 	}
 	if (buf[3] & COMMENT) {
-		for (;  ret < LBUFSIZE && (buf[ret] != 0); ret++)
+		while (ret < LBUFSIZE && buf[ret++] != 0)
 			;
 		if (unlikely(LBUFSIZE == ret)) {
 			DBG_FLT("binfmt_flat: buffer overflow (COMMENT)?\n");
@@ -417,8 +422,8 @@ static int load_flat_file(struct linux_binprm * bprm,
 	unsigned long textpos = 0, datapos = 0, result;
 	unsigned long realdatastart = 0;
 	unsigned long text_len, data_len, bss_len, stack_len, flags;
-	unsigned long len, reallen, memp = 0;
-	unsigned long extra, rlim;
+	unsigned long len, memp = 0;
+	unsigned long memp_size, extra, rlim;
 	unsigned long *reloc = 0, *rp;
 	struct inode *inode;
 	int i, rev, relocs = 0;
@@ -543,17 +548,10 @@ static int load_flat_file(struct linux_binprm * bprm,
 		}
 
 		len = data_len + extra + MAX_SHARED_LIBS * sizeof(unsigned long);
+		len = PAGE_ALIGN(len);
 		down_write(&current->mm->mmap_sem);
 		realdatastart = do_mmap(0, 0, len,
 			PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE, 0);
-		/* Remap to use all availabe slack region space */
-		if (realdatastart && (realdatastart < (unsigned long)-4096)) {
-			reallen = kobjsize((void *)realdatastart);
-			if (reallen > len) {
-				realdatastart = do_mremap(realdatastart, len,
-					reallen, MREMAP_FIXED, realdatastart);
-			}
-		}
 		up_write(&current->mm->mmap_sem);
 
 		if (realdatastart == 0 || realdatastart >= (unsigned long)-4096) {
@@ -565,7 +563,8 @@ static int load_flat_file(struct linux_binprm * bprm,
 			ret = realdatastart;
 			goto err;
 		}
-		datapos = realdatastart + MAX_SHARED_LIBS * sizeof(unsigned long);
+		datapos = ALIGN(realdatastart + MAX_SHARED_LIBS * sizeof(unsigned long),
+				FLAT_DATA_ALIGN);
 
 		DBG_FLT("BINFMT_FLAT: Allocated data+bss+stack (%d bytes): %x\n",
 				(int)(data_len + bss_len + stack_len), (int)datapos);
@@ -591,21 +590,14 @@ static int load_flat_file(struct linux_binprm * bprm,
 
 		reloc = (unsigned long *) (datapos+(ntohl(hdr->reloc_start)-text_len));
 		memp = realdatastart;
-
+		memp_size = len;
 	} else {
 
 		len = text_len + data_len + extra + MAX_SHARED_LIBS * sizeof(unsigned long);
+		len = PAGE_ALIGN(len);
 		down_write(&current->mm->mmap_sem);
 		textpos = do_mmap(0, 0, len,
 			PROT_READ | PROT_EXEC | PROT_WRITE, MAP_PRIVATE, 0);
-		/* Remap to use all availabe slack region space */
-		if (textpos && (textpos < (unsigned long) -4096)) {
-			reallen = kobjsize((void *)textpos);
-			if (reallen > len) {
-				textpos = do_mremap(textpos, len, reallen,
-					MREMAP_FIXED, textpos);
-			}
-		}
 		up_write(&current->mm->mmap_sem);
 
 		if (!textpos  || textpos >= (unsigned long) -4096) {
@@ -618,11 +610,12 @@ static int load_flat_file(struct linux_binprm * bprm,
 		}
 
 		realdatastart = textpos + ntohl(hdr->data_start);
-		datapos = realdatastart + MAX_SHARED_LIBS * sizeof(unsigned long);
-		reloc = (unsigned long *) (textpos + ntohl(hdr->reloc_start) +
-				MAX_SHARED_LIBS * sizeof(unsigned long));
-		memp = textpos;
+		datapos = ALIGN(realdatastart + MAX_SHARED_LIBS * sizeof(unsigned long),
+				FLAT_DATA_ALIGN);
 
+		reloc = (unsigned long *) (datapos+(ntohl(hdr->reloc_start)-text_len));
+		memp = textpos;
+		memp_size = len;
 #ifdef CONFIG_BINFMT_ZFLAT
 		/*
 		 * load it all in and treat it like a RAM load from now on
@@ -680,10 +673,12 @@ static int load_flat_file(struct linux_binprm * bprm,
 		 * set up the brk stuff, uses any slack left in data/bss/stack
 		 * allocation.  We put the brk after the bss (between the bss
 		 * and stack) like other platforms.
+		 * Userspace code relies on the stack pointer starting out at
+		 * an address right at the end of a page.
 		 */
 		current->mm->start_brk = datapos + data_len + bss_len;
 		current->mm->brk = (current->mm->start_brk + 3) & ~3;
-		current->mm->context.end_brk = memp + kobjsize((void *) memp) - stack_len;
+		current->mm->context.end_brk = memp + memp_size - stack_len;
 	}
 
 	if (flags & FLAT_FLAG_KTRACE)
@@ -790,8 +785,8 @@ static int load_flat_file(struct linux_binprm * bprm,
 
 	/* zero the BSS,  BRK and stack areas */
 	memset((void*)(datapos + data_len), 0, bss_len + 
-			(memp + kobjsize((void *) memp) - stack_len -	/* end brk */
-			libinfo->lib_list[id].start_brk) +		/* start brk */
+			(memp + memp_size - stack_len -		/* end brk */
+			libinfo->lib_list[id].start_brk) +	/* start brk */
 			stack_len);
 
 	return 0;
@@ -866,7 +861,7 @@ static int load_flat_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 	stack_len = TOP_OF_ARGS - bprm->p;             /* the strings */
 	stack_len += (bprm->argc + 1) * sizeof(char *); /* the argv array */
 	stack_len += (bprm->envc + 1) * sizeof(char *); /* the envp array */
-
+	stack_len += FLAT_DATA_ALIGN;
 	
 	res = load_flat_file(bprm, &libinfo, 0, &stack_len);
 	if (res > (unsigned long)-4096)
@@ -880,7 +875,7 @@ static int load_flat_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 					(libinfo.lib_list[j].loaded)?
 						libinfo.lib_list[j].start_data:UNLOADED_LIB;
 
-	compute_creds(bprm);
+	install_exec_creds(bprm);
  	current->flags &= ~PF_FORKNOEXEC;
 
 	set_binfmt(&flat_format);
@@ -914,7 +909,9 @@ static int load_flat_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 	/* Stash our initial stack pointer into the mm structure */
 	current->mm->start_stack = (unsigned long )sp;
 
-	
+#ifdef FLAT_PLAT_INIT
+	FLAT_PLAT_INIT(regs);
+#endif
 	DBG_FLT("start_thread(regs=0x%x, entry=0x%x, start_stack=0x%x)\n",
 		(int)regs, (int)start_addr, (int)current->mm->start_stack);
 	

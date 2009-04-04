@@ -107,6 +107,7 @@ static const struct sdhci_pci_fixes sdhci_ene_714 = {
 
 static const struct sdhci_pci_fixes sdhci_cafe = {
 	.quirks		= SDHCI_QUIRK_NO_SIMULT_VDD_AND_POWER |
+			  SDHCI_QUIRK_NO_BUSY_IRQ |
 			  SDHCI_QUIRK_BROKEN_TIMEOUT_VAL,
 };
 
@@ -326,7 +327,7 @@ static const struct pci_device_id pci_ids[] __devinitdata = {
 
 	{
 		.vendor         = PCI_VENDOR_ID_MARVELL,
-		.device         = PCI_DEVICE_ID_MARVELL_CAFE_SD,
+		.device         = PCI_DEVICE_ID_MARVELL_88ALP01_SD,
 		.subvendor      = PCI_ANY_ID,
 		.subdevice      = PCI_ANY_ID,
 		.driver_data    = (kernel_ulong_t)&sdhci_cafe,
@@ -544,7 +545,7 @@ static struct sdhci_pci_slot * __devinit sdhci_pci_probe_slot(
 	}
 
 	addr = pci_resource_start(pdev, bar);
-	host->ioaddr = ioremap_nocache(addr, pci_resource_len(pdev, bar));
+	host->ioaddr = pci_ioremap_bar(pdev, bar);
 	if (!host->ioaddr) {
 		dev_err(&pdev->dev, "failed to remap registers\n");
 		goto release;

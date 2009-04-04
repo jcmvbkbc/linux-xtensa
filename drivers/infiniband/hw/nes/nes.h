@@ -43,7 +43,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/workqueue.h>
 #include <linux/slab.h>
-#include <linux/version.h>
 #include <asm/io.h>
 #include <linux/crc32c.h>
 
@@ -138,14 +137,18 @@
 
 #ifdef CONFIG_INFINIBAND_NES_DEBUG
 #define nes_debug(level, fmt, args...) \
+do { \
 	if (level & nes_debug_level) \
-		printk(KERN_ERR PFX "%s[%u]: " fmt, __func__, __LINE__, ##args)
+		printk(KERN_ERR PFX "%s[%u]: " fmt, __func__, __LINE__, ##args); \
+} while (0)
 
-#define assert(expr)                                                \
-if (!(expr)) {                                                       \
-	printk(KERN_ERR PFX "Assertion failed! %s, %s, %s, line %d\n",  \
-		   #expr, __FILE__, __func__, __LINE__);                \
-}
+#define assert(expr) \
+do { \
+	if (!(expr)) { \
+		printk(KERN_ERR PFX "Assertion failed! %s, %s, %s, line %d\n", \
+			   #expr, __FILE__, __func__, __LINE__); \
+	} \
+} while (0)
 
 #define NES_EVENT_TIMEOUT   1200000
 #else
@@ -170,7 +173,7 @@ extern int disable_mpa_crc;
 extern unsigned int send_first;
 extern unsigned int nes_drv_opt;
 extern unsigned int nes_debug_level;
-
+extern unsigned int wqm_quanta;
 extern struct list_head nes_adapter_list;
 
 extern atomic_t cm_connects;

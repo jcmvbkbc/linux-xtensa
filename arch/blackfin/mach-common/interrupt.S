@@ -29,7 +29,7 @@
  */
 
 #include <asm/blackfin.h>
-#include <asm/mach/irq.h>
+#include <mach/irq.h>
 #include <linux/linkage.h>
 #include <asm/entry.h>
 #include <asm/asm-offsets.h>
@@ -37,7 +37,7 @@
 #include <asm/traps.h>
 #include <asm/thread_info.h>
 
-#include <asm/mach-common/context.S>
+#include <asm/context.S>
 
 .extern _ret_from_exception
 
@@ -129,8 +129,15 @@ __common_int_entry:
 #endif
 	r1 =  sp;
 	SP += -12;
+#ifdef CONFIG_IPIPE
+	call ___ipipe_grab_irq
+	SP += 12;
+	cc = r0 == 0;
+	if cc jump .Lcommon_restore_context;
+#else /* CONFIG_IPIPE */
 	call _do_irq;
 	SP += 12;
+#endif /* CONFIG_IPIPE */
 	call _return_from_int;
 .Lcommon_restore_context:
 	RESTORE_CONTEXT
@@ -143,7 +150,7 @@ ENTRY(_evt_ivhw)
 	fp = 0;
 #endif
 
-#if ANOMALY_05000283
+#if ANOMALY_05000283 || ANOMALY_05000315
 	cc = r7 == r7;
 	p5.h = HI(CHIPID);
 	p5.l = LO(CHIPID);
@@ -152,15 +159,6 @@ ENTRY(_evt_ivhw)
 1:
 #endif
 
-#ifdef CONFIG_HARDWARE_PM
-	r7 = [sp + PT_SEQSTAT];
-	r7 = r7 >>> 0xe;
-	r6 = 0x1F;
-	r7 = r7 & r6;
-	r5 = 0x12;
-	cc = r7 == r5;
-	if cc jump .Lcall_do_ovf; /* deal with performance counter overflow */
-#endif
 	# We are going to dump something out, so make sure we print IPEND properly
 	p2.l = lo(IPEND);
 	p2.h = hi(IPEND);
@@ -179,27 +177,25 @@ ENTRY(_evt_ivhw)
 	call _trap_c;
 	SP += 12;
 
+#ifdef EBIU_ERRMST
+	/* make sure EBIU_ERRMST is clear */
+	p0.l = LO(EBIU_ERRMST);
+	p0.h = HI(EBIU_ERRMST);
+	r0.l = (CORE_ERROR | CORE_MERROR);
+	w[p0] = r0.l;
+#endif
+
 	call _ret_from_exception;
+
 .Lcommon_restore_all_sys:
 	RESTORE_ALL_SYS
 	rti;
-
-#ifdef CONFIG_HARDWARE_PM
-.Lcall_do_ovf:
-
-	SP += -12;
-	call _pm_overflow;
-	SP += 12;
-
-	jump .Lcommon_restore_all_sys;
-#endif
-
 ENDPROC(_evt_ivhw)
 
 /* Interrupt routine for evt2 (NMI).
  * We don't actually use this, so just return.
  * For inner circle type details, please see:
- * http://docs.blackfin.uclinux.org/doku.php?id=linux:nmi
+ * http://docs.blackfin.uclinux.org/doku.php?id=linux-kernel:nmi
  */
 ENTRY(_evt_nmi)
 .weak _evt_nmi
@@ -236,3 +232,50 @@ ENTRY(_evt_system_call)
 	call _system_call;
 	jump .Lcommon_restore_context;
 ENDPROC(_evt_system_call)
+
+#ifdef CONFIG_IPIPE
+ENTRY(___ipipe_call_irqtail)
+	p0 = r0;
+	r0.l = 1f;
+	r0.h = 1f;
+	reti = r0;
+	rti;
+1:
+	[--sp] = rets;
+	[--sp] = ( r7:4, p5:3 );
+	sp += -12;
+	call (p0);
+	sp += 12;
+	( r7:4, p5:3 ) = [sp++];
+	rets = [sp++];
+
+	[--sp] = reti;
+	reti = [sp++];          /* IRQs are off. */
+	r0.h = 3f;
+	r0.l = 3f;
+	p0.l = lo(EVT14);
+	p0.h = hi(EVT14);
+	[p0] = r0;
+	csync;
+	r0 = 0x401f (z);
+	sti r0;
+	raise 14;
+	[--sp] = reti;          /* IRQs on. */
+2:
+	jump 2b;                /* Likely paranoid. */
+3:
+	sp += 4;                /* Discard saved RETI */
+	r0.h = _evt14_softirq;
+	r0.l = _evt14_softirq;
+	p0.l = lo(EVT14);
+	p0.h = hi(EVT14);
+	[p0] = r0;
+	csync;
+	p0.l = _bfin_irq_flags;
+	p0.h = _bfin_irq_flags;
+	r0 = [p0];
+	sti r0;
+	rts;
+ENDPROC(___ipipe_call_irqtail)
+
+#endif /* CONFIG_IPIPE */

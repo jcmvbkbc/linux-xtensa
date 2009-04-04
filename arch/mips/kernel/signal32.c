@@ -349,8 +349,8 @@ asmlinkage int sys32_rt_sigsuspend(nabi_no_regargs struct pt_regs regs)
 	return -ERESTARTNOHAND;
 }
 
-asmlinkage int sys32_sigaction(int sig, const struct sigaction32 __user *act,
-                               struct sigaction32 __user *oact)
+SYSCALL_DEFINE3(32_sigaction, long, sig, const struct sigaction32 __user *, act,
+	struct sigaction32 __user *, oact)
 {
 	struct k_sigaction new_ka, old_ka;
 	int ret;
@@ -480,6 +480,18 @@ int copy_siginfo_to_user32(compat_siginfo_t __user *to, siginfo_t *from)
 		}
 	}
 	return err;
+}
+
+int copy_siginfo_from_user32(siginfo_t *to, compat_siginfo_t __user *from)
+{
+	memset(to, 0, sizeof *to);
+
+	if (copy_from_user(to, from, 3*sizeof(int)) ||
+	    copy_from_user(to->_sifields._pad,
+			   from->_sifields._pad, SI_PAD_SIZE32))
+		return -EFAULT;
+
+	return 0;
 }
 
 asmlinkage void sys32_sigreturn(nabi_no_regargs struct pt_regs regs)
@@ -692,9 +704,9 @@ struct mips_abi mips_abi_32 = {
 	.restart	= __NR_O32_restart_syscall
 };
 
-asmlinkage int sys32_rt_sigaction(int sig, const struct sigaction32 __user *act,
-				  struct sigaction32 __user *oact,
-				  unsigned int sigsetsize)
+SYSCALL_DEFINE4(32_rt_sigaction, int, sig,
+	const struct sigaction32 __user *, act,
+	struct sigaction32 __user *, oact, unsigned int, sigsetsize)
 {
 	struct k_sigaction new_sa, old_sa;
 	int ret = -EINVAL;
@@ -736,8 +748,8 @@ out:
 	return ret;
 }
 
-asmlinkage int sys32_rt_sigprocmask(int how, compat_sigset_t __user *set,
-	compat_sigset_t __user *oset, unsigned int sigsetsize)
+SYSCALL_DEFINE4(32_rt_sigprocmask, int, how, compat_sigset_t __user *, set,
+	compat_sigset_t __user *, oset, unsigned int, sigsetsize)
 {
 	sigset_t old_set, new_set;
 	int ret;
@@ -758,8 +770,8 @@ asmlinkage int sys32_rt_sigprocmask(int how, compat_sigset_t __user *set,
 	return ret;
 }
 
-asmlinkage int sys32_rt_sigpending(compat_sigset_t __user *uset,
-	unsigned int sigsetsize)
+SYSCALL_DEFINE2(32_rt_sigpending, compat_sigset_t __user *, uset,
+	unsigned int, sigsetsize)
 {
 	int ret;
 	sigset_t set;
@@ -775,7 +787,8 @@ asmlinkage int sys32_rt_sigpending(compat_sigset_t __user *uset,
 	return ret;
 }
 
-asmlinkage int sys32_rt_sigqueueinfo(int pid, int sig, compat_siginfo_t __user *uinfo)
+SYSCALL_DEFINE3(32_rt_sigqueueinfo, int, pid, int, sig,
+	compat_siginfo_t __user *, uinfo)
 {
 	siginfo_t info;
 	int ret;
@@ -790,10 +803,9 @@ asmlinkage int sys32_rt_sigqueueinfo(int pid, int sig, compat_siginfo_t __user *
 	return ret;
 }
 
-asmlinkage long
-sys32_waitid(int which, compat_pid_t pid,
-	     compat_siginfo_t __user *uinfo, int options,
-	     struct compat_rusage __user *uru)
+SYSCALL_DEFINE5(32_waitid, int, which, compat_pid_t, pid,
+	     compat_siginfo_t __user *, uinfo, int, options,
+	     struct compat_rusage __user *, uru)
 {
 	siginfo_t info;
 	struct rusage ru;

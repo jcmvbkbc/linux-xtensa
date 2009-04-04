@@ -391,6 +391,7 @@ static irqreturn_t mmci_irq(int irq, void *dev_id)
 static void mmci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 {
 	struct mmci_host *host = mmc_priv(mmc);
+	unsigned long flags;
 
 	WARN_ON(host->mrq != NULL);
 
@@ -402,7 +403,7 @@ static void mmci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		return;
 	}
 
-	spin_lock_irq(&host->lock);
+	spin_lock_irqsave(&host->lock, flags);
 
 	host->mrq = mrq;
 
@@ -411,7 +412,7 @@ static void mmci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	mmci_start_command(host, mrq->cmd, 0);
 
-	spin_unlock_irq(&host->lock);
+	spin_unlock_irqrestore(&host->lock, flags);
 }
 
 static void mmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
@@ -429,6 +430,8 @@ static void mmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 				clk = 255;
 			host->cclk = host->mclk / (2 * (clk + 1));
 		}
+		if (host->hw_designer == 0x80)
+			clk |= MCI_FCEN; /* Bug fix in ST IP block */
 		clk |= MCI_CLK_ENABLE;
 	}
 
@@ -439,15 +442,27 @@ static void mmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	case MMC_POWER_OFF:
 		break;
 	case MMC_POWER_UP:
-		pwr |= MCI_PWR_UP;
-		break;
+		/* The ST version does not have this, fall through to POWER_ON */
+		if (host->hw_designer != 0x80) {
+			pwr |= MCI_PWR_UP;
+			break;
+		}
 	case MMC_POWER_ON:
 		pwr |= MCI_PWR_ON;
 		break;
 	}
 
-	if (ios->bus_mode == MMC_BUSMODE_OPENDRAIN)
-		pwr |= MCI_ROD;
+	if (ios->bus_mode == MMC_BUSMODE_OPENDRAIN) {
+		if (host->hw_designer != 0x80)
+			pwr |= MCI_ROD;
+		else {
+			/*
+			 * The ST Micro variant use the ROD bit for something
+			 * else and only has OD (Open Drain).
+			 */
+			pwr |= MCI_OD;
+		}
+	}
 
 	writel(clk, host->base + MMCICLOCK);
 
@@ -499,7 +514,13 @@ static int mmci_probe(struct amba_device *dev, void *id)
 	}
 
 	host = mmc_priv(mmc);
-	host->clk = clk_get(&dev->dev, "MCLK");
+	/* Bits 12 thru 19 is the designer */
+	host->hw_designer = (dev->periphid >> 12) & 0xff;
+	/* Bits 20 thru 23 is the revison */
+	host->hw_revision = (dev->periphid >> 20) & 0xf;
+	DBG(host, "designer ID = 0x%02x\n", host->hw_designer);
+	DBG(host, "revision = 0x%01x\n", host->hw_revision);
+	host->clk = clk_get(&dev->dev, NULL);
 	if (IS_ERR(host->clk)) {
 		ret = PTR_ERR(host->clk);
 		host->clk = NULL;
@@ -691,6 +712,15 @@ static struct amba_id mmci_ids[] = {
 	{
 		.id	= 0x00041181,
 		.mask	= 0x000fffff,
+	},
+	/* ST Micro variants */
+	{
+		.id     = 0x00180180,
+		.mask   = 0x00ffffff,
+	},
+	{
+		.id     = 0x00280180,
+		.mask   = 0x00ffffff,
 	},
 	{ 0, 0 },
 };

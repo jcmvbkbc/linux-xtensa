@@ -6,6 +6,9 @@
  *		 Peter Oberparleiter <peter.oberparleiter@de.ibm.com>
  */
 
+#define KMSG_COMPONENT "sclp_cmd"
+#define pr_fmt(fmt) KMSG_COMPONENT ": " fmt
+
 #include <linux/completion.h>
 #include <linux/init.h>
 #include <linux/errno.h>
@@ -16,9 +19,9 @@
 #include <linux/memory.h>
 #include <asm/chpid.h>
 #include <asm/sclp.h>
-#include "sclp.h"
+#include <asm/setup.h>
 
-#define TAG	"sclp_cmd: "
+#include "sclp.h"
 
 #define SCLP_CMDW_READ_SCP_INFO		0x00020001
 #define SCLP_CMDW_READ_SCP_INFO_FORCED	0x00120001
@@ -169,8 +172,8 @@ static int do_sync_request(sclp_cmdw_t cmd, void *sccb)
 
 	/* Check response. */
 	if (request->status != SCLP_REQ_DONE) {
-		printk(KERN_WARNING TAG "sync request failed "
-		       "(cmd=0x%08x, status=0x%02x)\n", cmd, request->status);
+		pr_warning("sync request failed (cmd=0x%08x, "
+			   "status=0x%02x)\n", cmd, request->status);
 		rc = -EIO;
 	}
 out:
@@ -224,8 +227,8 @@ int sclp_get_cpu_info(struct sclp_cpu_info *info)
 	if (rc)
 		goto out;
 	if (sccb->header.response_code != 0x0010) {
-		printk(KERN_WARNING TAG "readcpuinfo failed "
-		       "(response=0x%04x)\n", sccb->header.response_code);
+		pr_warning("readcpuinfo failed (response=0x%04x)\n",
+			   sccb->header.response_code);
 		rc = -EIO;
 		goto out;
 	}
@@ -262,8 +265,9 @@ static int do_cpu_configure(sclp_cmdw_t cmd)
 	case 0x0120:
 		break;
 	default:
-		printk(KERN_WARNING TAG "configure cpu failed (cmd=0x%08x, "
-		       "response=0x%04x)\n", cmd, sccb->header.response_code);
+		pr_warning("configure cpu failed (cmd=0x%08x, "
+			   "response=0x%04x)\n", cmd,
+			   sccb->header.response_code);
 		rc = -EIO;
 		break;
 	}
@@ -324,6 +328,9 @@ static int do_assign_storage(sclp_cmdw_t cmd, u16 rn)
 	case 0x0120:
 		break;
 	default:
+		pr_warning("assign storage failed (cmd=0x%08x, "
+			   "response=0x%04x, rn=0x%04x)\n", cmd,
+			   sccb->header.response_code, rn);
 		rc = -EIO;
 		break;
 	}
@@ -468,6 +475,10 @@ static void __init add_memory_merged(u16 rn)
 		goto skip_add;
 	if (start + size > VMEM_MAX_PHYS)
 		size = VMEM_MAX_PHYS - start;
+	if (memory_end_set && (start >= memory_end))
+		goto skip_add;
+	if (memory_end_set && (start + size > memory_end))
+		size = memory_end - start;
 	add_memory(0, start, size);
 skip_add:
 	first_rn = rn;
@@ -623,9 +634,9 @@ static int do_chp_configure(sclp_cmdw_t cmd)
 	case 0x0450:
 		break;
 	default:
-		printk(KERN_WARNING TAG "configure channel-path failed "
-		       "(cmd=0x%08x, response=0x%04x)\n", cmd,
-		       sccb->header.response_code);
+		pr_warning("configure channel-path failed "
+			   "(cmd=0x%08x, response=0x%04x)\n", cmd,
+			   sccb->header.response_code);
 		rc = -EIO;
 		break;
 	}
@@ -692,8 +703,8 @@ int sclp_chp_read_info(struct sclp_chp_info *info)
 	if (rc)
 		goto out;
 	if (sccb->header.response_code != 0x0010) {
-		printk(KERN_WARNING TAG "read channel-path info failed "
-		       "(response=0x%04x)\n", sccb->header.response_code);
+		pr_warning("read channel-path info failed "
+			   "(response=0x%04x)\n", sccb->header.response_code);
 		rc = -EIO;
 		goto out;
 	}

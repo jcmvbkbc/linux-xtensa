@@ -23,7 +23,6 @@
  *   1.2: PowerPC (big endian) support.
  */
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -3402,8 +3401,7 @@ static int __devinit nsp32_probe(struct pci_dev *pdev, const struct pci_device_i
 	data->IrqNumber   = pdev->irq;
 	data->BaseAddress = pci_resource_start(pdev, 0);
 	data->NumAddress  = pci_resource_len  (pdev, 0);
-	data->MmioAddress = ioremap_nocache(pci_resource_start(pdev, 1),
-					       pci_resource_len  (pdev, 1));
+	data->MmioAddress = pci_ioremap_bar(pdev, 1);
 	data->MmioLength  = pci_resource_len  (pdev, 1);
 
 	pci_set_master(pdev);

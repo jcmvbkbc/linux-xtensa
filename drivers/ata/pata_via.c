@@ -1,7 +1,6 @@
 /*
  * pata_via.c 	- VIA PATA for new ATA layer
  *			  (C) 2005-2006 Red Hat Inc
- *			  Alan Cox <alan@redhat.com>
  *
  *  Documentation
  *	Most chipset documentation available under NDA only
@@ -87,6 +86,10 @@ enum {
 	VIA_SATA_PATA	= 0x800, /* SATA/PATA combined configuration */
 };
 
+enum {
+	VIA_IDFLAG_SINGLE = (1 << 0), /* single channel controller) */
+};
+
 /*
  * VIA SouthBridge chips.
  */
@@ -98,12 +101,17 @@ static const struct via_isa_bridge {
 	u8 rev_max;
 	u16 flags;
 } via_isa_bridges[] = {
+	{ "vx855",	PCI_DEVICE_ID_VIA_VX855,    0x00, 0x2f,
+	  VIA_UDMA_133 | VIA_BAD_AST | VIA_SATA_PATA },
 	{ "vx800",	PCI_DEVICE_ID_VIA_VX800,    0x00, 0x2f, VIA_UDMA_133 |
 	VIA_BAD_AST | VIA_SATA_PATA },
+	{ "vt8261",	PCI_DEVICE_ID_VIA_8261,     0x00, 0x2f,
+	  VIA_UDMA_133 | VIA_BAD_AST },
 	{ "vt8237s",	PCI_DEVICE_ID_VIA_8237S,    0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST },
 	{ "vt8251",	PCI_DEVICE_ID_VIA_8251,     0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST },
 	{ "cx700",	PCI_DEVICE_ID_VIA_CX700,    0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST | VIA_SATA_PATA },
-	{ "vt6410",	PCI_DEVICE_ID_VIA_6410,     0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST | VIA_NO_ENABLES},
+	{ "vt6410",	PCI_DEVICE_ID_VIA_6410,     0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST | VIA_NO_ENABLES },
+	{ "vt6415",	PCI_DEVICE_ID_VIA_6415,     0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST | VIA_NO_ENABLES },
 	{ "vt8237a",	PCI_DEVICE_ID_VIA_8237A,    0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST },
 	{ "vt8237",	PCI_DEVICE_ID_VIA_8237,     0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST },
 	{ "vt8235",	PCI_DEVICE_ID_VIA_8235,     0x00, 0x2f, VIA_UDMA_133 | VIA_BAD_AST },
@@ -123,6 +131,8 @@ static const struct via_isa_bridge {
 	{ "vt82c586",	PCI_DEVICE_ID_VIA_82C586_0, 0x00, 0x0f, VIA_UDMA_NONE | VIA_SET_FIFO },
 	{ "vt82c576",	PCI_DEVICE_ID_VIA_82C576,   0x00, 0x2f, VIA_UDMA_NONE | VIA_SET_FIFO | VIA_NO_UNMASK },
 	{ "vt82c576",	PCI_DEVICE_ID_VIA_82C576,   0x00, 0x2f, VIA_UDMA_NONE | VIA_SET_FIFO | VIA_NO_UNMASK | VIA_BAD_ID },
+	{ "vtxxxx",	PCI_DEVICE_ID_VIA_ANON,    0x00, 0x2f,
+	  VIA_UDMA_133 | VIA_BAD_AST },
 	{ NULL }
 };
 
@@ -324,62 +334,26 @@ static void via_set_dmamode(struct ata_port *ap, struct ata_device *adev)
 }
 
 /**
- *	via_ata_sff_tf_load - send taskfile registers to host controller
+ *	via_tf_load - send taskfile registers to host controller
  *	@ap: Port to which output is sent
  *	@tf: ATA taskfile register set
  *
  *	Outputs ATA taskfile to standard ATA host controller.
  *
  *	Note: This is to fix the internal bug of via chipsets, which
- *  will reset the device register after changing the IEN bit on
- *  ctl register
+ *	will reset the device register after changing the IEN bit on
+ *	ctl register
  */
-static void via_ata_tf_load(struct ata_port *ap, const struct ata_taskfile *tf)
+static void via_tf_load(struct ata_port *ap, const struct ata_taskfile *tf)
 {
-	struct ata_ioports *ioaddr = &ap->ioaddr;
-	unsigned int is_addr = tf->flags & ATA_TFLAG_ISADDR;
+	struct ata_taskfile tmp_tf;
 
-	if (tf->ctl != ap->last_ctl) {
-		iowrite8(tf->ctl, ioaddr->ctl_addr);
-		iowrite8(tf->device, ioaddr->device_addr);
-		ap->last_ctl = tf->ctl;
-		ata_wait_idle(ap);
+	if (ap->ctl != ap->last_ctl && !(tf->flags & ATA_TFLAG_DEVICE)) {
+		tmp_tf = *tf;
+		tmp_tf.flags |= ATA_TFLAG_DEVICE;
+		tf = &tmp_tf;
 	}
-
-	if (is_addr && (tf->flags & ATA_TFLAG_LBA48)) {
-		iowrite8(tf->hob_feature, ioaddr->feature_addr);
-		iowrite8(tf->hob_nsect, ioaddr->nsect_addr);
-		iowrite8(tf->hob_lbal, ioaddr->lbal_addr);
-		iowrite8(tf->hob_lbam, ioaddr->lbam_addr);
-		iowrite8(tf->hob_lbah, ioaddr->lbah_addr);
-		VPRINTK("hob: feat 0x%X nsect 0x%X, lba 0x%X 0x%X 0x%X\n",
-			tf->hob_feature,
-			tf->hob_nsect,
-			tf->hob_lbal,
-			tf->hob_lbam,
-			tf->hob_lbah);
-	}
-
-	if (is_addr) {
-		iowrite8(tf->feature, ioaddr->feature_addr);
-		iowrite8(tf->nsect, ioaddr->nsect_addr);
-		iowrite8(tf->lbal, ioaddr->lbal_addr);
-		iowrite8(tf->lbam, ioaddr->lbam_addr);
-		iowrite8(tf->lbah, ioaddr->lbah_addr);
-		VPRINTK("feat 0x%X nsect 0x%X lba 0x%X 0x%X 0x%X\n",
-			tf->feature,
-			tf->nsect,
-			tf->lbal,
-			tf->lbam,
-			tf->lbah);
-	}
-
-	if (tf->flags & ATA_TFLAG_DEVICE) {
-		iowrite8(tf->device, ioaddr->device_addr);
-		VPRINTK("device 0x%X\n", tf->device);
-	}
-
-	ata_wait_idle(ap);
+	ata_sff_tf_load(ap, tf);
 }
 
 static struct scsi_host_template via_sht = {
@@ -392,13 +366,12 @@ static struct ata_port_operations via_port_ops = {
 	.set_piomode	= via_set_piomode,
 	.set_dmamode	= via_set_dmamode,
 	.prereset	= via_pre_reset,
-	.sff_tf_load = via_ata_tf_load,
+	.sff_tf_load	= via_tf_load,
 };
 
 static struct ata_port_operations via_port_ops_noirq = {
 	.inherits	= &via_port_ops,
 	.sff_data_xfer	= ata_sff_data_xfer_noirq,
-	.sff_tf_load = via_ata_tf_load,
 };
 
 /**
@@ -498,6 +471,7 @@ static int via_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	static int printed_version;
 	u8 enable;
 	u32 timing;
+	unsigned long flags = id->driver_data;
 	int rc;
 
 	if (!printed_version++)
@@ -507,9 +481,13 @@ static int via_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (rc)
 		return rc;
 
+	if (flags & VIA_IDFLAG_SINGLE)
+		ppi[1] = &ata_dummy_port_info;
+
 	/* To find out how the IDE will behave and what features we
 	   actually have to look at the bridge not the IDE controller */
-	for (config = via_isa_bridges; config->id; config++)
+	for (config = via_isa_bridges; config->id != PCI_DEVICE_ID_VIA_ANON;
+	     config++)
 		if ((isa = pci_get_device(PCI_VENDOR_ID_VIA +
 			!!(config->flags & VIA_BAD_ID),
 			config->id, NULL))) {
@@ -520,10 +498,6 @@ static int via_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 			pci_dev_put(isa);
 		}
 
-	if (!config->id) {
-		printk(KERN_WARNING "via: Unknown VIA SouthBridge, disabling.\n");
-		return -ENODEV;
-	}
 	pci_dev_put(isa);
 
 	if (!(config->flags & VIA_NO_ENABLES)) {
@@ -620,11 +594,13 @@ static int via_reinit_one(struct pci_dev *pdev)
 #endif
 
 static const struct pci_device_id via[] = {
+	{ PCI_VDEVICE(VIA, 0x0415), },
 	{ PCI_VDEVICE(VIA, 0x0571), },
 	{ PCI_VDEVICE(VIA, 0x0581), },
 	{ PCI_VDEVICE(VIA, 0x1571), },
 	{ PCI_VDEVICE(VIA, 0x3164), },
 	{ PCI_VDEVICE(VIA, 0x5324), },
+	{ PCI_VDEVICE(VIA, 0xC409), VIA_IDFLAG_SINGLE },
 
 	{ },
 };

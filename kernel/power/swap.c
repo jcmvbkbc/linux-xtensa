@@ -14,7 +14,6 @@
 #include <linux/module.h>
 #include <linux/file.h>
 #include <linux/utsname.h>
-#include <linux/version.h>
 #include <linux/delay.h>
 #include <linux/bitops.h>
 #include <linux/genhd.h>
@@ -61,6 +60,7 @@ static struct block_device *resume_bdev;
 static int submit(int rw, pgoff_t page_off, struct page *page,
 			struct bio **bio_chain)
 {
+	const int bio_rw = rw | (1 << BIO_RW_SYNCIO) | (1 << BIO_RW_UNPLUG);
 	struct bio *bio;
 
 	bio = bio_alloc(__GFP_WAIT | __GFP_HIGH, 1);
@@ -81,7 +81,7 @@ static int submit(int rw, pgoff_t page_off, struct page *page,
 	bio_get(bio);
 
 	if (bio_chain == NULL) {
-		submit_bio(rw | (1 << BIO_RW_SYNC), bio);
+		submit_bio(bio_rw, bio);
 		wait_on_page_locked(page);
 		if (rw == READ)
 			bio_set_pages_dirty(bio);
@@ -91,7 +91,7 @@ static int submit(int rw, pgoff_t page_off, struct page *page,
 			get_page(page);	/* These pages are freed later */
 		bio->bi_private = *bio_chain;
 		*bio_chain = bio;
-		submit_bio(rw | (1 << BIO_RW_SYNC), bio);
+		submit_bio(bio_rw, bio);
 	}
 	return 0;
 }
@@ -173,13 +173,13 @@ static int swsusp_swap_check(void) /* This is called before saving image */
 		return res;
 
 	root_swap = res;
-	res = blkdev_get(resume_bdev, FMODE_WRITE, O_RDWR);
+	res = blkdev_get(resume_bdev, FMODE_WRITE);
 	if (res)
 		return res;
 
 	res = set_blocksize(resume_bdev, PAGE_SIZE);
 	if (res < 0)
-		blkdev_put(resume_bdev);
+		blkdev_put(resume_bdev, FMODE_WRITE);
 
 	return res;
 }
@@ -427,7 +427,7 @@ int swsusp_write(unsigned int flags)
 
 	release_swap_writer(&handle);
  out:
-	swsusp_close();
+	swsusp_close(FMODE_WRITE);
 	return error;
 }
 
@@ -575,7 +575,7 @@ int swsusp_read(unsigned int *flags_p)
 		error = load_image(&handle, &snapshot, header->pages - 1);
 	release_swap_reader(&handle);
 
-	blkdev_put(resume_bdev);
+	blkdev_put(resume_bdev, FMODE_READ);
 
 	if (!error)
 		pr_debug("PM: Image successfully loaded\n");
@@ -610,7 +610,7 @@ int swsusp_check(void)
 			return -EINVAL;
 		}
 		if (error)
-			blkdev_put(resume_bdev);
+			blkdev_put(resume_bdev, FMODE_READ);
 		else
 			pr_debug("PM: Signature found, resuming\n");
 	} else {
@@ -627,14 +627,14 @@ int swsusp_check(void)
  *	swsusp_close - close swap device.
  */
 
-void swsusp_close(void)
+void swsusp_close(fmode_t mode)
 {
 	if (IS_ERR(resume_bdev)) {
 		pr_debug("PM: Image device not initialised\n");
 		return;
 	}
 
-	blkdev_put(resume_bdev);
+	blkdev_put(resume_bdev, mode);
 }
 
 static int swsusp_header_init(void)

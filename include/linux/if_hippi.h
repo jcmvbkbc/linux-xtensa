@@ -9,7 +9,7 @@
  *
  * Author:	Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
  *		Donald Becker, <becker@super.org>
- *		Alan Cox, <alan@redhat.com>
+ *		Alan Cox, <alan@lxorguk.ukuu.org.uk>
  *		Steve Whitehouse, <gw7rrm@eeshack3.swan.ac.uk>
  *		Jes Sorensen, <Jes.Sorensen@cern.ch>
  *
@@ -22,6 +22,7 @@
 #ifndef _LINUX_IF_HIPPI_H
 #define _LINUX_IF_HIPPI_H
 
+#include <linux/types.h>
 #include <asm/byteorder.h>
 
 /*

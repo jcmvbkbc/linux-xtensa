@@ -21,6 +21,7 @@
 #include <linux/init.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
+#include <linux/pci.h>
 #include <linux/pfn.h>
 #include <linux/poison.h>
 #include <linux/bootmem.h>
@@ -31,6 +32,7 @@
 #include <linux/cpumask.h>
 
 #include <asm/asm.h>
+#include <asm/bios_ebda.h>
 #include <asm/processor.h>
 #include <asm/system.h>
 #include <asm/uaccess.h>
@@ -47,6 +49,7 @@
 #include <asm/paravirt.h>
 #include <asm/setup.h>
 #include <asm/cacheflush.h>
+#include <asm/smp.h>
 
 unsigned int __VMALLOC_RESERVE = 128 << 20;
 
@@ -65,7 +68,7 @@ static unsigned long __meminitdata table_top;
 
 static int __initdata after_init_bootmem;
 
-static __init void *alloc_low_page(unsigned long *phys)
+static __init void *alloc_low_page(void)
 {
 	unsigned long pfn = table_end++;
 	void *adr;
@@ -75,7 +78,6 @@ static __init void *alloc_low_page(unsigned long *phys)
 
 	adr = __va(pfn * PAGE_SIZE);
 	memset(adr, 0, PAGE_SIZE);
-	*phys  = pfn * PAGE_SIZE;
 	return adr;
 }
 
@@ -90,16 +92,17 @@ static pmd_t * __init one_md_table_init(pgd_t *pgd)
 	pmd_t *pmd_table;
 
 #ifdef CONFIG_X86_PAE
-	unsigned long phys;
 	if (!(pgd_val(*pgd) & _PAGE_PRESENT)) {
 		if (after_init_bootmem)
 			pmd_table = (pmd_t *)alloc_bootmem_low_pages(PAGE_SIZE);
 		else
-			pmd_table = (pmd_t *)alloc_low_page(&phys);
+			pmd_table = (pmd_t *)alloc_low_page();
 		paravirt_alloc_pmd(&init_mm, __pa(pmd_table) >> PAGE_SHIFT);
 		set_pgd(pgd, __pgd(__pa(pmd_table) | _PAGE_PRESENT));
 		pud = pud_offset(pgd, 0);
 		BUG_ON(pmd_table != pmd_offset(pud, 0));
+
+		return pmd_table;
 	}
 #endif
 	pud = pud_offset(pgd, 0);
@@ -124,10 +127,8 @@ static pte_t * __init one_page_table_init(pmd_t *pmd)
 			if (!page_table)
 				page_table =
 				(pte_t *)alloc_bootmem_low_pages(PAGE_SIZE);
-		} else {
-			unsigned long phys;
-			page_table = (pte_t *)alloc_low_page(&phys);
-		}
+		} else
+			page_table = (pte_t *)alloc_low_page();
 
 		paravirt_alloc_pte(&init_mm, __pa(page_table) >> PAGE_SHIFT);
 		set_pmd(pmd, __pmd(__pa(page_table) | _PAGE_TABLE));
@@ -135,6 +136,47 @@ static pte_t * __init one_page_table_init(pmd_t *pmd)
 	}
 
 	return pte_offset_kernel(pmd, 0);
+}
+
+static pte_t *__init page_table_kmap_check(pte_t *pte, pmd_t *pmd,
+					   unsigned long vaddr, pte_t *lastpte)
+{
+#ifdef CONFIG_HIGHMEM
+	/*
+	 * Something (early fixmap) may already have put a pte
+	 * page here, which causes the page table allocation
+	 * to become nonlinear. Attempt to fix it, and if it
+	 * is still nonlinear then we have to bug.
+	 */
+	int pmd_idx_kmap_begin = fix_to_virt(FIX_KMAP_END) >> PMD_SHIFT;
+	int pmd_idx_kmap_end = fix_to_virt(FIX_KMAP_BEGIN) >> PMD_SHIFT;
+
+	if (pmd_idx_kmap_begin != pmd_idx_kmap_end
+	    && (vaddr >> PMD_SHIFT) >= pmd_idx_kmap_begin
+	    && (vaddr >> PMD_SHIFT) <= pmd_idx_kmap_end
+	    && ((__pa(pte) >> PAGE_SHIFT) < table_start
+		|| (__pa(pte) >> PAGE_SHIFT) >= table_end)) {
+		pte_t *newpte;
+		int i;
+
+		BUG_ON(after_init_bootmem);
+		newpte = alloc_low_page();
+		for (i = 0; i < PTRS_PER_PTE; i++)
+			set_pte(newpte + i, pte[i]);
+
+		paravirt_alloc_pte(&init_mm, __pa(newpte) >> PAGE_SHIFT);
+		set_pmd(pmd, __pmd(__pa(newpte)|_PAGE_TABLE));
+		BUG_ON(newpte != pte_offset_kernel(pmd, 0));
+		__flush_tlb_all();
+
+		paravirt_release_pte(__pa(pte) >> PAGE_SHIFT);
+		pte = newpte;
+	}
+	BUG_ON(vaddr < fix_to_virt(FIX_KMAP_BEGIN - 1)
+	       && vaddr > fix_to_virt(FIX_KMAP_END)
+	       && lastpte && lastpte + PTRS_PER_PTE != pte);
+#endif
+	return pte;
 }
 
 /*
@@ -153,6 +195,7 @@ page_table_range_init(unsigned long start, unsigned long end, pgd_t *pgd_base)
 	unsigned long vaddr;
 	pgd_t *pgd;
 	pmd_t *pmd;
+	pte_t *pte = NULL;
 
 	vaddr = start;
 	pgd_idx = pgd_index(vaddr);
@@ -164,7 +207,8 @@ page_table_range_init(unsigned long start, unsigned long end, pgd_t *pgd_base)
 		pmd = pmd + pmd_index(vaddr);
 		for (; (pmd_idx < PTRS_PER_PMD) && (vaddr != end);
 							pmd++, pmd_idx++) {
-			one_page_table_init(pmd);
+			pte = page_table_kmap_check(one_page_table_init(pmd),
+			                            pmd, vaddr, pte);
 
 			vaddr += PMD_SIZE;
 		}
@@ -194,11 +238,30 @@ static void __init kernel_physical_mapping_init(pgd_t *pgd_base,
 	pgd_t *pgd;
 	pmd_t *pmd;
 	pte_t *pte;
-	unsigned pages_2m = 0, pages_4k = 0;
+	unsigned pages_2m, pages_4k;
+	int mapping_iter;
+
+	/*
+	 * First iteration will setup identity mapping using large/small pages
+	 * based on use_pse, with other attributes same as set by
+	 * the early code in head_32.S
+	 *
+	 * Second iteration will setup the appropriate attributes (NX, GLOBAL..)
+	 * as desired for the kernel identity mapping.
+	 *
+	 * This two pass mechanism conforms to the TLB app note which says:
+	 *
+	 *     "Software should not write to a paging-structure entry in a way
+	 *      that would change, for any linear address, both the page size
+	 *      and either the page frame or attributes."
+	 */
+	mapping_iter = 1;
 
 	if (!cpu_has_pse)
 		use_pse = 0;
 
+repeat:
+	pages_2m = pages_4k = 0;
 	pfn = start_pfn;
 	pgd_idx = pgd_index((pfn<<PAGE_SHIFT) + PAGE_OFFSET);
 	pgd = pgd_base + pgd_idx;
@@ -224,6 +287,13 @@ static void __init kernel_physical_mapping_init(pgd_t *pgd_base,
 			if (use_pse) {
 				unsigned int addr2;
 				pgprot_t prot = PAGE_KERNEL_LARGE;
+				/*
+				 * first pass will use the same initial
+				 * identity mapping attribute + _PAGE_PSE.
+				 */
+				pgprot_t init_prot =
+					__pgprot(PTE_IDENT_ATTR |
+						 _PAGE_PSE);
 
 				addr2 = (pfn + PTRS_PER_PTE-1) * PAGE_SIZE +
 					PAGE_OFFSET + PAGE_SIZE-1;
@@ -233,7 +303,10 @@ static void __init kernel_physical_mapping_init(pgd_t *pgd_base,
 					prot = PAGE_KERNEL_LARGE_EXEC;
 
 				pages_2m++;
-				set_pmd(pmd, pfn_pmd(pfn, prot));
+				if (mapping_iter == 1)
+					set_pmd(pmd, pfn_pmd(pfn, init_prot));
+				else
+					set_pmd(pmd, pfn_pmd(pfn, prot));
 
 				pfn += PTRS_PER_PTE;
 				continue;
@@ -245,17 +318,43 @@ static void __init kernel_physical_mapping_init(pgd_t *pgd_base,
 			for (; pte_ofs < PTRS_PER_PTE && pfn < end_pfn;
 			     pte++, pfn++, pte_ofs++, addr += PAGE_SIZE) {
 				pgprot_t prot = PAGE_KERNEL;
+				/*
+				 * first pass will use the same initial
+				 * identity mapping attribute.
+				 */
+				pgprot_t init_prot = __pgprot(PTE_IDENT_ATTR);
 
 				if (is_kernel_text(addr))
 					prot = PAGE_KERNEL_EXEC;
 
 				pages_4k++;
-				set_pte(pte, pfn_pte(pfn, prot));
+				if (mapping_iter == 1)
+					set_pte(pte, pfn_pte(pfn, init_prot));
+				else
+					set_pte(pte, pfn_pte(pfn, prot));
 			}
 		}
 	}
-	update_page_count(PG_LEVEL_2M, pages_2m);
-	update_page_count(PG_LEVEL_4K, pages_4k);
+	if (mapping_iter == 1) {
+		/*
+		 * update direct mapping page count only in the first
+		 * iteration.
+		 */
+		update_page_count(PG_LEVEL_2M, pages_2m);
+		update_page_count(PG_LEVEL_4K, pages_4k);
+
+		/*
+		 * local global flush tlb, which will flush the previous
+		 * mappings present in both small and large page TLB's.
+		 */
+		__flush_tlb_all();
+
+		/*
+		 * Second iteration will set the actual desired PTE attributes.
+		 */
+		mapping_iter = 2;
+		goto repeat;
+	}
 }
 
 /*
@@ -272,12 +371,13 @@ int devmem_is_allowed(unsigned long pagenr)
 {
 	if (pagenr <= 256)
 		return 1;
+	if (iomem_is_exclusive(pagenr << PAGE_SHIFT))
+		return 0;
 	if (!page_is_ram(pagenr))
 		return 1;
 	return 0;
 }
 
-#ifdef CONFIG_HIGHMEM
 pte_t *kmap_pte;
 pgprot_t kmap_prot;
 
@@ -300,6 +400,7 @@ static void __init kmap_init(void)
 	kmap_prot = PAGE_KERNEL;
 }
 
+#ifdef CONFIG_HIGHMEM
 static void __init permanent_kmaps_init(pgd_t *pgd_base)
 {
 	unsigned long vaddr;
@@ -379,9 +480,12 @@ static void __init set_highmem_pages_init(void)
 #endif /* !CONFIG_NUMA */
 
 #else
-# define kmap_init()				do { } while (0)
-# define permanent_kmaps_init(pgd_base)		do { } while (0)
-# define set_highmem_pages_init()	do { } while (0)
+static inline void permanent_kmaps_init(pgd_t *pgd_base)
+{
+}
+static inline void set_highmem_pages_init(void)
+{
+}
 #endif /* CONFIG_HIGHMEM */
 
 void __init native_pagetable_setup_start(pgd_t *base)
@@ -447,7 +551,6 @@ static void __init early_ioremap_page_table_range_init(pgd_t *pgd_base)
 	 * Fixed mappings, only the page table structure has to be
 	 * created - mappings will be set by set_fixmap():
 	 */
-	early_ioremap_clear();
 	vaddr = __fix_to_virt(__end_of_fixed_addresses - 1) & PMD_MASK;
 	end = (FIXADDR_TOP + PMD_SIZE - 1) & PMD_MASK;
 	page_table_range_init(vaddr, end, pgd_base);
@@ -458,11 +561,7 @@ static void __init pagetable_init(void)
 {
 	pgd_t *pgd_base = swapper_pg_dir;
 
-	paravirt_pagetable_setup_start(pgd_base);
-
 	permanent_kmaps_init(pgd_base);
-
-	paravirt_pagetable_setup_done(pgd_base);
 }
 
 #ifdef CONFIG_ACPI_SLEEP
@@ -505,7 +604,7 @@ void zap_low_mappings(void)
 
 int nx_enabled;
 
-pteval_t __supported_pte_mask __read_mostly = ~(_PAGE_NX | _PAGE_GLOBAL);
+pteval_t __supported_pte_mask __read_mostly = ~(_PAGE_NX | _PAGE_GLOBAL | _PAGE_IOMAP);
 EXPORT_SYMBOL_GPL(__supported_pte_mask);
 
 #ifdef CONFIG_X86_PAE
@@ -722,7 +821,7 @@ void __init setup_bootmem_allocator(void)
 	after_init_bootmem = 1;
 }
 
-static void __init find_early_table_space(unsigned long end)
+static void __init find_early_table_space(unsigned long end, int use_pse)
 {
 	unsigned long puds, pmds, ptes, tables, start;
 
@@ -732,7 +831,7 @@ static void __init find_early_table_space(unsigned long end)
 	pmds = (end + PMD_SIZE - 1) >> PMD_SHIFT;
 	tables += PAGE_ALIGN(pmds * sizeof(pmd_t));
 
-	if (cpu_has_pse) {
+	if (use_pse) {
 		unsigned long extra;
 
 		extra = end - ((end>>PMD_SHIFT) << PMD_SHIFT);
@@ -744,7 +843,7 @@ static void __init find_early_table_space(unsigned long end)
 	tables += PAGE_ALIGN(ptes * sizeof(pte_t));
 
 	/* for fixmap */
-	tables += PAGE_SIZE * 2;
+	tables += PAGE_ALIGN(__end_of_fixed_addresses * sizeof(pte_t));
 
 	/*
 	 * RED-PEN putting page tables only on node 0 could
@@ -772,12 +871,22 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	pgd_t *pgd_base = swapper_pg_dir;
 	unsigned long start_pfn, end_pfn;
 	unsigned long big_page_start;
+#ifdef CONFIG_DEBUG_PAGEALLOC
+	/*
+	 * For CONFIG_DEBUG_PAGEALLOC, identity mapping will use small pages.
+	 * This will simplify cpa(), which otherwise needs to support splitting
+	 * large pages into small in interrupt context, etc.
+	 */
+	int use_pse = 0;
+#else
+	int use_pse = cpu_has_pse;
+#endif
 
 	/*
 	 * Find space for the kernel direct mapping tables.
 	 */
 	if (!after_init_bootmem)
-		find_early_table_space(end);
+		find_early_table_space(end, use_pse);
 
 #ifdef CONFIG_X86_PAE
 	set_nx();
@@ -823,7 +932,7 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	end_pfn = (end>>PMD_SHIFT) << (PMD_SHIFT - PAGE_SHIFT);
 	if (start_pfn < end_pfn)
 		kernel_physical_mapping_init(pgd_base, start_pfn, end_pfn,
-						cpu_has_pse);
+					     use_pse);
 
 	/* tail is not big page alignment ? */
 	start_pfn = end_pfn;
@@ -907,6 +1016,8 @@ void __init mem_init(void)
 	int codesize, reservedpages, datasize, initsize;
 	int tmp;
 
+	pci_iommu_alloc();
+
 #ifdef CONFIG_FLATMEM
 	BUG_ON(!mem_map);
 #endif
@@ -976,17 +1087,30 @@ void __init mem_init(void)
 		(unsigned long)&_text, (unsigned long)&_etext,
 		((unsigned long)&_etext - (unsigned long)&_text) >> 10);
 
+	/*
+	 * Check boundaries twice: Some fundamental inconsistencies can
+	 * be detected at build time already.
+	 */
+#define __FIXADDR_TOP (-PAGE_SIZE)
+#ifdef CONFIG_HIGHMEM
+	BUILD_BUG_ON(PKMAP_BASE + LAST_PKMAP*PAGE_SIZE	> FIXADDR_START);
+	BUILD_BUG_ON(VMALLOC_END			> PKMAP_BASE);
+#endif
+#define high_memory (-128UL << 20)
+	BUILD_BUG_ON(VMALLOC_START			>= VMALLOC_END);
+#undef high_memory
+#undef __FIXADDR_TOP
+
 #ifdef CONFIG_HIGHMEM
 	BUG_ON(PKMAP_BASE + LAST_PKMAP*PAGE_SIZE	> FIXADDR_START);
 	BUG_ON(VMALLOC_END				> PKMAP_BASE);
 #endif
-	BUG_ON(VMALLOC_START				> VMALLOC_END);
+	BUG_ON(VMALLOC_START				>= VMALLOC_END);
 	BUG_ON((unsigned long)high_memory		> VMALLOC_START);
 
 	if (boot_cpu_data.wp_works_ok < 0)
 		test_wp_bit();
 
-	cpa_init();
 	save_pg_dir();
 	zap_low_mappings();
 }
@@ -999,7 +1123,7 @@ int arch_add_memory(int nid, u64 start, u64 size)
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
 
-	return __add_pages(zone, start_pfn, nr_pages);
+	return __add_pages(nid, zone, start_pfn, nr_pages);
 }
 #endif
 

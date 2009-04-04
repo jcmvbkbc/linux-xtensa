@@ -1,0 +1,238 @@
+/*
+ * arch/xtensa/include/asm/bitops.h
+ *
+ * Atomic operations that C can't guarantee us. Useful for resource counting etc.
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
+ *
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
+ */
+
+#ifndef _XTENSA_BITOPS_H
+#define _XTENSA_BITOPS_H
+
+#ifdef __KERNEL__
+
+#ifndef _LINUX_BITOPS_H
+#error only <linux/bitops.h> can be included directly
+#endif
+
+#include <asm/byteorder.h>
+#include <asm/system.h>
+
+#define smp_mb__before_clear_bit()	barrier()
+#define smp_mb__after_clear_bit()	barrier()
+
+#if XCHAL_HAVE_NSA
+
+static inline unsigned long __cntlz (unsigned long x)
+{
+	int lz;
+	asm ("nsau %0, %1" : "=r" (lz) : "r" (x));
+	return lz;
+}
+
+/*
+ * ffz: Find first zero in word. Undefined if no zero exists.
+ * bit 0 is the LSB of addr; bit 32 is the LSB of (addr+1).
+ */
+
+static inline int ffz(unsigned long x)
+{
+	return 31 - __cntlz(~x & -~x);
+}
+
+/*
+ * __ffs: Find first bit set in word. Return 0 for bit 0
+ */
+
+static inline int __ffs(unsigned long x)
+{
+	return 31 - __cntlz(x & -x);
+}
+
+/*
+ * ffs: Find first bit set in word. This is defined the same way as
+ * the libc and compiler builtin ffs routines, therefore
+ * differs in spirit from the above ffz (man ffs).
+ */
+
+static inline int ffs(unsigned long x)
+{
+	return 32 - __cntlz(x & -x);
+}
+
+/*
+ * fls: Find last (most-significant) bit set in word.
+ * Note fls(0) = 0, fls(1) = 1, fls(0x80000000) = 32.
+ */
+
+static inline int fls (unsigned int x)
+{
+	return 32 - __cntlz(x);
+}
+
+#else
+
+/* Use the generic implementation if we don't have the nsa/nsau instructions. */
+
+# include <asm-generic/bitops/ffs.h>
+# include <asm-generic/bitops/__ffs.h>
+# include <asm-generic/bitops/ffz.h>
+# include <asm-generic/bitops/fls.h>
+
+#endif
+
+#include <asm-generic/bitops/fls64.h>
+
+/*
+ * These functions are the basis of our bit ops.
+ *
+ * First, the atomic bitops. These use native endian.
+ */
+
+static inline void set_bit(unsigned int bit, volatile unsigned long *p)
+{
+        unsigned long tmp, value;
+        unsigned long mask = 1UL << (bit & 31);
+
+        p += bit >> 5;
+
+        __asm__ __volatile__(
+"1:     l32i    %1, %3, 0       \n"
+"       wsr     %1, SCOMPARE1   \n"
+"       or      %0, %1, %2      \n"
+"       s32c1i  %0, %3, 0       \n"
+"       bne     %0, %1, 1b      \n"
+        : "=&a" (tmp), "=&a" (value)
+        : "a" (mask), "a" (p)
+        : "memory" );
+}
+
+static inline void clear_bit(unsigned int bit, volatile unsigned long *p)
+{
+        unsigned long tmp, value;
+        unsigned long mask = 1UL << (bit & 31);
+
+        p += bit >> 5;
+
+        __asm__ __volatile__(
+"1:     l32i    %1, %3, 0       \n"
+"       wsr     %1, SCOMPARE1   \n"
+"       and     %0, %1, %2      \n"
+"       s32c1i  %0, %3, 0       \n"
+"       bne     %0, %1, 1b      \n"
+        : "=&a" (tmp), "=&a" (value)
+        : "a" (~mask), "a" (p)
+        : "memory" );
+}
+
+static inline void change_bit(unsigned int bit, volatile unsigned long *p)
+{
+        unsigned long tmp, value;
+        unsigned long mask = 1UL << (bit & 31);
+
+        p += bit >> 5;
+
+        __asm__ __volatile__(
+"1:     l32i    %1, %3, 0       \n"
+"       wsr     %1, SCOMPARE1   \n"
+"       xor     %0, %1, %2      \n"
+"       s32c1i  %0, %3, 0       \n"
+"       bne     %0, %1, 1b      \n"
+        : "=&a" (tmp), "=&a" (value)
+        : "a" (mask), "a" (p)
+        : "memory" );
+}
+
+static inline int
+test_and_set_bit(unsigned int bit, volatile unsigned long *p)
+{
+        unsigned long tmp, value;
+        unsigned long mask = 1UL << (bit & 31);
+
+        p += bit >> 5;
+
+        __asm__ __volatile__(
+"1:     l32i    %1, %3, 0       \n"
+"       wsr     %1, SCOMPARE1   \n"
+"       or      %0, %1, %2      \n"
+"       s32c1i  %0, %3, 0       \n"
+"       bne     %0, %1, 1b      \n"
+        : "=&a" (tmp), "=&a" (value)
+        : "a" (mask), "a" (p)
+        : "memory" );
+
+        return tmp & mask;
+}
+
+static inline int
+test_and_clear_bit(unsigned int bit, volatile unsigned long *p)
+{
+        unsigned long tmp, value;
+        unsigned long mask = 1UL << (bit & 31);
+
+        p += bit >> 5;
+
+        __asm__ __volatile__(
+"1:     l32i    %1, %3, 0       \n"
+"       wsr     %1, SCOMPARE1   \n"
+"       and     %0, %1, %2      \n"
+"       s32c1i  %0, %3, 0       \n"
+"       bne     %0, %1, 1b      \n"
+        : "=&a" (tmp), "=&a" (value)
+        : "a" (~mask), "a" (p)
+        : "memory" );
+
+        return tmp & mask;
+}
+
+static inline int
+test_and_change_bit(unsigned int bit, volatile unsigned long *p)
+{
+        unsigned long tmp, value;
+        unsigned long mask = 1UL << (bit & 31);
+
+        p += bit >> 5;
+
+        __asm__ __volatile__(
+"1:     l32i    %1, %3, 0       \n"
+"       wsr     %1, SCOMPARE1   \n"
+"       xor     %0, %1, %2      \n"
+"       s32c1i  %0, %3, 0       \n"
+"       bne     %0, %1, 1b      \n"
+        : "=&a" (tmp), "=&a" (value)
+        : "a" (mask), "a" (p)
+        : "memory" );
+
+        return tmp & mask;
+}
+
+#include <asm-generic/bitops/non-atomic.h>
+#include <asm-generic/bitops/find.h>
+#include <asm-generic/bitops/ext2-non-atomic.h>
+
+#ifdef __XTENSA_EL__
+# define ext2_set_bit_atomic(lock,nr,addr)				\
+	test_and_set_bit((nr), (unsigned long*)(addr))
+# define ext2_clear_bit_atomic(lock,nr,addr)				\
+	test_and_clear_bit((nr), (unsigned long*)(addr))
+#elif defined(__XTENSA_EB__)
+# define ext2_set_bit_atomic(lock,nr,addr)				\
+	test_and_set_bit((nr) ^ 0x18, (unsigned long*)(addr))
+# define ext2_clear_bit_atomic(lock,nr,addr)				\
+	test_and_clear_bit((nr) ^ 0x18, (unsigned long*)(addr))
+#else
+# error processor byte order undefined!
+#endif
+
+#include <asm-generic/bitops/hweight.h>
+#include <asm-generic/bitops/lock.h>
+#include <asm-generic/bitops/sched.h>
+#include <asm-generic/bitops/minix.h>
+
+#endif	/* __KERNEL__ */
+
+#endif	/* _XTENSA_BITOPS_H */

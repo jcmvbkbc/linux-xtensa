@@ -41,6 +41,7 @@
   Tolapai               0x5032     32     hard     yes     yes     yes
   ICH10                 0x3a30     32     hard     yes     yes     yes
   ICH10                 0x3a60     32     hard     yes     yes     yes
+  PCH                   0x3b30     32     hard     yes     yes     yes
 
   Features supported by this driver:
   Software PEC                     no
@@ -63,7 +64,7 @@
 #include <linux/init.h>
 #include <linux/i2c.h>
 #include <linux/acpi.h>
-#include <asm/io.h>
+#include <linux/io.h>
 
 /* I801 SMBus address offsets */
 #define SMBHSTSTS	(0 + i801_smba)
@@ -555,7 +556,6 @@ static const struct i2c_algorithm smbus_algorithm = {
 
 static struct i2c_adapter i801_adapter = {
 	.owner		= THIS_MODULE,
-	.id		= I2C_HW_SMBUS_I801,
 	.class		= I2C_CLASS_HWMON | I2C_CLASS_SPD,
 	.algo		= &smbus_algorithm,
 };
@@ -576,10 +576,45 @@ static struct pci_device_id i801_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_TOLAPAI_1) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ICH10_4) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ICH10_5) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_PCH_SMBUS) },
 	{ 0, }
 };
 
 MODULE_DEVICE_TABLE (pci, i801_ids);
+
+#if defined CONFIG_INPUT_APANEL || defined CONFIG_INPUT_APANEL_MODULE
+static unsigned char apanel_addr;
+
+/* Scan the system ROM for the signature "FJKEYINF" */
+static __init const void __iomem *bios_signature(const void __iomem *bios)
+{
+	ssize_t offset;
+	const unsigned char signature[] = "FJKEYINF";
+
+	for (offset = 0; offset < 0x10000; offset += 0x10) {
+		if (check_signature(bios + offset, signature,
+				    sizeof(signature)-1))
+			return bios + offset;
+	}
+	return NULL;
+}
+
+static void __init input_apanel_init(void)
+{
+	void __iomem *bios;
+	const void __iomem *p;
+
+	bios = ioremap(0xF0000, 0x10000); /* Can't fail */
+	p = bios_signature(bios);
+	if (p) {
+		/* just use the first address */
+		apanel_addr = readb(p + 8 + 3) >> 1;
+	}
+	iounmap(bios);
+}
+#else
+static void __init input_apanel_init(void) {}
+#endif
 
 static int __devinit i801_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
@@ -599,6 +634,7 @@ static int __devinit i801_probe(struct pci_dev *dev, const struct pci_device_id 
 	case PCI_DEVICE_ID_INTEL_TOLAPAI_1:
 	case PCI_DEVICE_ID_INTEL_ICH10_4:
 	case PCI_DEVICE_ID_INTEL_ICH10_5:
+	case PCI_DEVICE_ID_INTEL_PCH_SMBUS:
 		i801_features |= FEATURE_I2C_BLOCK_READ;
 		/* fall through */
 	case PCI_DEVICE_ID_INTEL_82801DB_3:
@@ -664,6 +700,19 @@ static int __devinit i801_probe(struct pci_dev *dev, const struct pci_device_id 
 		dev_err(&dev->dev, "Failed to add SMBus adapter\n");
 		goto exit_release;
 	}
+
+	/* Register optional slaves */
+#if defined CONFIG_INPUT_APANEL || defined CONFIG_INPUT_APANEL_MODULE
+	if (apanel_addr) {
+		struct i2c_board_info info;
+
+		memset(&info, 0, sizeof(struct i2c_board_info));
+		info.addr = apanel_addr;
+		strlcpy(info.type, "fujitsu_apanel", I2C_NAME_SIZE);
+		i2c_new_device(&i801_adapter, &info);
+	}
+#endif
+
 	return 0;
 
 exit_release:
@@ -714,6 +763,7 @@ static struct pci_driver i801_driver = {
 
 static int __init i2c_i801_init(void)
 {
+	input_apanel_init();
 	return pci_register_driver(&i801_driver);
 }
 

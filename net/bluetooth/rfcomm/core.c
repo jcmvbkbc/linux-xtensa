@@ -46,11 +46,6 @@
 #include <net/bluetooth/l2cap.h>
 #include <net/bluetooth/rfcomm.h>
 
-#ifndef CONFIG_BT_RFCOMM_DEBUG
-#undef  BT_DBG
-#define BT_DBG(D...)
-#endif
-
 #define VERSION "1.10"
 
 static int disable_cfc = 0;
@@ -1786,8 +1781,6 @@ static inline void rfcomm_accept_connection(struct rfcomm_session *s)
 	if (err < 0)
 		return;
 
-	__module_get(nsock->ops->owner);
-
 	/* Set our callbacks */
 	nsock->sk->sk_data_ready   = rfcomm_l2data_ready;
 	nsock->sk->sk_state_change = rfcomm_l2state_change;
@@ -2115,7 +2108,7 @@ MODULE_PARM_DESC(channel_mtu, "Default MTU for the RFCOMM channel");
 module_param(l2cap_mtu, uint, 0644);
 MODULE_PARM_DESC(l2cap_mtu, "Default MTU for the L2CAP connection");
 
-MODULE_AUTHOR("Maxim Krasnyansky <maxk@qualcomm.com>, Marcel Holtmann <marcel@holtmann.org>");
+MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Bluetooth RFCOMM ver " VERSION);
 MODULE_VERSION(VERSION);
 MODULE_LICENSE("GPL");

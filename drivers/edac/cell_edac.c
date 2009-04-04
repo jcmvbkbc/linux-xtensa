@@ -9,6 +9,7 @@
  */
 #undef DEBUG
 
+#include <linux/edac.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
@@ -35,7 +36,7 @@ static void cell_edac_count_ce(struct mem_ctl_info *mci, int chan, u64 ar)
 	struct csrow_info		*csrow = &mci->csrows[0];
 	unsigned long			address, pfn, offset, syndrome;
 
-	dev_dbg(mci->dev, "ECC CE err on node %d, channel %d, ar = 0x%016lx\n",
+	dev_dbg(mci->dev, "ECC CE err on node %d, channel %d, ar = 0x%016llx\n",
 		priv->node, chan, ar);
 
 	/* Address decoding is likely a bit bogus, to dbl check */
@@ -57,7 +58,7 @@ static void cell_edac_count_ue(struct mem_ctl_info *mci, int chan, u64 ar)
 	struct csrow_info		*csrow = &mci->csrows[0];
 	unsigned long			address, pfn, offset;
 
-	dev_dbg(mci->dev, "ECC UE err on node %d, channel %d, ar = 0x%016lx\n",
+	dev_dbg(mci->dev, "ECC UE err on node %d, channel %d, ar = 0x%016llx\n",
 		priv->node, chan, ar);
 
 	/* Address decoding is likely a bit bogus, to dbl check */
@@ -142,7 +143,7 @@ static void __devinit cell_edac_init_csrows(struct mem_ctl_info *mci)
 		csrow->nr_pages = (r.end - r.start + 1) >> PAGE_SHIFT;
 		csrow->last_page = csrow->first_page + csrow->nr_pages - 1;
 		csrow->mtype = MEM_XDR;
-		csrow->edac_mode = EDAC_FLAG_EC | EDAC_FLAG_SECDED;
+		csrow->edac_mode = EDAC_SECDED;
 		dev_dbg(mci->dev,
 			"Initialized on node %d, chanmask=0x%x,"
 			" first_page=0x%lx, nr_pages=0x%x\n",
@@ -164,9 +165,11 @@ static int __devinit cell_edac_probe(struct platform_device *pdev)
 	if (regs == NULL)
 		return -ENODEV;
 
+	edac_op_state = EDAC_OPSTATE_POLL;
+
 	/* Get channel population */
 	reg = in_be64(&regs->mic_mnt_cfg);
-	dev_dbg(&pdev->dev, "MIC_MNT_CFG = 0x%016lx\n", reg);
+	dev_dbg(&pdev->dev, "MIC_MNT_CFG = 0x%016llx\n", reg);
 	chanmask = 0;
 	if (reg & CBE_MIC_MNT_CFG_CHAN_0_POP)
 		chanmask |= 0x1;
@@ -177,7 +180,7 @@ static int __devinit cell_edac_probe(struct platform_device *pdev)
 			 "Yuck ! No channel populated ? Aborting !\n");
 		return -ENODEV;
 	}
-	dev_dbg(&pdev->dev, "Initial FIR = 0x%016lx\n",
+	dev_dbg(&pdev->dev, "Initial FIR = 0x%016llx\n",
 		in_be64(&regs->mic_fir));
 
 	/* Allocate & init EDAC MC data structure */

@@ -26,11 +26,11 @@ asmlinkage void smp_thermal_interrupt(void)
 	if (therm_throt_process(msr_val & 1))
 		mce_log_therm_throt_event(smp_processor_id(), msr_val);
 
-	add_pda(irq_thermal_count, 1);
+	inc_irq_stat(irq_thermal_count);
 	irq_exit();
 }
 
-static void __cpuinit intel_init_thermal(struct cpuinfo_x86 *c)
+static void intel_init_thermal(struct cpuinfo_x86 *c)
 {
 	u32 l, h;
 	int tm2 = 0;
@@ -84,7 +84,7 @@ static void __cpuinit intel_init_thermal(struct cpuinfo_x86 *c)
 	return;
 }
 
-void __cpuinit mce_intel_feature_init(struct cpuinfo_x86 *c)
+void mce_intel_feature_init(struct cpuinfo_x86 *c)
 {
 	intel_init_thermal(c);
 }

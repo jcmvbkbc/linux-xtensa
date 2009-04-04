@@ -1,7 +1,7 @@
 /*
  *	intel TCO vendor specific watchdog driver support
  *
- *	(c) Copyright 2006 Wim Van Sebroeck <wim@iguana.be>.
+ *	(c) Copyright 2006-2009 Wim Van Sebroeck <wim@iguana.be>.
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the terms of the GNU General Public License
@@ -19,8 +19,7 @@
 
 /* Module and version information */
 #define DRV_NAME	"iTCO_vendor_support"
-#define DRV_VERSION	"1.01"
-#define DRV_RELDATE	"11-Nov-2006"
+#define DRV_VERSION	"1.03"
 #define PFX		DRV_NAME ": "
 
 /* Includes */
@@ -82,6 +81,7 @@ static void supermicro_old_pre_start(unsigned long acpibase)
 {
 	unsigned long val32;
 
+	/* Bit 13: TCO_EN -> 0 = Disables TCO logic generating an SMI# */
 	val32 = inl(SMI_EN);
 	val32 &= 0xffffdfff;	/* Turn off SMI clearing watchdog */
 	outl(val32, SMI_EN);	/* Needed to activate watchdog */
@@ -91,8 +91,9 @@ static void supermicro_old_pre_stop(unsigned long acpibase)
 {
 	unsigned long val32;
 
+	/* Bit 13: TCO_EN -> 1 = Enables the TCO logic to generate SMI# */
 	val32 = inl(SMI_EN);
-	val32 &= 0x00002000;	/* Turn on SMI clearing watchdog */
+	val32 |= 0x00002000;	/* Turn on SMI clearing watchdog */
 	outl(val32, SMI_EN);	/* Needed to deactivate watchdog */
 }
 

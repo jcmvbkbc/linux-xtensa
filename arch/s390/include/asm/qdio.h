@@ -299,7 +299,13 @@ struct qdio_ssqd_desc {
 	u8 mbccnt;
 	u16 qdioac2;
 	u64 sch_token;
-	u64:64;
+	u8 mro;
+	u8 mri;
+	u8:8;
+	u8 sbalic;
+	u16:16;
+	u8:8;
+	u8 mmwc;
 } __attribute__ ((packed));
 
 /* params are: ccw_device, qdio_error, queue_number,
@@ -367,16 +373,16 @@ struct qdio_initialize {
 #define QDIO_FLAG_SYNC_OUTPUT		0x02
 #define QDIO_FLAG_PCI_OUT		0x10
 
-extern int qdio_initialize(struct qdio_initialize *init_data);
-extern int qdio_allocate(struct qdio_initialize *init_data);
-extern int qdio_establish(struct qdio_initialize *init_data);
+extern int qdio_initialize(struct qdio_initialize *);
+extern int qdio_allocate(struct qdio_initialize *);
+extern int qdio_establish(struct qdio_initialize *);
 extern int qdio_activate(struct ccw_device *);
 
-extern int do_QDIO(struct ccw_device*, unsigned int flags,
-		   int q_nr, int qidx, int count);
-extern int qdio_cleanup(struct ccw_device*, int how);
-extern int qdio_shutdown(struct ccw_device*, int how);
+extern int do_QDIO(struct ccw_device *cdev, unsigned int callflags,
+		   int q_nr, int bufnr, int count);
+extern int qdio_cleanup(struct ccw_device*, int);
+extern int qdio_shutdown(struct ccw_device*, int);
 extern int qdio_free(struct ccw_device *);
-extern struct qdio_ssqd_desc *qdio_get_ssqd_desc(struct ccw_device *cdev);
+extern int qdio_get_ssqd_desc(struct ccw_device *dev, struct qdio_ssqd_desc*);
 
 #endif /* __QDIO_H__ */

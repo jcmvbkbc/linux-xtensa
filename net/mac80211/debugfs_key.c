@@ -188,7 +188,6 @@ void ieee80211_debugfs_key_add(struct ieee80211_key *key)
   {
 	static int keycount;
 	char buf[50];
-	DECLARE_MAC_BUF(mac);
 	struct sta_info *sta;
 
 	if (!key->local->debugfs.keys)
@@ -206,7 +205,7 @@ void ieee80211_debugfs_key_add(struct ieee80211_key *key)
 	rcu_read_lock();
 	sta = rcu_dereference(key->sta);
 	if (sta)
-		sprintf(buf, "../../stations/%s", print_mac(mac, sta->addr));
+		sprintf(buf, "../../stations/%pM", sta->sta.addr);
 	rcu_read_unlock();
 
 	/* using sta as a boolean is fine outside RCU lock */
@@ -265,7 +264,7 @@ void ieee80211_debugfs_key_add_default(struct ieee80211_sub_if_data *sdata)
 	key = sdata->default_key;
 	if (key) {
 		sprintf(buf, "../keys/%d", key->debugfs.cnt);
-		sdata->debugfs.default_key =
+		sdata->common_debugfs.default_key =
 			debugfs_create_symlink("default_key",
 					       sdata->debugfsdir, buf);
 	} else
@@ -277,8 +276,8 @@ void ieee80211_debugfs_key_remove_default(struct ieee80211_sub_if_data *sdata)
 	if (!sdata)
 		return;
 
-	debugfs_remove(sdata->debugfs.default_key);
-	sdata->debugfs.default_key = NULL;
+	debugfs_remove(sdata->common_debugfs.default_key);
+	sdata->common_debugfs.default_key = NULL;
 }
 
 void ieee80211_debugfs_key_sta_del(struct ieee80211_key *key,

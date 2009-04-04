@@ -460,12 +460,16 @@ static void ps3fb_sync_image(struct device *dev, u64 frame_offset,
 		line_length |= (u64)src_line_length << 32;
 
 	src_offset += GPU_FB_START;
+
+	mutex_lock(&ps3_gpu_mutex);
 	status = lv1_gpu_context_attribute(ps3fb.context_handle,
 					   L1GPU_CONTEXT_ATTRIBUTE_FB_BLIT,
 					   dst_offset, GPU_IOIF + src_offset,
 					   L1GPU_FB_BLIT_WAIT_FOR_COMPLETION |
 					   (width << 16) | height,
 					   line_length);
+	mutex_unlock(&ps3_gpu_mutex);
+
 	if (status)
 		dev_err(dev,
 			"%s: lv1_gpu_context_attribute FB_BLIT failed: %d\n",
@@ -784,15 +788,6 @@ static int ps3fb_wait_for_vsync(u32 crtc)
 	return 0;
 }
 
-static void ps3fb_flip_ctl(int on, void *data)
-{
-	struct ps3fb_priv *priv = data;
-	if (on)
-		atomic_dec_if_positive(&priv->ext_flip);
-	else
-		atomic_inc(&priv->ext_flip);
-}
-
 
     /*
      * ioctl
@@ -1011,7 +1006,7 @@ static int ps3fb_xdr_settings(u64 xdr_lpar, struct device *dev)
 			__func__, status);
 		return -ENXIO;
 	}
-	dev_dbg(dev, "video:%p ioif:%lx lpar:%lx size:%lx\n",
+	dev_dbg(dev, "video:%p ioif:%lx lpar:%llx size:%lx\n",
 		ps3fb_videomemory.address, GPU_IOIF, xdr_lpar,
 		ps3fb_videomemory.size);
 
@@ -1138,7 +1133,7 @@ static int __devinit ps3fb_probe(struct ps3_system_bus_device *dev)
 			__func__, status);
 		goto err;
 	}
-	dev_dbg(&dev->core, "ddr:lpar:0x%lx\n", ddr_lpar);
+	dev_dbg(&dev->core, "ddr:lpar:0x%llx\n", ddr_lpar);
 
 	status = lv1_gpu_context_allocate(ps3fb.memory_handle, 0,
 					  &ps3fb.context_handle,
@@ -1228,7 +1223,6 @@ static int __devinit ps3fb_probe(struct ps3_system_bus_device *dev)
 	}
 
 	ps3fb.task = task;
-	ps3av_register_flip_ctl(ps3fb_flip_ctl, &ps3fb);
 
 	return 0;
 
@@ -1258,10 +1252,9 @@ static int ps3fb_shutdown(struct ps3_system_bus_device *dev)
 
 	dev_dbg(&dev->core, " -> %s:%d\n", __func__, __LINE__);
 
-	ps3fb_flip_ctl(0, &ps3fb);	/* flip off */
+	atomic_inc(&ps3fb.ext_flip);	/* flip off */
 	ps3fb.dinfo->irq.mask = 0;
 
-	ps3av_register_flip_ctl(NULL, NULL);
 	if (ps3fb.task) {
 		struct task_struct *task = ps3fb.task;
 		ps3fb.task = NULL;
@@ -1296,8 +1289,8 @@ static int ps3fb_shutdown(struct ps3_system_bus_device *dev)
 }
 
 static struct ps3_system_bus_driver ps3fb_driver = {
-	.match_id	= PS3_MATCH_ID_GRAPHICS,
-	.match_sub_id	= PS3_MATCH_SUB_ID_FB,
+	.match_id	= PS3_MATCH_ID_GPU,
+	.match_sub_id	= PS3_MATCH_SUB_ID_GPU_FB,
 	.core.name	= DEVICE_NAME,
 	.core.owner	= THIS_MODULE,
 	.probe		= ps3fb_probe,
@@ -1355,4 +1348,4 @@ module_exit(ps3fb_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("PS3 GPU Frame Buffer Driver");
 MODULE_AUTHOR("Sony Computer Entertainment Inc.");
-MODULE_ALIAS(PS3_MODULE_ALIAS_GRAPHICS);
+MODULE_ALIAS(PS3_MODULE_ALIAS_GPU_FB);

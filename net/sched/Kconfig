@@ -106,6 +106,15 @@ config NET_SCH_PRIO
 	  To compile this code as a module, choose M here: the
 	  module will be called sch_prio.
 
+config NET_SCH_MULTIQ
+	tristate "Hardware Multiqueue-aware Multi Band Queuing (MULTIQ)"
+	---help---
+	  Say Y here if you want to use an n-band queue packet scheduler
+	  to support devices that have multiple hardware transmit queues.
+
+	  To compile this code as a module, choose M here: the
+	  module will be called sch_multiq.
+
 config NET_SCH_RED
 	tristate "Random Early Detection (RED)"
 	---help---
@@ -182,6 +191,17 @@ config NET_SCH_NETEM
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called sch_netem.
+
+	  If unsure, say N.
+
+config NET_SCH_DRR
+	tristate "Deficit Round Robin scheduler (DRR)"
+	help
+	  Say Y here if you want to use the Deficit Round Robin (DRR) packet
+	  scheduling algorithm.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called sch_drr.
 
 	  If unsure, say N.
 
@@ -306,6 +326,14 @@ config NET_CLS_FLOW
 
 	  To compile this code as a module, choose M here: the
 	  module will be called cls_flow.
+
+config NET_CLS_CGROUP
+	bool "Control Group Classifier"
+	select NET_CLS
+	depends on CGROUPS
+	---help---
+	  Say Y here if you want to classify packets based on the control
+	  cgroup of their process.
 
 config NET_EMATCH
 	bool "Extended Matches"
@@ -475,6 +503,17 @@ config NET_ACT_SIMP
 
 	  To compile this code as a module, choose M here: the
 	  module will be called simple.
+
+config NET_ACT_SKBEDIT
+        tristate "SKB Editing"
+        depends on NET_CLS_ACT
+        ---help---
+	  Say Y here to change skb priority or queue_mapping settings.
+
+	  If unsure, say N.
+
+	  To compile this code as a module, choose M here: the
+	  module will be called skbedit.
 
 config NET_CLS_IND
 	bool "Incoming device classification"

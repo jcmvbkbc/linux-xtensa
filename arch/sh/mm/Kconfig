@@ -132,7 +132,11 @@ config ARCH_SELECT_MEMORY_MODEL
 
 config ARCH_ENABLE_MEMORY_HOTPLUG
 	def_bool y
-	depends on SPARSEMEM
+	depends on SPARSEMEM && MMU
+
+config ARCH_ENABLE_MEMORY_HOTREMOVE
+	def_bool y
+	depends on SPARSEMEM && MMU
 
 config ARCH_MEMORY_PROBE
 	def_bool y
@@ -181,10 +185,12 @@ config ENTRY_OFFSET
 choice
 	prompt "HugeTLB page size"
 	depends on HUGETLB_PAGE && (CPU_SH4 || CPU_SH5) && MMU
+	default HUGETLB_PAGE_SIZE_1MB if PAGE_SIZE_64KB
 	default HUGETLB_PAGE_SIZE_64K
 
 config HUGETLB_PAGE_SIZE_64K
 	bool "64kB"
+	depends on !PAGE_SIZE_64KB
 
 config HUGETLB_PAGE_SIZE_256K
 	bool "256kB"

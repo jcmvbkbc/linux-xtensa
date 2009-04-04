@@ -3,7 +3,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (c) 2004-2008 Silicon Graphics, Inc.  All Rights Reserved.
+ * Copyright (c) 2004-2009 Silicon Graphics, Inc.  All Rights Reserved.
  */
 
 /*
@@ -179,6 +179,18 @@ struct xpc_vars_part_sn2 {
 #define XPC_RP_VARS(_rp)	((struct xpc_vars_sn2 *) \
 				 (XPC_RP_MACH_NASIDS(_rp) + \
 				  xpc_nasid_mask_nlongs))
+
+/*
+ * Info pertinent to a GRU message queue using a watch list for irq generation.
+ */
+struct xpc_gru_mq_uv {
+	void *address;		/* address of GRU message queue */
+	unsigned int order;	/* size of GRU message queue as a power of 2 */
+	int irq;		/* irq raised when message is received in mq */
+	int mmr_blade;		/* blade where watchlist was allocated from */
+	unsigned long mmr_offset; /* offset of irq mmr located on mmr_blade */
+	int watchlist_num;	/* number of watchlist allocatd by BIOS */
+};
 
 /*
  * The activate_mq is used to send/receive GRU messages that affect XPC's
@@ -502,7 +514,8 @@ struct xpc_channel_uv {
 						/* partition's notify mq */
 
 	struct xpc_send_msg_slot_uv *send_msg_slots;
-	struct xpc_notify_mq_msg_uv *recv_msg_slots;
+	void *recv_msg_slots;	/* each slot will hold a xpc_notify_mq_msg_uv */
+				/* structure plus the user's payload */
 
 	struct xpc_fifo_head_uv msg_slot_free_list;
 	struct xpc_fifo_head_uv recv_msg_list;	/* deliverable payloads */

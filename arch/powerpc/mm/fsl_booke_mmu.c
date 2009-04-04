@@ -56,18 +56,11 @@
 
 extern void loadcam_entry(unsigned int index);
 unsigned int tlbcam_index;
-unsigned int num_tlbcam_entries;
 static unsigned long __cam0, __cam1, __cam2;
 
 #define NUM_TLBCAMS	(16)
 
-struct tlbcam {
-   	u32	MAS0;
-	u32	MAS1;
-	u32	MAS2;
-	u32	MAS3;
-	u32	MAS7;
-} TLBCAM[NUM_TLBCAMS];
+struct tlbcam TLBCAM[NUM_TLBCAMS];
 
 struct tlbcamrange {
    	unsigned long start;
@@ -80,7 +73,7 @@ extern unsigned int tlbcam_index;
 /*
  * Return PA for this VA if it is mapped by a CAM, or 0
  */
-unsigned long v_mapped_by_tlbcam(unsigned long va)
+phys_addr_t v_mapped_by_tlbcam(unsigned long va)
 {
 	int b;
 	for (b = 0; b < tlbcam_index; ++b)
@@ -92,7 +85,7 @@ unsigned long v_mapped_by_tlbcam(unsigned long va)
 /*
  * Return VA for a given PA or 0 if not mapped
  */
-unsigned long p_mapped_by_tlbcam(unsigned long pa)
+unsigned long p_mapped_by_tlbcam(phys_addr_t pa)
 {
 	int b;
 	for (b = 0; b < tlbcam_index; ++b)
@@ -202,7 +195,7 @@ adjust_total_lowmem(void)
 		cam_max_size = max_lowmem_size;
 
 	/* adjust lowmem size to max_lowmem_size */
-	ram = min(max_lowmem_size, (phys_addr_t)total_lowmem);
+	ram = min(max_lowmem_size, total_lowmem);
 
 	/* Calculate CAM values */
 	__cam0 = 1UL << 2 * (__ilog2(ram) / 2);
@@ -225,7 +218,8 @@ adjust_total_lowmem(void)
 	printk(KERN_INFO "Memory CAM mapping: CAM0=%ldMb, CAM1=%ldMb,"
 			" CAM2=%ldMb residual: %ldMb\n",
 			__cam0 >> 20, __cam1 >> 20, __cam2 >> 20,
-			(total_lowmem - __cam0 - __cam1 - __cam2) >> 20);
+			(long int)((total_lowmem - __cam0 - __cam1 - __cam2)
+				   >> 20));
 	__max_low_memory = __cam0 + __cam1 + __cam2;
 	__initial_memory_limit_addr = memstart_addr + __max_low_memory;
 }

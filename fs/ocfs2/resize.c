@@ -106,8 +106,8 @@ static int ocfs2_update_last_group_and_inode(handle_t *handle,
 	mlog_entry("(new_clusters=%d, first_new_cluster = %u)\n",
 		   new_clusters, first_new_cluster);
 
-	ret = ocfs2_journal_access(handle, bm_inode, group_bh,
-				   OCFS2_JOURNAL_ACCESS_WRITE);
+	ret = ocfs2_journal_access_gd(handle, bm_inode, group_bh,
+				      OCFS2_JOURNAL_ACCESS_WRITE);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out;
@@ -141,8 +141,8 @@ static int ocfs2_update_last_group_and_inode(handle_t *handle,
 	}
 
 	/* update the inode accordingly. */
-	ret = ocfs2_journal_access(handle, bm_inode, bm_bh,
-				   OCFS2_JOURNAL_ACCESS_WRITE);
+	ret = ocfs2_journal_access_di(handle, bm_inode, bm_bh,
+				      OCFS2_JOURNAL_ACCESS_WRITE);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out_rollback;
@@ -200,7 +200,7 @@ static int update_backups(struct inode * inode, u32 clusters, char *data)
 		if (cluster > clusters)
 			break;
 
-		ret = ocfs2_read_block(osb, blkno, &backup, 0, NULL);
+		ret = ocfs2_read_blocks_sync(osb, blkno, 1, &backup);
 		if (ret < 0) {
 			mlog_errno(ret);
 			break;
@@ -236,8 +236,8 @@ static void ocfs2_update_super_and_backups(struct inode *inode,
 	 * update the superblock last.
 	 * It doesn't matter if the write failed.
 	 */
-	ret = ocfs2_read_block(osb, OCFS2_SUPER_BLOCK_BLKNO,
-			       &super_bh, 0, NULL);
+	ret = ocfs2_read_blocks_sync(osb, OCFS2_SUPER_BLOCK_BLKNO, 1,
+				     &super_bh);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out;
@@ -314,6 +314,10 @@ int ocfs2_group_extend(struct inode * inode, int new_clusters)
 
 	fe = (struct ocfs2_dinode *)main_bm_bh->b_data;
 
+	/* main_bm_bh is validated by inode read inside ocfs2_inode_lock(),
+	 * so any corruption is a code bug. */
+	BUG_ON(!OCFS2_IS_VALID_DINODE(fe));
+
 	if (le16_to_cpu(fe->id2.i_chain.cl_cpg) !=
 				 ocfs2_group_bitmap_size(osb->sb) * 8) {
 		mlog(ML_ERROR, "The disk is too old and small. "
@@ -322,30 +326,17 @@ int ocfs2_group_extend(struct inode * inode, int new_clusters)
 		goto out_unlock;
 	}
 
-	if (!OCFS2_IS_VALID_DINODE(fe)) {
-		OCFS2_RO_ON_INVALID_DINODE(main_bm_inode->i_sb, fe);
-		ret = -EIO;
-		goto out_unlock;
-	}
-
 	first_new_cluster = le32_to_cpu(fe->i_clusters);
 	lgd_blkno = ocfs2_which_cluster_group(main_bm_inode,
 					      first_new_cluster - 1);
 
-	ret = ocfs2_read_block(osb, lgd_blkno, &group_bh, OCFS2_BH_CACHED,
-			       main_bm_inode);
+	ret = ocfs2_read_group_descriptor(main_bm_inode, fe, lgd_blkno,
+					  &group_bh);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out_unlock;
 	}
-
 	group = (struct ocfs2_group_desc *)group_bh->b_data;
-
-	ret = ocfs2_check_group_descriptor(inode->i_sb, fe, group);
-	if (ret) {
-		mlog_errno(ret);
-		goto out_unlock;
-	}
 
 	cl_bpc = le16_to_cpu(fe->id2.i_chain.cl_bpc);
 	if (le16_to_cpu(group->bg_bits) / cl_bpc + new_clusters >
@@ -399,41 +390,16 @@ static int ocfs2_check_new_group(struct inode *inode,
 				 struct buffer_head *group_bh)
 {
 	int ret;
-	struct ocfs2_group_desc *gd;
+	struct ocfs2_group_desc *gd =
+		(struct ocfs2_group_desc *)group_bh->b_data;
 	u16 cl_bpc = le16_to_cpu(di->id2.i_chain.cl_bpc);
-	unsigned int max_bits = le16_to_cpu(di->id2.i_chain.cl_cpg) *
-				le16_to_cpu(di->id2.i_chain.cl_bpc);
 
+	ret = ocfs2_check_group_descriptor(inode->i_sb, di, group_bh);
+	if (ret)
+		goto out;
 
-	gd = (struct ocfs2_group_desc *)group_bh->b_data;
-
-	ret = -EIO;
-	if (!OCFS2_IS_VALID_GROUP_DESC(gd))
-		mlog(ML_ERROR, "Group descriptor # %llu isn't valid.\n",
-		     (unsigned long long)le64_to_cpu(gd->bg_blkno));
-	else if (di->i_blkno != gd->bg_parent_dinode)
-		mlog(ML_ERROR, "Group descriptor # %llu has bad parent "
-		     "pointer (%llu, expected %llu)\n",
-		     (unsigned long long)le64_to_cpu(gd->bg_blkno),
-		     (unsigned long long)le64_to_cpu(gd->bg_parent_dinode),
-		     (unsigned long long)le64_to_cpu(di->i_blkno));
-	else if (le16_to_cpu(gd->bg_bits) > max_bits)
-		mlog(ML_ERROR, "Group descriptor # %llu has bit count of %u\n",
-		     (unsigned long long)le64_to_cpu(gd->bg_blkno),
-		     le16_to_cpu(gd->bg_bits));
-	else if (le16_to_cpu(gd->bg_free_bits_count) > le16_to_cpu(gd->bg_bits))
-		mlog(ML_ERROR, "Group descriptor # %llu has bit count %u but "
-		     "claims that %u are free\n",
-		     (unsigned long long)le64_to_cpu(gd->bg_blkno),
-		     le16_to_cpu(gd->bg_bits),
-		     le16_to_cpu(gd->bg_free_bits_count));
-	else if (le16_to_cpu(gd->bg_bits) > (8 * le16_to_cpu(gd->bg_size)))
-		mlog(ML_ERROR, "Group descriptor # %llu has bit count %u but "
-		     "max bitmap bits of %u\n",
-		     (unsigned long long)le64_to_cpu(gd->bg_blkno),
-		     le16_to_cpu(gd->bg_bits),
-		     8 * le16_to_cpu(gd->bg_size));
-	else if (le16_to_cpu(gd->bg_chain) != input->chain)
+	ret = -EINVAL;
+	if (le16_to_cpu(gd->bg_chain) != input->chain)
 		mlog(ML_ERROR, "Group descriptor # %llu has bad chain %u "
 		     "while input has %u set.\n",
 		     (unsigned long long)le64_to_cpu(gd->bg_blkno),
@@ -452,6 +418,7 @@ static int ocfs2_check_new_group(struct inode *inode,
 	else
 		ret = 0;
 
+out:
 	return ret;
 }
 
@@ -540,7 +507,7 @@ int ocfs2_group_add(struct inode *inode, struct ocfs2_new_group_input *input)
 		goto out_unlock;
 	}
 
-	ret = ocfs2_read_block(osb, input->group, &group_bh, 0, NULL);
+	ret = ocfs2_read_blocks_sync(osb, input->group, 1, &group_bh);
 	if (ret < 0) {
 		mlog(ML_ERROR, "Can't read the group descriptor # %llu "
 		     "from the device.", (unsigned long long)input->group);
@@ -569,8 +536,8 @@ int ocfs2_group_add(struct inode *inode, struct ocfs2_new_group_input *input)
 	cl = &fe->id2.i_chain;
 	cr = &cl->cl_recs[input->chain];
 
-	ret = ocfs2_journal_access(handle, main_bm_inode, group_bh,
-				   OCFS2_JOURNAL_ACCESS_WRITE);
+	ret = ocfs2_journal_access_gd(handle, main_bm_inode, group_bh,
+				      OCFS2_JOURNAL_ACCESS_WRITE);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out_commit;
@@ -585,8 +552,8 @@ int ocfs2_group_add(struct inode *inode, struct ocfs2_new_group_input *input)
 		goto out_commit;
 	}
 
-	ret = ocfs2_journal_access(handle, main_bm_inode, main_bm_bh,
-				   OCFS2_JOURNAL_ACCESS_WRITE);
+	ret = ocfs2_journal_access_di(handle, main_bm_inode, main_bm_bh,
+				      OCFS2_JOURNAL_ACCESS_WRITE);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out_commit;

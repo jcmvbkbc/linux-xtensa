@@ -96,6 +96,8 @@ static const struct pci_device_id cciss_pci_device_id[] = {
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x3245},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x3247},
 	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x3249},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x324A},
+	{PCI_VENDOR_ID_HP,     PCI_DEVICE_ID_HP_CISSE,     0x103C, 0x324B},
 	{PCI_VENDOR_ID_HP,     PCI_ANY_ID,	PCI_ANY_ID, PCI_ANY_ID,
 		PCI_CLASS_STORAGE_RAID << 8, 0xffff << 8, 0},
 	{0,}
@@ -133,6 +135,8 @@ static struct board_type products[] = {
 	{0x3245103C, "Smart Array P410i", &SA5_access},
 	{0x3247103C, "Smart Array P411", &SA5_access},
 	{0x3249103C, "Smart Array P812", &SA5_access},
+	{0x324A103C, "Smart Array P712m", &SA5_access},
+	{0x324B103C, "Smart Array P711m", &SA5_access},
 	{0xFFFF103C, "Unknown Smart Array", &SA5_access},
 };
 
@@ -152,15 +156,15 @@ static ctlr_info_t *hba[MAX_CTLR];
 
 static void do_cciss_request(struct request_queue *q);
 static irqreturn_t do_cciss_intr(int irq, void *dev_id);
-static int cciss_open(struct inode *inode, struct file *filep);
-static int cciss_release(struct inode *inode, struct file *filep);
-static int cciss_ioctl(struct inode *inode, struct file *filep,
+static int cciss_open(struct block_device *bdev, fmode_t mode);
+static int cciss_release(struct gendisk *disk, fmode_t mode);
+static int cciss_ioctl(struct block_device *bdev, fmode_t mode,
 		       unsigned int cmd, unsigned long arg);
 static int cciss_getgeo(struct block_device *bdev, struct hd_geometry *geo);
 
 static int cciss_revalidate(struct gendisk *disk);
 static int rebuild_lun_table(ctlr_info_t *h, int first_time);
-static int deregister_disk(struct gendisk *disk, drive_info_struct *drv,
+static int deregister_disk(ctlr_info_t *h, int drv_index,
 			   int clear_all);
 
 static void cciss_read_capacity(int ctlr, int logvol, int withirq,
@@ -192,14 +196,15 @@ static void cciss_procinit(int i)
 #endif				/* CONFIG_PROC_FS */
 
 #ifdef CONFIG_COMPAT
-static long cciss_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg);
+static int cciss_compat_ioctl(struct block_device *, fmode_t,
+			      unsigned, unsigned long);
 #endif
 
 static struct block_device_operations cciss_fops = {
 	.owner = THIS_MODULE,
 	.open = cciss_open,
 	.release = cciss_release,
-	.ioctl = cciss_ioctl,
+	.locked_ioctl = cciss_ioctl,
 	.getgeo = cciss_getgeo,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = cciss_compat_ioctl,
@@ -210,31 +215,17 @@ static struct block_device_operations cciss_fops = {
 /*
  * Enqueuing and dequeuing functions for cmdlists.
  */
-static inline void addQ(CommandList_struct **Qptr, CommandList_struct *c)
+static inline void addQ(struct hlist_head *list, CommandList_struct *c)
 {
-	if (*Qptr == NULL) {
-		*Qptr = c;
-		c->next = c->prev = c;
-	} else {
-		c->prev = (*Qptr)->prev;
-		c->next = (*Qptr);
-		(*Qptr)->prev->next = c;
-		(*Qptr)->prev = c;
-	}
+	hlist_add_head(&c->list, list);
 }
 
-static inline CommandList_struct *removeQ(CommandList_struct **Qptr,
-					  CommandList_struct *c)
+static inline void removeQ(CommandList_struct *c)
 {
-	if (c && c->next != c) {
-		if (*Qptr == c)
-			*Qptr = c->next;
-		c->prev->next = c->next;
-		c->next->prev = c->prev;
-	} else {
-		*Qptr = NULL;
-	}
-	return c;
+	if (WARN_ON(hlist_unhashed(&c->list)))
+		return;
+
+	hlist_del_init(&c->list);
 }
 
 #include "cciss_scsi.c"		/* For SCSI tape support */
@@ -501,6 +492,7 @@ static CommandList_struct *cmd_alloc(ctlr_info_t *h, int get_from_pool)
 		c->cmdindex = i;
 	}
 
+	INIT_HLIST_NODE(&c->list);
 	c->busaddr = (__u32) cmd_dma_handle;
 	temp64.val = (__u64) err_dma_handle;
 	c->ErrDesc.Addr.lower = temp64.val32.lower;
@@ -547,13 +539,13 @@ static inline drive_info_struct *get_drv(struct gendisk *disk)
 /*
  * Open.  Make sure the device is really there.
  */
-static int cciss_open(struct inode *inode, struct file *filep)
+static int cciss_open(struct block_device *bdev, fmode_t mode)
 {
-	ctlr_info_t *host = get_host(inode->i_bdev->bd_disk);
-	drive_info_struct *drv = get_drv(inode->i_bdev->bd_disk);
+	ctlr_info_t *host = get_host(bdev->bd_disk);
+	drive_info_struct *drv = get_drv(bdev->bd_disk);
 
 #ifdef CCISS_DEBUG
-	printk(KERN_DEBUG "cciss_open %s\n", inode->i_bdev->bd_disk->disk_name);
+	printk(KERN_DEBUG "cciss_open %s\n", bdev->bd_disk->disk_name);
 #endif				/* CCISS_DEBUG */
 
 	if (host->busy_initializing || drv->busy_configuring)
@@ -567,9 +559,9 @@ static int cciss_open(struct inode *inode, struct file *filep)
 	 * for "raw controller".
 	 */
 	if (drv->heads == 0) {
-		if (iminor(inode) != 0) {	/* not node 0? */
+		if (MINOR(bdev->bd_dev) != 0) {	/* not node 0? */
 			/* if not node 0 make sure it is a partition = 0 */
-			if (iminor(inode) & 0x0f) {
+			if (MINOR(bdev->bd_dev) & 0x0f) {
 				return -ENXIO;
 				/* if it is, make sure we have a LUN ID */
 			} else if (drv->LunID == 0) {
@@ -587,14 +579,13 @@ static int cciss_open(struct inode *inode, struct file *filep)
 /*
  * Close.  Sync first.
  */
-static int cciss_release(struct inode *inode, struct file *filep)
+static int cciss_release(struct gendisk *disk, fmode_t mode)
 {
-	ctlr_info_t *host = get_host(inode->i_bdev->bd_disk);
-	drive_info_struct *drv = get_drv(inode->i_bdev->bd_disk);
+	ctlr_info_t *host = get_host(disk);
+	drive_info_struct *drv = get_drv(disk);
 
 #ifdef CCISS_DEBUG
-	printk(KERN_DEBUG "cciss_release %s\n",
-	       inode->i_bdev->bd_disk->disk_name);
+	printk(KERN_DEBUG "cciss_release %s\n", disk->disk_name);
 #endif				/* CCISS_DEBUG */
 
 	drv->usage_count--;
@@ -604,21 +595,23 @@ static int cciss_release(struct inode *inode, struct file *filep)
 
 #ifdef CONFIG_COMPAT
 
-static int do_ioctl(struct file *f, unsigned cmd, unsigned long arg)
+static int do_ioctl(struct block_device *bdev, fmode_t mode,
+		    unsigned cmd, unsigned long arg)
 {
 	int ret;
 	lock_kernel();
-	ret = cciss_ioctl(f->f_path.dentry->d_inode, f, cmd, arg);
+	ret = cciss_ioctl(bdev, mode, cmd, arg);
 	unlock_kernel();
 	return ret;
 }
 
-static int cciss_ioctl32_passthru(struct file *f, unsigned cmd,
-				  unsigned long arg);
-static int cciss_ioctl32_big_passthru(struct file *f, unsigned cmd,
-				      unsigned long arg);
+static int cciss_ioctl32_passthru(struct block_device *bdev, fmode_t mode,
+				  unsigned cmd, unsigned long arg);
+static int cciss_ioctl32_big_passthru(struct block_device *bdev, fmode_t mode,
+				      unsigned cmd, unsigned long arg);
 
-static long cciss_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
+static int cciss_compat_ioctl(struct block_device *bdev, fmode_t mode,
+			      unsigned cmd, unsigned long arg)
 {
 	switch (cmd) {
 	case CCISS_GETPCIINFO:
@@ -636,20 +629,20 @@ static long cciss_compat_ioctl(struct file *f, unsigned cmd, unsigned long arg)
 	case CCISS_REGNEWD:
 	case CCISS_RESCANDISK:
 	case CCISS_GETLUNINFO:
-		return do_ioctl(f, cmd, arg);
+		return do_ioctl(bdev, mode, cmd, arg);
 
 	case CCISS_PASSTHRU32:
-		return cciss_ioctl32_passthru(f, cmd, arg);
+		return cciss_ioctl32_passthru(bdev, mode, cmd, arg);
 	case CCISS_BIG_PASSTHRU32:
-		return cciss_ioctl32_big_passthru(f, cmd, arg);
+		return cciss_ioctl32_big_passthru(bdev, mode, cmd, arg);
 
 	default:
 		return -ENOIOCTLCMD;
 	}
 }
 
-static int cciss_ioctl32_passthru(struct file *f, unsigned cmd,
-				  unsigned long arg)
+static int cciss_ioctl32_passthru(struct block_device *bdev, fmode_t mode,
+				  unsigned cmd, unsigned long arg)
 {
 	IOCTL32_Command_struct __user *arg32 =
 	    (IOCTL32_Command_struct __user *) arg;
@@ -676,7 +669,7 @@ static int cciss_ioctl32_passthru(struct file *f, unsigned cmd,
 	if (err)
 		return -EFAULT;
 
-	err = do_ioctl(f, CCISS_PASSTHRU, (unsigned long)p);
+	err = do_ioctl(bdev, mode, CCISS_PASSTHRU, (unsigned long)p);
 	if (err)
 		return err;
 	err |=
@@ -687,8 +680,8 @@ static int cciss_ioctl32_passthru(struct file *f, unsigned cmd,
 	return err;
 }
 
-static int cciss_ioctl32_big_passthru(struct file *file, unsigned cmd,
-				      unsigned long arg)
+static int cciss_ioctl32_big_passthru(struct block_device *bdev, fmode_t mode,
+				      unsigned cmd, unsigned long arg)
 {
 	BIG_IOCTL32_Command_struct __user *arg32 =
 	    (BIG_IOCTL32_Command_struct __user *) arg;
@@ -717,7 +710,7 @@ static int cciss_ioctl32_big_passthru(struct file *file, unsigned cmd,
 	if (err)
 		return -EFAULT;
 
-	err = do_ioctl(file, CCISS_BIG_PASSTHRU, (unsigned long)p);
+	err = do_ioctl(bdev, mode, CCISS_BIG_PASSTHRU, (unsigned long)p);
 	if (err)
 		return err;
 	err |=
@@ -745,10 +738,9 @@ static int cciss_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 /*
  * ioctl
  */
-static int cciss_ioctl(struct inode *inode, struct file *filep,
+static int cciss_ioctl(struct block_device *bdev, fmode_t mode,
 		       unsigned int cmd, unsigned long arg)
 {
-	struct block_device *bdev = inode->i_bdev;
 	struct gendisk *disk = bdev->bd_disk;
 	ctlr_info_t *host = get_host(disk);
 	drive_info_struct *drv = get_drv(disk);
@@ -1232,7 +1224,7 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 	case SG_EMULATED_HOST:
 	case SG_IO:
 	case SCSI_IOCTL_SEND_COMMAND:
-		return scsi_cmd_ioctl(filep, disk->queue, disk, cmd, argp);
+		return scsi_cmd_ioctl(disk->queue, disk, mode, cmd, argp);
 
 	/* scsi_cmd_ioctl would normally handle these, below, but */
 	/* they aren't a good fit for cciss, as CD-ROMs are */
@@ -1365,6 +1357,7 @@ static void cciss_add_disk(ctlr_info_t *h, struct gendisk *disk,
 	disk->first_minor = drv_index << NWD_SHIFT;
 	disk->fops = &cciss_fops;
 	disk->private_data = &h->drv[drv_index];
+	disk->driverfs_dev = &h->pdev->dev;
 
 	/* Set up queue information */
 	blk_queue_bounce_limit(disk->queue, h->pdev->dma_mask);
@@ -1486,8 +1479,7 @@ static void cciss_update_drive_info(int ctlr, int drv_index, int first_time)
 		 * which keeps the interrupt handler from starting
 		 * the queue.
 		 */
-		ret = deregister_disk(h->gendisk[drv_index],
-				      &h->drv[drv_index], 0);
+		ret = deregister_disk(h, drv_index, 0);
 		h->drv[drv_index].busy_configuring = 0;
 	}
 
@@ -1687,6 +1679,11 @@ static int rebuild_lun_table(ctlr_info_t *h, int first_time)
 	for (i = 0; i <= h->highest_lun; i++) {
 		int j;
 		drv_found = 0;
+
+		/* skip holes in the array from already deleted drives */
+		if (h->drv[i].raid_level == -1)
+			continue;
+
 		for (j = 0; j < num_luns; j++) {
 			memcpy(&lunid, &ld_buff->LUN[j][0], 4);
 			lunid = le32_to_cpu(lunid);
@@ -1700,8 +1697,7 @@ static int rebuild_lun_table(ctlr_info_t *h, int first_time)
 			spin_lock_irqsave(CCISS_LOCK(h->ctlr), flags);
 			h->drv[i].busy_configuring = 1;
 			spin_unlock_irqrestore(CCISS_LOCK(h->ctlr), flags);
-			return_code = deregister_disk(h->gendisk[i],
-				&h->drv[i], 1);
+			return_code = deregister_disk(h, i, 1);
 			h->drv[i].busy_configuring = 0;
 		}
 	}
@@ -1771,14 +1767,18 @@ mem_msg:
  *             the highest_lun should be left unchanged and the LunID
  *             should not be cleared.
 */
-static int deregister_disk(struct gendisk *disk, drive_info_struct *drv,
+static int deregister_disk(ctlr_info_t *h, int drv_index,
 			   int clear_all)
 {
 	int i;
-	ctlr_info_t *h = get_host(disk);
+	struct gendisk *disk;
+	drive_info_struct *drv;
 
 	if (!capable(CAP_SYS_RAWIO))
 		return -EPERM;
+
+	drv = &h->drv[drv_index];
+	disk = h->gendisk[drv_index];
 
 	/* make sure logical volume is NOT is use */
 	if (clear_all || (h->gendisk[0] == disk)) {
@@ -2537,7 +2537,8 @@ static void start_io(ctlr_info_t *h)
 {
 	CommandList_struct *c;
 
-	while ((c = h->reqQ) != NULL) {
+	while (!hlist_empty(&h->reqQ)) {
+		c = hlist_entry(h->reqQ.first, CommandList_struct, list);
 		/* can't do anything if fifo is full */
 		if ((h->access.fifo_full(h))) {
 			printk(KERN_WARNING "cciss: fifo full\n");
@@ -2545,14 +2546,14 @@ static void start_io(ctlr_info_t *h)
 		}
 
 		/* Get the first entry from the Request Q */
-		removeQ(&(h->reqQ), c);
+		removeQ(c);
 		h->Qdepth--;
 
 		/* Tell the controller execute command */
 		h->access.submit_command(h, c);
 
 		/* Put job onto the completed Q */
-		addQ(&(h->cmpQ), c);
+		addQ(&h->cmpQ, c);
 	}
 }
 
@@ -2565,7 +2566,7 @@ static inline void resend_cciss_cmd(ctlr_info_t *h, CommandList_struct *c)
 	memset(c->err_info, 0, sizeof(ErrorInfo_struct));
 
 	/* add it to software queue and then send it to the controller */
-	addQ(&(h->reqQ), c);
+	addQ(&h->reqQ, c);
 	h->Qdepth++;
 	if (h->Qdepth > h->maxQsinceinit)
 		h->maxQsinceinit = h->Qdepth;
@@ -2841,7 +2842,7 @@ static void do_cciss_request(struct request_queue *q)
 		h->maxSG = seg;
 
 #ifdef CCISS_DEBUG
-	printk(KERN_DEBUG "cciss: Submitting %d sectors in %d segments\n",
+	printk(KERN_DEBUG "cciss: Submitting %lu sectors in %d segments\n",
 	       creq->nr_sectors, seg);
 #endif				/* CCISS_DEBUG */
 
@@ -2886,7 +2887,7 @@ static void do_cciss_request(struct request_queue *q)
 
 	spin_lock_irq(q->queue_lock);
 
-	addQ(&(h->reqQ), c);
+	addQ(&h->reqQ, c);
 	h->Qdepth++;
 	if (h->Qdepth > h->maxQsinceinit)
 		h->maxQsinceinit = h->Qdepth;
@@ -2974,16 +2975,12 @@ static irqreturn_t do_cciss_intr(int irq, void *dev_id)
 				a = c->busaddr;
 
 			} else {
+				struct hlist_node *tmp;
+
 				a &= ~3;
-				if ((c = h->cmpQ) == NULL) {
-					printk(KERN_WARNING
-					       "cciss: Completion of %08x ignored\n",
-					       a1);
-					continue;
-				}
-				while (c->busaddr != a) {
-					c = c->next;
-					if (c == h->cmpQ)
+				c = NULL;
+				hlist_for_each_entry(c, tmp, &h->cmpQ, list) {
+					if (c->busaddr == a)
 						break;
 				}
 			}
@@ -2991,8 +2988,8 @@ static irqreturn_t do_cciss_intr(int irq, void *dev_id)
 			 * If we've found the command, take it off the
 			 * completion Q and free it
 			 */
-			if (c->busaddr == a) {
-				removeQ(&h->cmpQ, c);
+			if (c && c->busaddr == a) {
+				removeQ(c);
 				if (c->cmd_type == CMD_RWREQ) {
 					complete_command(h, c, 0);
 				} else if (c->cmd_type == CMD_IOCTL_PEND) {
@@ -3191,7 +3188,7 @@ static int __devinit cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 
 	c->paddr = pci_resource_start(pdev, 0);	/* addressing mode bits already removed */
 #ifdef CCISS_DEBUG
-	printk("address 0 = %x\n", c->paddr);
+	printk("address 0 = %lx\n", c->paddr);
 #endif				/* CCISS_DEBUG */
 	c->vaddr = remap_pci_mem(c->paddr, 0x250);
 
@@ -3218,7 +3215,8 @@ static int __devinit cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 #endif				/* CCISS_DEBUG */
 	cfg_base_addr_index = find_PCI_BAR_index(pdev, cfg_base_addr);
 #ifdef CCISS_DEBUG
-	printk("cfg base address index = %x\n", cfg_base_addr_index);
+	printk("cfg base address index = %llx\n",
+		(unsigned long long)cfg_base_addr_index);
 #endif				/* CCISS_DEBUG */
 	if (cfg_base_addr_index == -1) {
 		printk(KERN_WARNING "cciss: Cannot find cfg_base_addr_index\n");
@@ -3228,7 +3226,7 @@ static int __devinit cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 
 	cfg_offset = readl(c->vaddr + SA5_CTMEM_OFFSET);
 #ifdef CCISS_DEBUG
-	printk("cfg offset = %x\n", cfg_offset);
+	printk("cfg offset = %llx\n", (unsigned long long)cfg_offset);
 #endif				/* CCISS_DEBUG */
 	c->cfgtable = remap_pci_mem(pci_resource_start(pdev,
 						       cfg_base_addr_index) +
@@ -3392,6 +3390,203 @@ static void free_hba(int i)
 	kfree(p);
 }
 
+/* Send a message CDB to the firmware. */
+static __devinit int cciss_message(struct pci_dev *pdev, unsigned char opcode, unsigned char type)
+{
+	typedef struct {
+		CommandListHeader_struct CommandHeader;
+		RequestBlock_struct Request;
+		ErrDescriptor_struct ErrorDescriptor;
+	} Command;
+	static const size_t cmd_sz = sizeof(Command) + sizeof(ErrorInfo_struct);
+	Command *cmd;
+	dma_addr_t paddr64;
+	uint32_t paddr32, tag;
+	void __iomem *vaddr;
+	int i, err;
+
+	vaddr = ioremap_nocache(pci_resource_start(pdev, 0), pci_resource_len(pdev, 0));
+	if (vaddr == NULL)
+		return -ENOMEM;
+
+	/* The Inbound Post Queue only accepts 32-bit physical addresses for the
+	   CCISS commands, so they must be allocated from the lower 4GiB of
+	   memory. */
+	err = pci_set_consistent_dma_mask(pdev, DMA_32BIT_MASK);
+	if (err) {
+		iounmap(vaddr);
+		return -ENOMEM;
+	}
+
+	cmd = pci_alloc_consistent(pdev, cmd_sz, &paddr64);
+	if (cmd == NULL) {
+		iounmap(vaddr);
+		return -ENOMEM;
+	}
+
+	/* This must fit, because of the 32-bit consistent DMA mask.  Also,
+	   although there's no guarantee, we assume that the address is at
+	   least 4-byte aligned (most likely, it's page-aligned). */
+	paddr32 = paddr64;
+
+	cmd->CommandHeader.ReplyQueue = 0;
+	cmd->CommandHeader.SGList = 0;
+	cmd->CommandHeader.SGTotal = 0;
+	cmd->CommandHeader.Tag.lower = paddr32;
+	cmd->CommandHeader.Tag.upper = 0;
+	memset(&cmd->CommandHeader.LUN.LunAddrBytes, 0, 8);
+
+	cmd->Request.CDBLen = 16;
+	cmd->Request.Type.Type = TYPE_MSG;
+	cmd->Request.Type.Attribute = ATTR_HEADOFQUEUE;
+	cmd->Request.Type.Direction = XFER_NONE;
+	cmd->Request.Timeout = 0; /* Don't time out */
+	cmd->Request.CDB[0] = opcode;
+	cmd->Request.CDB[1] = type;
+	memset(&cmd->Request.CDB[2], 0, 14); /* the rest of the CDB is reserved */
+
+	cmd->ErrorDescriptor.Addr.lower = paddr32 + sizeof(Command);
+	cmd->ErrorDescriptor.Addr.upper = 0;
+	cmd->ErrorDescriptor.Len = sizeof(ErrorInfo_struct);
+
+	writel(paddr32, vaddr + SA5_REQUEST_PORT_OFFSET);
+
+	for (i = 0; i < 10; i++) {
+		tag = readl(vaddr + SA5_REPLY_PORT_OFFSET);
+		if ((tag & ~3) == paddr32)
+			break;
+		schedule_timeout_uninterruptible(HZ);
+	}
+
+	iounmap(vaddr);
+
+	/* we leak the DMA buffer here ... no choice since the controller could
+	   still complete the command. */
+	if (i == 10) {
+		printk(KERN_ERR "cciss: controller message %02x:%02x timed out\n",
+			opcode, type);
+		return -ETIMEDOUT;
+	}
+
+	pci_free_consistent(pdev, cmd_sz, cmd, paddr64);
+
+	if (tag & 2) {
+		printk(KERN_ERR "cciss: controller message %02x:%02x failed\n",
+			opcode, type);
+		return -EIO;
+	}
+
+	printk(KERN_INFO "cciss: controller message %02x:%02x succeeded\n",
+		opcode, type);
+	return 0;
+}
+
+#define cciss_soft_reset_controller(p) cciss_message(p, 1, 0)
+#define cciss_noop(p) cciss_message(p, 3, 0)
+
+static __devinit int cciss_reset_msi(struct pci_dev *pdev)
+{
+/* the #defines are stolen from drivers/pci/msi.h. */
+#define msi_control_reg(base)		(base + PCI_MSI_FLAGS)
+#define PCI_MSIX_FLAGS_ENABLE		(1 << 15)
+
+	int pos;
+	u16 control = 0;
+
+	pos = pci_find_capability(pdev, PCI_CAP_ID_MSI);
+	if (pos) {
+		pci_read_config_word(pdev, msi_control_reg(pos), &control);
+		if (control & PCI_MSI_FLAGS_ENABLE) {
+			printk(KERN_INFO "cciss: resetting MSI\n");
+			pci_write_config_word(pdev, msi_control_reg(pos), control & ~PCI_MSI_FLAGS_ENABLE);
+		}
+	}
+
+	pos = pci_find_capability(pdev, PCI_CAP_ID_MSIX);
+	if (pos) {
+		pci_read_config_word(pdev, msi_control_reg(pos), &control);
+		if (control & PCI_MSIX_FLAGS_ENABLE) {
+			printk(KERN_INFO "cciss: resetting MSI-X\n");
+			pci_write_config_word(pdev, msi_control_reg(pos), control & ~PCI_MSIX_FLAGS_ENABLE);
+		}
+	}
+
+	return 0;
+}
+
+/* This does a hard reset of the controller using PCI power management
+ * states. */
+static __devinit int cciss_hard_reset_controller(struct pci_dev *pdev)
+{
+	u16 pmcsr, saved_config_space[32];
+	int i, pos;
+
+	printk(KERN_INFO "cciss: using PCI PM to reset controller\n");
+
+	/* This is very nearly the same thing as
+
+	   pci_save_state(pci_dev);
+	   pci_set_power_state(pci_dev, PCI_D3hot);
+	   pci_set_power_state(pci_dev, PCI_D0);
+	   pci_restore_state(pci_dev);
+
+	   but we can't use these nice canned kernel routines on
+	   kexec, because they also check the MSI/MSI-X state in PCI
+	   configuration space and do the wrong thing when it is
+	   set/cleared.  Also, the pci_save/restore_state functions
+	   violate the ordering requirements for restoring the
+	   configuration space from the CCISS document (see the
+	   comment below).  So we roll our own .... */
+
+	for (i = 0; i < 32; i++)
+		pci_read_config_word(pdev, 2*i, &saved_config_space[i]);
+
+	pos = pci_find_capability(pdev, PCI_CAP_ID_PM);
+	if (pos == 0) {
+		printk(KERN_ERR "cciss_reset_controller: PCI PM not supported\n");
+		return -ENODEV;
+	}
+
+	/* Quoting from the Open CISS Specification: "The Power
+	 * Management Control/Status Register (CSR) controls the power
+	 * state of the device.  The normal operating state is D0,
+	 * CSR=00h.  The software off state is D3, CSR=03h.  To reset
+	 * the controller, place the interface device in D3 then to
+	 * D0, this causes a secondary PCI reset which will reset the
+	 * controller." */
+
+	/* enter the D3hot power management state */
+	pci_read_config_word(pdev, pos + PCI_PM_CTRL, &pmcsr);
+	pmcsr &= ~PCI_PM_CTRL_STATE_MASK;
+	pmcsr |= PCI_D3hot;
+	pci_write_config_word(pdev, pos + PCI_PM_CTRL, pmcsr);
+
+	schedule_timeout_uninterruptible(HZ >> 1);
+
+	/* enter the D0 power management state */
+	pmcsr &= ~PCI_PM_CTRL_STATE_MASK;
+	pmcsr |= PCI_D0;
+	pci_write_config_word(pdev, pos + PCI_PM_CTRL, pmcsr);
+
+	schedule_timeout_uninterruptible(HZ >> 1);
+
+	/* Restore the PCI configuration space.  The Open CISS
+	 * Specification says, "Restore the PCI Configuration
+	 * Registers, offsets 00h through 60h. It is important to
+	 * restore the command register, 16-bits at offset 04h,
+	 * last. Do not restore the configuration status register,
+	 * 16-bits at offset 06h."  Note that the offset is 2*i. */
+	for (i = 0; i < 32; i++) {
+		if (i == 2 || i == 3)
+			continue;
+		pci_write_config_word(pdev, 2*i, saved_config_space[i]);
+	}
+	wmb();
+	pci_write_config_word(pdev, 4, saved_config_space[2]);
+
+	return 0;
+}
+
 /*
  *  This is it.  Find all the controllers and register them.  I really hate
  *  stealing all these major device numbers.
@@ -3403,13 +3598,36 @@ static int __devinit cciss_init_one(struct pci_dev *pdev,
 	int i;
 	int j = 0;
 	int rc;
-	int dac;
+	int dac, return_code;
+	InquiryData_struct *inq_buff = NULL;
+
+	if (reset_devices) {
+		/* Reset the controller with a PCI power-cycle */
+		if (cciss_hard_reset_controller(pdev) || cciss_reset_msi(pdev))
+			return -ENODEV;
+
+		/* Now try to get the controller to respond to a no-op. Some
+		   devices (notably the HP Smart Array 5i Controller) need
+		   up to 30 seconds to respond. */
+		for (i=0; i<30; i++) {
+			if (cciss_noop(pdev) == 0)
+				break;
+
+			schedule_timeout_uninterruptible(HZ);
+		}
+		if (i == 30) {
+			printk(KERN_ERR "cciss: controller seems dead\n");
+			return -EBUSY;
+		}
+	}
 
 	i = alloc_cciss_hba();
 	if (i < 0)
 		return -1;
 
 	hba[i]->busy_initializing = 1;
+	INIT_HLIST_HEAD(&hba[i]->cmpQ);
+	INIT_HLIST_HEAD(&hba[i]->reqQ);
 
 	if (cciss_pci_init(hba[i], pdev) != 0)
 		goto clean1;
@@ -3460,8 +3678,8 @@ static int __devinit cciss_init_one(struct pci_dev *pdev,
 	       hba[i]->intr[SIMPLE_MODE_INT], dac ? "" : " not");
 
 	hba[i]->cmd_pool_bits =
-	    kmalloc(((hba[i]->nr_cmds + BITS_PER_LONG -
-		      1) / BITS_PER_LONG) * sizeof(unsigned long), GFP_KERNEL);
+	    kmalloc(DIV_ROUND_UP(hba[i]->nr_cmds, BITS_PER_LONG)
+			* sizeof(unsigned long), GFP_KERNEL);
 	hba[i]->cmd_pool = (CommandList_struct *)
 	    pci_alloc_consistent(hba[i]->pdev,
 		    hba[i]->nr_cmds * sizeof(CommandList_struct),
@@ -3493,8 +3711,8 @@ static int __devinit cciss_init_one(struct pci_dev *pdev,
 	/* command and error info recs zeroed out before
 	   they are used */
 	memset(hba[i]->cmd_pool_bits, 0,
-	       ((hba[i]->nr_cmds + BITS_PER_LONG -
-		 1) / BITS_PER_LONG) * sizeof(unsigned long));
+	       DIV_ROUND_UP(hba[i]->nr_cmds, BITS_PER_LONG)
+			* sizeof(unsigned long));
 
 	hba[i]->num_luns = 0;
 	hba[i]->highest_lun = -1;
@@ -3509,6 +3727,25 @@ static int __devinit cciss_init_one(struct pci_dev *pdev,
 	/* Turn the interrupts on so we can service requests */
 	hba[i]->access.set_intr_mask(hba[i], CCISS_INTR_ON);
 
+	/* Get the firmware version */
+	inq_buff = kzalloc(sizeof(InquiryData_struct), GFP_KERNEL);
+	if (inq_buff == NULL) {
+		printk(KERN_ERR "cciss: out of memory\n");
+		goto clean4;
+	}
+
+	return_code = sendcmd_withirq(CISS_INQUIRY, i, inq_buff,
+		sizeof(InquiryData_struct), 0, 0 , 0, TYPE_CMD);
+	if (return_code == IO_OK) {
+		hba[i]->firm_ver[0] = inq_buff->data_byte[32];
+		hba[i]->firm_ver[1] = inq_buff->data_byte[33];
+		hba[i]->firm_ver[2] = inq_buff->data_byte[34];
+		hba[i]->firm_ver[3] = inq_buff->data_byte[35];
+	} else {	 /* send command failed */
+		printk(KERN_WARNING "cciss: unable to determine firmware"
+			" version of controller\n");
+	}
+
 	cciss_procinit(i);
 
 	hba[i]->cciss_max_sectors = 2048;
@@ -3519,6 +3756,7 @@ static int __devinit cciss_init_one(struct pci_dev *pdev,
 	return 1;
 
 clean4:
+	kfree(inq_buff);
 #ifdef CONFIG_CISS_SCSI_TAPE
 	kfree(hba[i]->scsi_rejects.complete);
 #endif
@@ -3697,15 +3935,17 @@ static void fail_all_cmds(unsigned long ctlr)
 	pci_disable_device(h->pdev);	/* Make sure it is really dead. */
 
 	/* move everything off the request queue onto the completed queue */
-	while ((c = h->reqQ) != NULL) {
-		removeQ(&(h->reqQ), c);
+	while (!hlist_empty(&h->reqQ)) {
+		c = hlist_entry(h->reqQ.first, CommandList_struct, list);
+		removeQ(c);
 		h->Qdepth--;
-		addQ(&(h->cmpQ), c);
+		addQ(&h->cmpQ, c);
 	}
 
 	/* Now, fail everything on the completed queue with a HW error */
-	while ((c = h->cmpQ) != NULL) {
-		removeQ(&h->cmpQ, c);
+	while (!hlist_empty(&h->cmpQ)) {
+		c = hlist_entry(h->cmpQ.first, CommandList_struct, list);
+		removeQ(c);
 		c->err_info->CommandStatus = CMD_HARDWARE_ERR;
 		if (c->cmd_type == CMD_RWREQ) {
 			complete_command(h, c, 0);

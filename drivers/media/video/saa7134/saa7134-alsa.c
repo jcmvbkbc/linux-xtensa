@@ -488,10 +488,12 @@ static int snd_card_saa7134_hw_params(struct snd_pcm_substream * substream,
 	period_size = params_period_bytes(hw_params);
 	periods = params_periods(hw_params);
 
-	snd_assert(period_size >= 0x100 && period_size <= 0x10000,
-		   return -EINVAL);
-	snd_assert(periods >= 4, return -EINVAL);
-	snd_assert(period_size * periods <= 1024 * 1024, return -EINVAL);
+	if (period_size < 0x100 || period_size > 0x10000)
+		return -EINVAL;
+	if (periods < 4)
+		return -EINVAL;
+	if (period_size * periods > 1024 * 1024)
+		return -EINVAL;
 
 	dev = saa7134->dev;
 
@@ -942,7 +944,8 @@ static int snd_card_saa7134_new_mixer(snd_card_saa7134_t * chip)
 	unsigned int idx;
 	int err;
 
-	snd_assert(chip != NULL, return -EINVAL);
+	if (snd_BUG_ON(!chip))
+		return -EINVAL;
 	strcpy(card->mixername, "SAA7134 Mixer");
 
 	for (idx = 0; idx < ARRAY_SIZE(snd_saa7134_controls); idx++) {
@@ -1086,7 +1089,11 @@ static int saa7134_alsa_init(void)
 
 	list_for_each(list,&saa7134_devlist) {
 		dev = list_entry(list, struct saa7134_dev, devlist);
-		alsa_device_init(dev);
+		if (dev->pci->device == PCI_DEVICE_ID_PHILIPS_SAA7130)
+			printk(KERN_INFO "%s/alsa: %s doesn't support digital audio\n",
+				dev->name, saa7134_boards[dev->board].name);
+		else
+			alsa_device_init(dev);
 	}
 
 	if (dev == NULL)

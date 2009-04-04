@@ -70,8 +70,12 @@ static void n810_ext_control(struct snd_soc_codec *codec)
 
 static int n810_startup(struct snd_pcm_substream *substream)
 {
+	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_codec *codec = rtd->socdev->codec;
+
+	snd_pcm_hw_constraint_minmax(runtime,
+				     SNDRV_PCM_HW_PARAM_CHANNELS, 2, 2);
 
 	n810_ext_control(codec);
 	return clk_enable(sys_clkout2);
@@ -247,9 +251,9 @@ static int n810_aic33_init(struct snd_soc_codec *codec)
 	int i, err;
 
 	/* Not connected */
-	snd_soc_dapm_disable_pin(codec, "MONO_LOUT");
-	snd_soc_dapm_disable_pin(codec, "HPLCOM");
-	snd_soc_dapm_disable_pin(codec, "HPRCOM");
+	snd_soc_dapm_nc_pin(codec, "MONO_LOUT");
+	snd_soc_dapm_nc_pin(codec, "HPLCOM");
+	snd_soc_dapm_nc_pin(codec, "HPRCOM");
 
 	/* Add N810 specific controls */
 	for (i = 0; i < ARRAY_SIZE(aic33_n810_controls); i++) {
@@ -282,14 +286,16 @@ static struct snd_soc_dai_link n810_dai = {
 };
 
 /* Audio machine driver */
-static struct snd_soc_machine snd_soc_machine_n810 = {
+static struct snd_soc_card snd_soc_n810 = {
 	.name = "N810",
+	.platform = &omap_soc_platform,
 	.dai_link = &n810_dai,
 	.num_links = 1,
 };
 
 /* Audio private data */
 static struct aic3x_setup_data n810_aic33_setup = {
+	.i2c_bus = 2,
 	.i2c_address = 0x18,
 	.gpio_func[0] = AIC3X_GPIO1_FUNC_DISABLED,
 	.gpio_func[1] = AIC3X_GPIO2_FUNC_DIGITAL_MIC_INPUT,
@@ -297,8 +303,7 @@ static struct aic3x_setup_data n810_aic33_setup = {
 
 /* Audio subsystem */
 static struct snd_soc_device n810_snd_devdata = {
-	.machine = &snd_soc_machine_n810,
-	.platform = &omap_soc_platform,
+	.card = &snd_soc_n810,
 	.codec_dev = &soc_codec_dev_aic3x,
 	.codec_data = &n810_aic33_setup,
 };
@@ -329,12 +334,14 @@ static int __init n810_soc_init(void)
 	sys_clkout2_src = clk_get(dev, "sys_clkout2_src");
 	if (IS_ERR(sys_clkout2_src)) {
 		dev_err(dev, "Could not get sys_clkout2_src clock\n");
-		return -ENODEV;
+		err = PTR_ERR(sys_clkout2_src);
+		goto err2;
 	}
 	sys_clkout2 = clk_get(dev, "sys_clkout2");
 	if (IS_ERR(sys_clkout2)) {
 		dev_err(dev, "Could not get sys_clkout2\n");
-		goto err1;
+		err = PTR_ERR(sys_clkout2);
+		goto err3;
 	}
 	/*
 	 * Configure 12 MHz output on SYS_CLKOUT2. Therefore we must use
@@ -343,7 +350,8 @@ static int __init n810_soc_init(void)
 	func96m_clk = clk_get(dev, "func_96m_ck");
 	if (IS_ERR(func96m_clk)) {
 		dev_err(dev, "Could not get func 96M clock\n");
-		goto err2;
+		err = PTR_ERR(func96m_clk);
+		goto err4;
 	}
 	clk_set_parent(sys_clkout2_src, func96m_clk);
 	clk_set_rate(sys_clkout2, 12000000);
@@ -356,20 +364,25 @@ static int __init n810_soc_init(void)
 	gpio_direction_output(N810_SPEAKER_AMP_GPIO, 0);
 
 	return 0;
-err2:
+err4:
 	clk_put(sys_clkout2);
+err3:
+	clk_put(sys_clkout2_src);
+err2:
 	platform_device_del(n810_snd_device);
 err1:
 	platform_device_put(n810_snd_device);
 
 	return err;
-
 }
 
 static void __exit n810_soc_exit(void)
 {
 	gpio_free(N810_SPEAKER_AMP_GPIO);
 	gpio_free(N810_HEADSET_AMP_GPIO);
+	clk_put(sys_clkout2_src);
+	clk_put(sys_clkout2);
+	clk_put(func96m_clk);
 
 	platform_device_unregister(n810_snd_device);
 }

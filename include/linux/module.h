@@ -16,6 +16,7 @@
 #include <linux/kobject.h>
 #include <linux/moduleparam.h>
 #include <linux/marker.h>
+#include <linux/tracepoint.h>
 #include <asm/local.h>
 
 #include <asm/module.h>
@@ -28,7 +29,7 @@
 #define MODULE_SYMBOL_PREFIX ""
 #endif
 
-#define MODULE_NAME_LEN (64 - sizeof(unsigned long))
+#define MODULE_NAME_LEN MAX_PARAM_PREFIX_LEN
 
 struct kernel_symbol
 {
@@ -59,6 +60,7 @@ struct module_kobject
 	struct kobject kobj;
 	struct module *mod;
 	struct kobject *drivers_dir;
+	struct module_param_attrs *mp;
 };
 
 /* These are either module local, or the kernel's dummy ones. */
@@ -217,11 +219,6 @@ void *__symbol_get_gpl(const char *symbol);
 
 #endif
 
-struct module_ref
-{
-	local_t count;
-} ____cacheline_aligned;
-
 enum module_state
 {
 	MODULE_STATE_LIVE,
@@ -241,7 +238,6 @@ struct module
 
 	/* Sysfs stuff. */
 	struct module_kobject mkobj;
-	struct module_param_attrs *param_attrs;
 	struct module_attribute *modinfo_attrs;
 	const char *version;
 	const char *srcversion;
@@ -276,7 +272,7 @@ struct module
 
 	/* Exception table */
 	unsigned int num_exentries;
-	const struct exception_table_entry *extable;
+	struct exception_table_entry *extable;
 
 	/* Startup function. */
 	int (*init)(void);
@@ -292,9 +288,6 @@ struct module
 
 	/* The size of the executable code in each section.  */
 	unsigned int init_text_size, core_text_size;
-
-	/* The handle returned from unwind_add_table. */
-	void *unwind_info;
 
 	/* Arch-specific module values */
 	struct mod_arch_specific arch;
@@ -331,6 +324,10 @@ struct module
 	struct marker *markers;
 	unsigned int num_markers;
 #endif
+#ifdef CONFIG_TRACEPOINTS
+	struct tracepoint *tracepoints;
+	unsigned int num_tracepoints;
+#endif
 
 #ifdef CONFIG_MODULE_UNLOAD
 	/* What modules depend on me? */
@@ -342,10 +339,12 @@ struct module
 	/* Destruction function. */
 	void (*exit)(void);
 
-	/* Reference counts */
-	struct module_ref ref[NR_CPUS];
+#ifdef CONFIG_SMP
+	char *refptr;
+#else
+	local_t ref;
 #endif
-
+#endif
 };
 #ifndef MODULE_ARCH_INIT
 #define MODULE_ARCH_INIT {}
@@ -363,6 +362,18 @@ static inline int module_is_live(struct module *mod)
 struct module *module_text_address(unsigned long addr);
 struct module *__module_text_address(unsigned long addr);
 int is_module_address(unsigned long addr);
+
+static inline int within_module_core(unsigned long addr, struct module *mod)
+{
+	return (unsigned long)mod->module_core <= addr &&
+	       addr < (unsigned long)mod->module_core + mod->core_size;
+}
+
+static inline int within_module_init(unsigned long addr, struct module *mod)
+{
+	return (unsigned long)mod->module_init <= addr &&
+	       addr < (unsigned long)mod->module_init + mod->init_size;
+}
 
 /* Returns 0 and fills in value, defined and namebuf, or -ERANGE if
    symnum out of range. */
@@ -382,13 +393,21 @@ void __symbol_put(const char *symbol);
 #define symbol_put(x) __symbol_put(MODULE_SYMBOL_PREFIX #x)
 void symbol_put_addr(void *addr);
 
+static inline local_t *__module_ref_addr(struct module *mod, int cpu)
+{
+#ifdef CONFIG_SMP
+	return (local_t *) (mod->refptr + per_cpu_offset(cpu));
+#else
+	return &mod->ref;
+#endif
+}
+
 /* Sometimes we know we already have a refcount, and it's easier not
    to handle the error case (which only happens with rmmod --wait). */
 static inline void __module_get(struct module *module)
 {
 	if (module) {
-		BUG_ON(module_refcount(module) == 0);
-		local_inc(&module->ref[get_cpu()].count);
+		local_inc(__module_ref_addr(module, get_cpu()));
 		put_cpu();
 	}
 }
@@ -400,7 +419,7 @@ static inline int try_module_get(struct module *module)
 	if (module) {
 		unsigned int cpu = get_cpu();
 		if (likely(module_is_live(module)))
-			local_inc(&module->ref[cpu].count);
+			local_inc(__module_ref_addr(module, cpu));
 		else
 			ret = 0;
 		put_cpu();
@@ -453,6 +472,9 @@ int unregister_module_notifier(struct notifier_block * nb);
 extern void print_modules(void);
 
 extern void module_update_markers(void);
+
+extern void module_update_tracepoints(void);
+extern int module_get_iter_tracepoints(struct tracepoint_iter *iter);
 
 #else /* !CONFIG_MODULES... */
 #define EXPORT_SYMBOL(sym)
@@ -556,6 +578,15 @@ static inline void print_modules(void)
 
 static inline void module_update_markers(void)
 {
+}
+
+static inline void module_update_tracepoints(void)
+{
+}
+
+static inline int module_get_iter_tracepoints(struct tracepoint_iter *iter)
+{
+	return 0;
 }
 
 #endif /* CONFIG_MODULES */

@@ -93,11 +93,13 @@
 #include <asm/desc.h>
 #include <asm/dma.h>
 #include <asm/iommu.h>
+#include <asm/gart.h>
 #include <asm/mmu_context.h>
 #include <asm/proto.h>
 
 #include <mach_apic.h>
 #include <asm/paravirt.h>
+#include <asm/hypervisor.h>
 
 #include <asm/percpu.h>
 #include <asm/topology.h>
@@ -223,6 +225,9 @@ unsigned long saved_video_mode;
 #define RAMDISK_LOAD_FLAG		0x4000
 
 static char __initdata command_line[COMMAND_LINE_SIZE];
+#ifdef CONFIG_CMDLINE_BOOL
+static char __initdata builtin_cmdline[COMMAND_LINE_SIZE] = CONFIG_CMDLINE;
+#endif
 
 #if defined(CONFIG_EDD) || defined(CONFIG_EDD_MODULE)
 struct edd edd;
@@ -299,7 +304,7 @@ static void __init relocate_initrd(void)
 		if (clen > MAX_MAP_CHUNK-slop)
 			clen = MAX_MAP_CHUNK-slop;
 		mapaddr = ramdisk_image & PAGE_MASK;
-		p = early_ioremap(mapaddr, clen+slop);
+		p = early_memremap(mapaddr, clen+slop);
 		memcpy(q, p+slop, clen);
 		early_iounmap(p, clen+slop);
 		q += clen;
@@ -376,7 +381,7 @@ static void __init parse_setup_data(void)
 		return;
 	pa_data = boot_params.hdr.setup_data;
 	while (pa_data) {
-		data = early_ioremap(pa_data, PAGE_SIZE);
+		data = early_memremap(pa_data, PAGE_SIZE);
 		switch (data->type) {
 		case SETUP_E820_EXT:
 			parse_e820_ext(data, pa_data);
@@ -399,7 +404,7 @@ static void __init e820_reserve_setup_data(void)
 		return;
 	pa_data = boot_params.hdr.setup_data;
 	while (pa_data) {
-		data = early_ioremap(pa_data, sizeof(*data));
+		data = early_memremap(pa_data, sizeof(*data));
 		e820_update_range(pa_data, sizeof(*data)+data->len,
 			 E820_RAM, E820_RESERVED_KERN);
 		found = 1;
@@ -425,7 +430,7 @@ static void __init reserve_early_setup_data(void)
 		return;
 	pa_data = boot_params.hdr.setup_data;
 	while (pa_data) {
-		data = early_ioremap(pa_data, sizeof(*data));
+		data = early_memremap(pa_data, sizeof(*data));
 		sprintf(buf, "setup data %x", data->type);
 		reserve_early(pa_data, pa_data+sizeof(*data)+data->len, buf);
 		pa_data = data->next;
@@ -445,6 +450,7 @@ static void __init reserve_early_setup_data(void)
  * @size: Size of the crashkernel memory to reserve.
  * Returns the base address on success, and -1ULL on failure.
  */
+static
 unsigned long long __init find_and_reserve_crashkernel(unsigned long long size)
 {
 	const unsigned long long alignment = 16<<20; 	/* 16M */
@@ -558,7 +564,13 @@ static void __init reserve_standard_io_resources(void)
 
 }
 
-#ifdef CONFIG_PROC_VMCORE
+/*
+ * Note: elfcorehdr_addr is not just limited to vmcore. It is also used by
+ * is_kdump_kernel() to determine if we are booting after a panic. Hence
+ * ifdef it under CONFIG_CRASH_DUMP and not CONFIG_PROC_VMCORE.
+ */
+
+#ifdef CONFIG_CRASH_DUMP
 /* elfcorehdr= specifies the location of elf core header
  * stored by the crashed kernel. This option will be passed
  * by kexec loader to the capture kernel.
@@ -574,9 +586,57 @@ static int __init setup_elfcorehdr(char *arg)
 early_param("elfcorehdr", setup_elfcorehdr);
 #endif
 
-static struct x86_quirks default_x86_quirks __initdata;
+static int __init default_update_genapic(void)
+{
+#ifdef CONFIG_X86_SMP
+# if defined(CONFIG_X86_GENERICARCH) || defined(CONFIG_X86_64)
+	genapic->wakeup_cpu = wakeup_secondary_cpu_via_init;
+# endif
+#endif
+
+	return 0;
+}
+
+static struct x86_quirks default_x86_quirks __initdata = {
+	.update_genapic         = default_update_genapic,
+};
 
 struct x86_quirks *x86_quirks __initdata = &default_x86_quirks;
+
+#ifdef CONFIG_X86_RESERVE_LOW_64K
+static int __init dmi_low_memory_corruption(const struct dmi_system_id *d)
+{
+	printk(KERN_NOTICE
+		"%s detected: BIOS may corrupt low RAM, working around it.\n",
+		d->ident);
+
+	e820_update_range(0, 0x10000, E820_RAM, E820_RESERVED);
+	sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &e820.nr_map);
+
+	return 0;
+}
+#endif
+
+/* List of systems that have known low memory corruption BIOS problems */
+static struct dmi_system_id __initdata bad_bios_dmi_table[] = {
+#ifdef CONFIG_X86_RESERVE_LOW_64K
+	{
+		.callback = dmi_low_memory_corruption,
+		.ident = "AMI BIOS",
+		.matches = {
+			DMI_MATCH(DMI_BIOS_VENDOR, "American Megatrends Inc."),
+		},
+	},
+	{
+		.callback = dmi_low_memory_corruption,
+		.ident = "Phoenix BIOS",
+		.matches = {
+			DMI_MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies"),
+		},
+	},
+#endif
+	{}
+};
 
 /*
  * Determine if we were loaded by an EFI loader.  If so, then we have also been
@@ -601,16 +661,11 @@ void __init setup_arch(char **cmdline_p)
 	printk(KERN_INFO "Command line: %s\n", boot_command_line);
 #endif
 
+	/* VMI may relocate the fixmap; do this before touching ioremap area */
+	vmi_init();
+
 	early_cpu_init();
 	early_ioremap_init();
-
-#if defined(CONFIG_VMI) && defined(CONFIG_X86_32)
-	/*
-	 * Must be before kernel pagetables are setup
-	 * or fixmap area is touched.
-	 */
-	vmi_init();
-#endif
 
 	ROOT_DEV = old_decode_dev(boot_params.hdr.root_dev);
 	screen_info = boot_params.screen_info;
@@ -673,10 +728,30 @@ void __init setup_arch(char **cmdline_p)
 	bss_resource.start = virt_to_phys(&__bss_start);
 	bss_resource.end = virt_to_phys(&__bss_stop)-1;
 
+#ifdef CONFIG_CMDLINE_BOOL
+#ifdef CONFIG_CMDLINE_OVERRIDE
+	strlcpy(boot_command_line, builtin_cmdline, COMMAND_LINE_SIZE);
+#else
+	if (builtin_cmdline[0]) {
+		/* append boot loader cmdline to builtin */
+		strlcat(builtin_cmdline, " ", COMMAND_LINE_SIZE);
+		strlcat(builtin_cmdline, boot_command_line, COMMAND_LINE_SIZE);
+		strlcpy(boot_command_line, builtin_cmdline, COMMAND_LINE_SIZE);
+	}
+#endif
+#endif
+
 	strlcpy(command_line, boot_command_line, COMMAND_LINE_SIZE);
 	*cmdline_p = command_line;
 
 	parse_early_param();
+
+#ifdef CONFIG_X86_64
+	check_efer();
+#endif
+
+	/* Must be before kernel pagetables are setup */
+	vmi_activate();
 
 	/* after early param, so could get panic from serial */
 	reserve_early_setup_data();
@@ -695,6 +770,19 @@ void __init setup_arch(char **cmdline_p)
 
 	finish_e820_parsing();
 
+	if (efi_enabled)
+		efi_init();
+
+	dmi_scan_machine();
+
+	dmi_check_system(bad_bios_dmi_table);
+
+	/*
+	 * VMware detection requires dmi to be available, so this
+	 * needs to be done after dmi_scan_machine, for the BP.
+	 */
+	init_hypervisor(&boot_cpu_data);
+
 #ifdef CONFIG_X86_32
 	probe_roms();
 #endif
@@ -704,8 +792,6 @@ void __init setup_arch(char **cmdline_p)
 	insert_resource(&iomem_resource, &data_resource);
 	insert_resource(&iomem_resource, &bss_resource);
 
-	if (efi_enabled)
-		efi_init();
 
 #ifdef CONFIG_X86_32
 	if (ppro_with_ram_bug()) {
@@ -738,7 +824,8 @@ void __init setup_arch(char **cmdline_p)
 #else
 	num_physpages = max_pfn;
 
-	check_efer();
+ 	if (cpu_has_x2apic)
+ 		check_x2apic();
 
 	/* How many end-of-memory variables you have, grandma! */
 	/* need this before calling reserve_initrd */
@@ -748,6 +835,10 @@ void __init setup_arch(char **cmdline_p)
 		max_low_pfn = max_pfn;
 
 	high_memory = (void *)__va(max_pfn * PAGE_SIZE - 1) + 1;
+#endif
+
+#ifdef CONFIG_X86_CHECK_BIOS_CORRUPTION
+	setup_bios_corruption_check();
 #endif
 
 	/* max_pfn_mapped is updated here */
@@ -778,14 +869,14 @@ void __init setup_arch(char **cmdline_p)
 	vsmp_init();
 #endif
 
-	dmi_scan_machine();
-
 	io_delay_init();
 
 	/*
 	 * Parse the ACPI tables for possible boot-time SMP configuration.
 	 */
 	acpi_boot_table_init();
+
+	early_acpi_boot_init();
 
 #ifdef CONFIG_ACPI_NUMA
 	/*
@@ -854,12 +945,16 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	prefill_possible_map();
+
 #ifdef CONFIG_X86_64
 	init_cpu_to_node();
 #endif
 
 	init_apic_mappings();
 	ioapic_init_mappings();
+
+	/* need to wait for io_apic is mapped */
+	probe_nr_irqs_gsi();
 
 	kvm_guest_init();
 
@@ -882,3 +977,5 @@ void __init setup_arch(char **cmdline_p)
 #endif
 #endif
 }
+
+

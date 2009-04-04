@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2007 Chelsio, Inc. All rights reserved.
+ * Copyright (c) 2005-2008 Chelsio, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -36,6 +36,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/dma-mapping.h>
+#include <net/arp.h>
 #include "common.h"
 #include "regs.h"
 #include "sge_defs.h"
@@ -351,7 +352,8 @@ static void free_rx_bufs(struct pci_dev *pdev, struct sge_fl *q)
 		pci_unmap_single(pdev, pci_unmap_addr(d, dma_addr),
 				 q->buf_size, PCI_DMA_FROMDEVICE);
 		if (q->use_pages) {
-			put_page(d->pg_chunk.page);
+			if (d->pg_chunk.page)
+				put_page(d->pg_chunk.page);
 			d->pg_chunk.page = NULL;
 		} else {
 			kfree_skb(d->skb);
@@ -548,16 +550,15 @@ static void *alloc_ring(struct pci_dev *pdev, size_t nelem, size_t elem_size,
 
 	if (!p)
 		return NULL;
-	if (sw_size) {
+	if (sw_size && metadata) {
 		s = kcalloc(nelem, sw_size, GFP_KERNEL);
 
 		if (!s) {
 			dma_free_coherent(&pdev->dev, len, p, *phys);
 			return NULL;
 		}
-	}
-	if (metadata)
 		*(void **)metadata = s;
+	}
 	memset(p, 0, len);
 	return p;
 }
@@ -583,7 +584,7 @@ static void t3_reset_qset(struct sge_qset *q)
 	memset(q->fl, 0, sizeof(struct sge_fl) * SGE_RXQ_PER_SET);
 	memset(q->txq, 0, sizeof(struct sge_txq) * SGE_TXQ_PER_SET);
 	q->txq_stopped = 0;
-	memset(&q->tx_reclaim_timer, 0, sizeof(q->tx_reclaim_timer));
+	q->tx_reclaim_timer.function = NULL; /* for t3_stop_sge_timers() */
 	kfree(q->lro_frag_tbl);
 	q->lro_nfrags = q->lro_frag_len = 0;
 }
@@ -602,9 +603,6 @@ static void t3_free_qset(struct adapter *adapter, struct sge_qset *q)
 {
 	int i;
 	struct pci_dev *pdev = adapter->pdev;
-
-	if (q->tx_reclaim_timer.function)
-		del_timer_sync(&q->tx_reclaim_timer);
 
 	for (i = 0; i < SGE_RXQ_PER_SET; ++i)
 		if (q->fl[i].desc) {
@@ -1123,10 +1121,10 @@ static void write_tx_pkt_wr(struct adapter *adap, struct sk_buff *skb,
 			 htonl(V_WR_TID(q->token)));
 }
 
-static inline void t3_stop_queue(struct net_device *dev, struct sge_qset *qs,
-				 struct sge_txq *q)
+static inline void t3_stop_tx_queue(struct netdev_queue *txq,
+				    struct sge_qset *qs, struct sge_txq *q)
 {
-	netif_stop_queue(dev);
+	netif_tx_stop_queue(txq);
 	set_bit(TXQ_ETH, &qs->txq_stopped);
 	q->stops++;
 }
@@ -1140,11 +1138,13 @@ static inline void t3_stop_queue(struct net_device *dev, struct sge_qset *qs,
  */
 int t3_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 {
+	int qidx;
 	unsigned int ndesc, pidx, credits, gen, compl;
 	const struct port_info *pi = netdev_priv(dev);
 	struct adapter *adap = pi->adapter;
-	struct sge_qset *qs = pi->qs;
-	struct sge_txq *q = &qs->txq[TXQ_ETH];
+	struct netdev_queue *txq;
+	struct sge_qset *qs;
+	struct sge_txq *q;
 
 	/*
 	 * The chip min packet length is 9 octets but play safe and reject
@@ -1155,6 +1155,11 @@ int t3_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_OK;
 	}
 
+	qidx = skb_get_queue_mapping(skb);
+	qs = &pi->qs[qidx];
+	q = &qs->txq[TXQ_ETH];
+	txq = netdev_get_tx_queue(dev, qidx);
+
 	spin_lock(&q->lock);
 	reclaim_completed_tx(adap, q);
 
@@ -1162,7 +1167,7 @@ int t3_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 	ndesc = calc_tx_descs(skb);
 
 	if (unlikely(credits < ndesc)) {
-		t3_stop_queue(dev, qs, q);
+		t3_stop_tx_queue(txq, qs, q);
 		dev_err(&adap->pdev->dev,
 			"%s: Tx ring %u full while queue awake!\n",
 			dev->name, q->cntxt_id & 7);
@@ -1172,12 +1177,12 @@ int t3_eth_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	q->in_use += ndesc;
 	if (unlikely(credits - ndesc < q->stop_thres)) {
-		t3_stop_queue(dev, qs, q);
+		t3_stop_tx_queue(txq, qs, q);
 
 		if (should_restart_tx(q) &&
 		    test_and_clear_bit(TXQ_ETH, &qs->txq_stopped)) {
 			q->restarts++;
-			netif_wake_queue(dev);
+			netif_tx_wake_queue(txq);
 		}
 	}
 
@@ -1704,16 +1709,15 @@ int t3_offload_tx(struct t3cdev *tdev, struct sk_buff *skb)
  */
 static inline void offload_enqueue(struct sge_rspq *q, struct sk_buff *skb)
 {
-	skb->next = skb->prev = NULL;
-	if (q->rx_tail)
-		q->rx_tail->next = skb;
-	else {
+	int was_empty = skb_queue_empty(&q->rx_queue);
+
+	__skb_queue_tail(&q->rx_queue, skb);
+
+	if (was_empty) {
 		struct sge_qset *qs = rspq_to_qset(q);
 
 		napi_schedule(&qs->napi);
-		q->rx_head = skb;
 	}
-	q->rx_tail = skb;
 }
 
 /**
@@ -1754,26 +1758,29 @@ static int ofld_poll(struct napi_struct *napi, int budget)
 	int work_done = 0;
 
 	while (work_done < budget) {
-		struct sk_buff *head, *tail, *skbs[RX_BUNDLE_SIZE];
+		struct sk_buff *skb, *tmp, *skbs[RX_BUNDLE_SIZE];
+		struct sk_buff_head queue;
 		int ngathered;
 
 		spin_lock_irq(&q->lock);
-		head = q->rx_head;
-		if (!head) {
+		__skb_queue_head_init(&queue);
+		skb_queue_splice_init(&q->rx_queue, &queue);
+		if (skb_queue_empty(&queue)) {
 			napi_complete(napi);
 			spin_unlock_irq(&q->lock);
 			return work_done;
 		}
-
-		tail = q->rx_tail;
-		q->rx_head = q->rx_tail = NULL;
 		spin_unlock_irq(&q->lock);
 
-		for (ngathered = 0; work_done < budget && head; work_done++) {
-			prefetch(head->data);
-			skbs[ngathered] = head;
-			head = head->next;
-			skbs[ngathered]->next = NULL;
+		ngathered = 0;
+		skb_queue_walk_safe(&queue, skb, tmp) {
+			if (work_done >= budget)
+				break;
+			work_done++;
+
+			__skb_unlink(skb, &queue);
+			prefetch(skb->data);
+			skbs[ngathered] = skb;
 			if (++ngathered == RX_BUNDLE_SIZE) {
 				q->offload_bundles++;
 				adapter->tdev.recv(&adapter->tdev, skbs,
@@ -1781,12 +1788,10 @@ static int ofld_poll(struct napi_struct *napi, int budget)
 				ngathered = 0;
 			}
 		}
-		if (head) {	/* splice remaining packets back onto Rx queue */
+		if (!skb_queue_empty(&queue)) {
+			/* splice remaining packets back onto Rx queue */
 			spin_lock_irq(&q->lock);
-			tail->next = q->rx_head;
-			if (!q->rx_head)
-				q->rx_tail = tail;
-			q->rx_head = head;
+			skb_queue_splice(&queue, &q->rx_queue);
 			spin_unlock_irq(&q->lock);
 		}
 		deliver_partial_bundle(&adapter->tdev, q, skbs, ngathered);
@@ -1841,7 +1846,7 @@ static void restart_tx(struct sge_qset *qs)
 	    test_and_clear_bit(TXQ_ETH, &qs->txq_stopped)) {
 		qs->txq[TXQ_ETH].restarts++;
 		if (netif_running(qs->netdev))
-			netif_wake_queue(qs->netdev);
+			netif_tx_wake_queue(qs->tx_q);
 	}
 
 	if (test_bit(TXQ_OFLD, &qs->txq_stopped) &&
@@ -1856,6 +1861,54 @@ static void restart_tx(struct sge_qset *qs)
 		qs->txq[TXQ_CTRL].restarts++;
 		tasklet_schedule(&qs->txq[TXQ_CTRL].qresume_tsk);
 	}
+}
+
+/**
+ *	cxgb3_arp_process - process an ARP request probing a private IP address
+ *	@adapter: the adapter
+ *	@skb: the skbuff containing the ARP request
+ *
+ *	Check if the ARP request is probing the private IP address
+ *	dedicated to iSCSI, generate an ARP reply if so.
+ */
+static void cxgb3_arp_process(struct adapter *adapter, struct sk_buff *skb)
+{
+	struct net_device *dev = skb->dev;
+	struct port_info *pi;
+	struct arphdr *arp;
+	unsigned char *arp_ptr;
+	unsigned char *sha;
+	__be32 sip, tip;
+
+	if (!dev)
+		return;
+
+	skb_reset_network_header(skb);
+	arp = arp_hdr(skb);
+
+	if (arp->ar_op != htons(ARPOP_REQUEST))
+		return;
+
+	arp_ptr = (unsigned char *)(arp + 1);
+	sha = arp_ptr;
+	arp_ptr += dev->addr_len;
+	memcpy(&sip, arp_ptr, sizeof(sip));
+	arp_ptr += sizeof(sip);
+	arp_ptr += dev->addr_len;
+	memcpy(&tip, arp_ptr, sizeof(tip));
+
+	pi = netdev_priv(dev);
+	if (tip != pi->iscsi_ipv4addr)
+		return;
+
+	arp_send(ARPOP_REPLY, ETH_P_ARP, sip, dev, tip, sha,
+		 dev->dev_addr, sha);
+
+}
+
+static inline int is_arp(struct sk_buff *skb)
+{
+	return skb->protocol == htons(ETH_P_ARP);
 }
 
 /**
@@ -1878,11 +1931,10 @@ static void rx_eth(struct adapter *adap, struct sge_rspq *rq,
 
 	skb_pull(skb, sizeof(*p) + pad);
 	skb->protocol = eth_type_trans(skb, adap->port[p->iff]);
-	skb->dev->last_rx = jiffies;
 	pi = netdev_priv(skb->dev);
-	if (pi->rx_csum_offload && p->csum_valid && p->csum == htons(0xffff) &&
+	if ((pi->rx_offload & T3_RX_CSUM) && p->csum_valid && p->csum == htons(0xffff) &&
 	    !p->fragment) {
-		rspq_to_qset(rq)->port_stats[SGE_PSTAT_RX_CSUM_GOOD]++;
+		qs->port_stats[SGE_PSTAT_RX_CSUM_GOOD]++;
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 	} else
 		skb->ip_summed = CHECKSUM_NONE;
@@ -1897,16 +1949,28 @@ static void rx_eth(struct adapter *adap, struct sge_rspq *rq,
 							     grp,
 							     ntohs(p->vlan),
 							     p);
-			else
+			else {
+				if (unlikely(pi->iscsi_ipv4addr &&
+				    is_arp(skb))) {
+					unsigned short vtag = ntohs(p->vlan) &
+								VLAN_VID_MASK;
+					skb->dev = vlan_group_get_device(grp,
+									 vtag);
+					cxgb3_arp_process(adap, skb);
+				}
 				__vlan_hwaccel_rx(skb, grp, ntohs(p->vlan),
 					  	  rq->polling);
+			}
 		else
 			dev_kfree_skb_any(skb);
 	} else if (rq->polling) {
 		if (lro)
 			lro_receive_skb(&qs->lro_mgr, skb, p);
-		else
+		else {
+			if (unlikely(pi->iscsi_ipv4addr && is_arp(skb)))
+				cxgb3_arp_process(adap, skb);
 			netif_receive_skb(skb);
+		}
 	} else
 		netif_rx(skb);
 }
@@ -1937,38 +2001,6 @@ static inline int lro_frame_ok(const struct cpl_rx_pkt *p)
 		eh->h_proto == htons(ETH_P_IP) && ih->ihl == (sizeof(*ih) >> 2);
 }
 
-#define TCP_FLAG_MASK (TCP_FLAG_CWR | TCP_FLAG_ECE | TCP_FLAG_URG |\
-                       TCP_FLAG_ACK | TCP_FLAG_PSH | TCP_FLAG_RST |\
-		                       TCP_FLAG_SYN | TCP_FLAG_FIN)
-#define TSTAMP_WORD ((TCPOPT_NOP << 24) | (TCPOPT_NOP << 16) |\
-                     (TCPOPT_TIMESTAMP << 8) | TCPOLEN_TIMESTAMP)
-
-/**
- *	lro_segment_ok - check if a TCP segment is eligible for LRO
- *	@tcph: the TCP header of the packet
- *
- *	Returns true if a TCP packet is eligible for LRO.  This requires that
- *	the packet have only the ACK flag set and no TCP options besides
- *	time stamps.
- */
-static inline int lro_segment_ok(const struct tcphdr *tcph)
-{
-	int optlen;
-
-	if (unlikely((tcp_flag_word(tcph) & TCP_FLAG_MASK) != TCP_FLAG_ACK))
-		return 0;
-
-	optlen = (tcph->doff << 2) - sizeof(*tcph);
-	if (optlen) {
-		const u32 *opt = (const u32 *)(tcph + 1);
-
-		if (optlen != TCPOLEN_TSTAMP_ALIGNED ||
-		    *opt != htonl(TSTAMP_WORD) || !opt[2])
-			return 0;
-	}
-	return 1;
-}
-
 static int t3_get_lro_header(void **eh,  void **iph, void **tcph,
 			     u64 *hdr_flags, void *priv)
 {
@@ -1980,9 +2012,6 @@ static int t3_get_lro_header(void **eh,  void **iph, void **tcph,
 	*eh = (struct ethhdr *)(cpl + 1);
 	*iph = (struct iphdr *)((struct ethhdr *)*eh + 1);
 	*tcph = (struct tcphdr *)((struct iphdr *)*iph + 1);
-
-	 if (!lro_segment_ok(*tcph))
-		return -1;
 
 	*hdr_flags = LRO_IPV4 | LRO_TCP;
 	return 0;
@@ -2075,6 +2104,7 @@ static void init_lro_mgr(struct sge_qset *qs, struct net_lro_mgr *lro_mgr)
 {
 	lro_mgr->dev = qs->netdev;
 	lro_mgr->features = LRO_F_NAPI;
+	lro_mgr->frag_align_pad = NET_IP_ALIGN;
 	lro_mgr->ip_summed = CHECKSUM_UNNECESSARY;
 	lro_mgr->ip_summed_aggr = CHECKSUM_UNNECESSARY;
 	lro_mgr->max_desc = T3_MAX_LRO_SES;
@@ -2246,8 +2276,7 @@ no_mem:
 		} else if ((len = ntohl(r->len_cq)) != 0) {
 			struct sge_fl *fl;
 
-			if (eth)
-				lro = qs->lro_enabled && is_eth_tcp(rss_hi);
+			lro &= eth && is_eth_tcp(rss_hi);
 
 			fl = (len & F_RSPD_FLQ) ? &qs->fl[1] : &qs->fl[0];
 			if (fl->use_pages) {
@@ -2345,7 +2374,7 @@ next_fl:
 
 static inline int is_pure_response(const struct rsp_desc *r)
 {
-	u32 n = ntohl(r->flags) & (F_RSPD_ASYNC_NOTIF | F_RSPD_IMM_DATA_VALID);
+	__be32 n = r->flags & htonl(F_RSPD_ASYNC_NOTIF | F_RSPD_IMM_DATA_VALID);
 
 	return (n | r->len_cq) == 0;
 }
@@ -2863,6 +2892,7 @@ void t3_update_qset_coalesce(struct sge_qset *qs, const struct qset_params *p)
  *	@p: configuration parameters for this queue set
  *	@ntxq: number of Tx queues for the queue set
  *	@netdev: net device associated with this queue set
+ *	@netdevq: net device TX queue associated with this queue set
  *
  *	Allocate resources and initialize an SGE queue set.  A queue set
  *	comprises a response queue, two Rx free-buffer queues, and up to 3
@@ -2871,16 +2901,15 @@ void t3_update_qset_coalesce(struct sge_qset *qs, const struct qset_params *p)
  */
 int t3_sge_alloc_qset(struct adapter *adapter, unsigned int id, int nports,
 		      int irq_vec_idx, const struct qset_params *p,
-		      int ntxq, struct net_device *dev)
+		      int ntxq, struct net_device *dev,
+		      struct netdev_queue *netdevq)
 {
 	int i, avail, ret = -ENOMEM;
 	struct sge_qset *q = &adapter->sge.qs[id];
 	struct net_lro_mgr *lro_mgr = &q->lro_mgr;
 
 	init_qset_cntxt(q, id);
-	init_timer(&q->tx_reclaim_timer);
-	q->tx_reclaim_timer.data = (unsigned long)q;
-	q->tx_reclaim_timer.function = sge_timer_cb;
+	setup_timer(&q->tx_reclaim_timer, sge_timer_cb, (unsigned long)q);
 
 	q->fl[0].desc = alloc_ring(adapter->pdev, p->fl_size,
 				   sizeof(struct rx_desc),
@@ -2934,6 +2963,7 @@ int t3_sge_alloc_qset(struct adapter *adapter, unsigned int id, int nports,
 	q->rspq.gen = 1;
 	q->rspq.size = p->rspq_size;
 	spin_lock_init(&q->rspq.lock);
+	skb_queue_head_init(&q->rspq.rx_queue);
 
 	q->txq[TXQ_ETH].stop_thres = nports *
 	    flits_to_desc(sgl_len(MAX_SKB_FRAGS + 1) + 3);
@@ -3008,6 +3038,7 @@ int t3_sge_alloc_qset(struct adapter *adapter, unsigned int id, int nports,
 
 	q->adap = adapter;
 	q->netdev = dev;
+	q->tx_q = netdevq;
 	t3_update_qset_coalesce(q, p);
 
 	init_lro_mgr(q, lro_mgr);
@@ -3040,6 +3071,24 @@ err_unlock:
 err:
 	t3_free_qset(adapter, q);
 	return ret;
+}
+
+/**
+ *	t3_stop_sge_timers - stop SGE timer call backs
+ *	@adap: the adapter
+ *
+ *	Stops each SGE queue set's timer call back
+ */
+void t3_stop_sge_timers(struct adapter *adap)
+{
+	int i;
+
+	for (i = 0; i < SGE_QSETS; ++i) {
+		struct sge_qset *q = &adap->sge.qs[i];
+
+		if (q->tx_reclaim_timer.function)
+			del_timer_sync(&q->tx_reclaim_timer);
+	}
 }
 
 /**

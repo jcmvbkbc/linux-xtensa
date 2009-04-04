@@ -427,7 +427,7 @@ int __log_space_left(journal_t *journal)
 }
 
 /*
- * Called under j_state_lock.  Returns true if a transaction was started.
+ * Called under j_state_lock.  Returns true if a transaction commit was started.
  */
 int __log_start_commit(journal_t *journal, tid_t target)
 {
@@ -495,7 +495,8 @@ int journal_force_commit_nested(journal_t *journal)
 
 /*
  * Start a commit of the current running transaction (if any).  Returns true
- * if a transaction was started, and fills its tid in at *ptid
+ * if a transaction is going to be committed (or is currently already
+ * committing), and fills its tid in at *ptid
  */
 int journal_start_commit(journal_t *journal, tid_t *ptid)
 {
@@ -505,15 +506,19 @@ int journal_start_commit(journal_t *journal, tid_t *ptid)
 	if (journal->j_running_transaction) {
 		tid_t tid = journal->j_running_transaction->t_tid;
 
-		ret = __log_start_commit(journal, tid);
-		if (ret && ptid)
+		__log_start_commit(journal, tid);
+		/* There's a running transaction and we've just made sure
+		 * it's commit has been scheduled. */
+		if (ptid)
 			*ptid = tid;
-	} else if (journal->j_committing_transaction && ptid) {
+		ret = 1;
+	} else if (journal->j_committing_transaction) {
 		/*
 		 * If ext3_write_super() recently started a commit, then we
 		 * have to wait for completion of that transaction
 		 */
-		*ptid = journal->j_committing_transaction->t_tid;
+		if (ptid)
+			*ptid = journal->j_committing_transaction->t_tid;
 		ret = 1;
 	}
 	spin_unlock(&journal->j_state_lock);
@@ -1121,9 +1126,12 @@ recovery_error:
  *
  * Release a journal_t structure once it is no longer in use by the
  * journaled object.
+ * Return <0 if we couldn't clean up the journal.
  */
-void journal_destroy(journal_t *journal)
+int journal_destroy(journal_t *journal)
 {
+	int err = 0;
+
 	/* Wait for the commit thread to wake up and die. */
 	journal_kill_thread(journal);
 
@@ -1146,11 +1154,16 @@ void journal_destroy(journal_t *journal)
 	J_ASSERT(journal->j_checkpoint_transactions == NULL);
 	spin_unlock(&journal->j_list_lock);
 
-	/* We can now mark the journal as empty. */
-	journal->j_tail = 0;
-	journal->j_tail_sequence = ++journal->j_transaction_sequence;
 	if (journal->j_sb_buffer) {
-		journal_update_superblock(journal, 1);
+		if (!is_journal_aborted(journal)) {
+			/* We can now mark the journal as empty. */
+			journal->j_tail = 0;
+			journal->j_tail_sequence =
+				++journal->j_transaction_sequence;
+			journal_update_superblock(journal, 1);
+		} else {
+			err = -EIO;
+		}
 		brelse(journal->j_sb_buffer);
 	}
 
@@ -1160,6 +1173,8 @@ void journal_destroy(journal_t *journal)
 		journal_destroy_revoke(journal);
 	kfree(journal->j_wbuf);
 	kfree(journal);
+
+	return err;
 }
 
 
@@ -1359,10 +1374,16 @@ int journal_flush(journal_t *journal)
 	spin_lock(&journal->j_list_lock);
 	while (!err && journal->j_checkpoint_transactions != NULL) {
 		spin_unlock(&journal->j_list_lock);
+		mutex_lock(&journal->j_checkpoint_mutex);
 		err = log_do_checkpoint(journal);
+		mutex_unlock(&journal->j_checkpoint_mutex);
 		spin_lock(&journal->j_list_lock);
 	}
 	spin_unlock(&journal->j_list_lock);
+
+	if (is_journal_aborted(journal))
+		return -EIO;
+
 	cleanup_journal_tail(journal);
 
 	/* Finally, mark the journal as really needing no recovery.
@@ -1384,7 +1405,7 @@ int journal_flush(journal_t *journal)
 	J_ASSERT(journal->j_head == journal->j_tail);
 	J_ASSERT(journal->j_tail_sequence == journal->j_transaction_sequence);
 	spin_unlock(&journal->j_state_lock);
-	return err;
+	return 0;
 }
 
 /**

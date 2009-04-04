@@ -6,15 +6,15 @@
 #include <linux/kexec.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
+#include <linux/io.h>
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
-#include <asm/io.h>
 #include <asm/cacheflush.h>
 #include <asm/mach-types.h>
 
-const extern unsigned char relocate_new_kernel[];
-const extern unsigned int relocate_new_kernel_size;
+extern const unsigned char relocate_new_kernel[];
+extern const unsigned int relocate_new_kernel_size;
 
 extern void setup_mm_for_reboot(char mode);
 

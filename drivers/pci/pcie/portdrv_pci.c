@@ -41,7 +41,6 @@ static int pcie_portdrv_restore_config(struct pci_dev *dev)
 {
 	int retval;
 
-	pci_restore_state(dev);
 	retval = pci_enable_device(dev);
 	if (retval)
 		return retval;
@@ -52,16 +51,13 @@ static int pcie_portdrv_restore_config(struct pci_dev *dev)
 #ifdef CONFIG_PM
 static int pcie_portdrv_suspend(struct pci_dev *dev, pm_message_t state)
 {
-	int ret = pcie_port_device_suspend(dev, state);
+	return pcie_port_device_suspend(dev, state);
 
-	if (!ret)
-		ret = pcie_portdrv_save_config(dev);
-	return ret;
 }
 
 static int pcie_portdrv_resume(struct pci_dev *dev)
 {
-	pcie_portdrv_restore_config(dev);
+	pci_set_master(dev);
 	return pcie_port_device_resume(dev);
 }
 #else
@@ -91,7 +87,7 @@ static int __devinit pcie_portdrv_probe (struct pci_dev *dev,
 	
 	pci_set_master(dev);
         if (!dev->irq && dev->pin) {
-		dev_warn(&dev->dev, "device [%04x/%04x] has invalid IRQ; "
+		dev_warn(&dev->dev, "device [%04x:%04x] has invalid IRQ; "
 			 "check vendor BIOS\n", dev->vendor, dev->device);
 	}
 	if (pcie_port_device_register(dev)) {
@@ -100,8 +96,6 @@ static int __devinit pcie_portdrv_probe (struct pci_dev *dev,
 	}
 
 	pcie_portdrv_save_config(dev);
-
-	pci_enable_pcie_error_reporting(dev);
 
 	return 0;
 }
@@ -221,6 +215,7 @@ static pci_ers_result_t pcie_portdrv_slot_reset(struct pci_dev *dev)
 
 	/* If fatal, restore cfg space for possible link reset at upstream */
 	if (dev->error_state == pci_channel_io_frozen) {
+		pci_restore_state(dev);
 		pcie_portdrv_restore_config(dev);
 		pci_enable_pcie_error_reporting(dev);
 	}

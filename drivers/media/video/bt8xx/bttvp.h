@@ -267,6 +267,11 @@ int bttv_sub_add_device(struct bttv_core *core, char *name);
 int bttv_sub_del_devices(struct bttv_core *core);
 
 /* ---------------------------------------------------------- */
+/* bttv-cards.c                                               */
+
+extern int no_overlay;
+
+/* ---------------------------------------------------------- */
 /* bttv-driver.c                                              */
 
 /* insmod options */
@@ -454,7 +459,7 @@ struct bttv {
 };
 
 /* our devices */
-#define BTTV_MAX 16
+#define BTTV_MAX 32
 extern unsigned int bttv_num;
 extern struct bttv bttvs[BTTV_MAX];
 

@@ -22,6 +22,7 @@
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
+#include <linux/device-mapper.h>
 #include <linux/dm-kcopyd.h>
 
 #include "dm.h"
@@ -268,6 +269,17 @@ static void push(struct list_head *jobs, struct kcopyd_job *job)
 	spin_unlock_irqrestore(&kc->job_lock, flags);
 }
 
+
+static void push_head(struct list_head *jobs, struct kcopyd_job *job)
+{
+	unsigned long flags;
+	struct dm_kcopyd_client *kc = job->kc;
+
+	spin_lock_irqsave(&kc->job_lock, flags);
+	list_add(&job->list, jobs);
+	spin_unlock_irqrestore(&kc->job_lock, flags);
+}
+
 /*
  * These three functions process 1 item from the corresponding
  * job list.
@@ -332,7 +344,7 @@ static int run_io_job(struct kcopyd_job *job)
 {
 	int r;
 	struct dm_io_request io_req = {
-		.bi_rw = job->rw | (1 << BIO_RW_SYNC),
+		.bi_rw = job->rw | (1 << BIO_RW_SYNCIO) | (1 << BIO_RW_UNPLUG),
 		.mem.type = DM_IO_PAGE_LIST,
 		.mem.ptr.pl = job->pages,
 		.mem.offset = job->offset,
@@ -398,7 +410,7 @@ static int process_jobs(struct list_head *jobs, struct dm_kcopyd_client *kc,
 			 * We couldn't service this job ATM, so
 			 * push this job back onto the list.
 			 */
-			push(jobs, job);
+			push_head(jobs, job);
 			break;
 		}
 

@@ -1,6 +1,7 @@
 #ifndef _LINUX_ICMPV6_H
 #define _LINUX_ICMPV6_H
 
+#include <linux/types.h>
 #include <asm/byteorder.h>
 
 struct icmp6hdr {
@@ -40,16 +41,18 @@ struct icmp6hdr {
                 struct icmpv6_nd_ra {
 			__u8		hop_limit;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
-			__u8		reserved:4,
+			__u8		reserved:3,
 					router_pref:2,
+					home_agent:1,
 					other:1,
 					managed:1;
 
 #elif defined(__BIG_ENDIAN_BITFIELD)
 			__u8		managed:1,
 					other:1,
+					home_agent:1,
 					router_pref:2,
-					reserved:4;
+					reserved:3;
 #else
 #error	"Please fix <asm/byteorder.h>"
 #endif

@@ -7,6 +7,7 @@ mainmenu "Linux Kernel Configuration"
 
 config MN10300
 	def_bool y
+	select HAVE_OPROFILE
 
 config AM33
 	def_bool y
@@ -53,9 +54,6 @@ config QUICKLIST
 config ARCH_HAS_ILOG2_U32
 	def_bool y
 
-config ARCH_SUPPORTS_AOUT
-	def_bool n
-
 # Use the generic interrupt handling code in kernel/irq/
 config GENERIC_HARDIRQS
 	def_bool y
@@ -70,6 +68,8 @@ config HZ
 mainmenu "Matsushita MN10300/AM33 Kernel Configuration"
 
 source "init/Kconfig"
+
+source "kernel/Kconfig.freezer"
 
 
 menu "Matsushita MN10300 system setup"
