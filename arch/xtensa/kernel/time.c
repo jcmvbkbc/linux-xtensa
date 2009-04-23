@@ -30,6 +30,7 @@ unsigned long ccount_per_jiffy;		/* per 1/HZ */
 unsigned long nsec_per_ccount;		/* nsec per ccount increment */
 #endif
 
+#ifdef CONFIG_GENERIC_TIME
 static cycle_t ccount_read(void)
 {
 	return (cycle_t)get_ccount();
@@ -49,6 +50,7 @@ static struct clocksource ccount_clocksource = {
 	 */
 	.shift = 22,
 };
+#endif
 
 static irqreturn_t timer_interrupt(int irq, void *dev_id);
 static struct irqaction timer_irqaction = {
@@ -60,23 +62,30 @@ static struct irqaction timer_irqaction = {
 
 void __init time_init(void)
 {
-        printk("time_init()\n");
-        
-	xtime.tv_nsec = 0;
-	xtime.tv_sec = read_persistent_clock();
-	set_normalized_timespec(&wall_to_monotonic,
-		-xtime.tv_sec, -xtime.tv_nsec);
-
 #ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
-	printk("Calibrating CPU frequency ");
+	printk("time_init: Platform Calibrating CPU frequency\n");
 	platform_calibrate_ccount();
-	printk("%d.%02d MHz\n", (int)ccount_per_jiffy/(1000000/HZ),
-			(int)(ccount_per_jiffy/(10000/HZ))%100);
 #endif
+
+	printk("%s: ccount_per_jiffy:%lu [%d.%02d MHz], nsec_per_ccount:%lu\n", __func__,
+		(unsigned long) CCOUNT_PER_JIFFY,
+		(int)CCOUNT_PER_JIFFY/(1000000/HZ),
+		(int)(CCOUNT_PER_JIFFY/(10000/HZ))%100, 
+		(unsigned long) nsec_per_ccount);
+
+#ifdef CONFIG_GENERIC_TIME
 	ccount_clocksource.mult =
 		clocksource_hz2mult(CCOUNT_PER_JIFFY * HZ,
 				ccount_clocksource.shift);
 	clocksource_register(&ccount_clocksource);
+
+#else /* !CONFIG_GENERIC_CLOCK */
+	xtime.tv_nsec = 0;
+	xtime.tv_sec = read_persistent_clock();	/* 0 for Xtensa processors */
+
+	set_normalized_timespec(&wall_to_monotonic,
+		-xtime.tv_sec, -xtime.tv_nsec);
+#endif /* CONFIG_GENERIC_CLOCK */
 
 	/* Initialize the linux timer interrupt. */
 
@@ -92,6 +101,70 @@ printk("secondary_time_init()\n");
 	set_linux_timer(get_ccount() + CCOUNT_PER_JIFFY);
 	secondary_irq_enable(LINUX_TIMER_INT);
 }
+#endif
+
+#ifndef CONFIG_GENERIC_TIME
+int do_settimeofday(struct timespec *tv)
+{
+	time_t wtm_sec, sec = tv->tv_sec;
+	long wtm_nsec, nsec = tv->tv_nsec;
+	unsigned long delta;
+
+	if ((unsigned long)tv->tv_nsec >= NSEC_PER_SEC)
+		return -EINVAL;
+
+	write_seqlock_irq(&xtime_lock);
+
+	/* This is revolting. We need to set "xtime" correctly. However, the
+	 * value in this location is the value at the most recent update of
+	 * wall time.  Discover what correction gettimeofday() would have
+	 * made, and then undo it!
+	 */
+
+	delta = CCOUNT_PER_JIFFY;
+	delta += get_ccount() - get_linux_timer();
+	nsec -= delta * NSEC_PER_CCOUNT;
+
+	wtm_sec  = wall_to_monotonic.tv_sec + (xtime.tv_sec - sec);
+	wtm_nsec = wall_to_monotonic.tv_nsec + (xtime.tv_nsec - nsec);
+
+	set_normalized_timespec(&xtime, sec, nsec);
+	set_normalized_timespec(&wall_to_monotonic, wtm_sec, wtm_nsec);
+
+	ntp_clear();
+	write_sequnlock_irq(&xtime_lock);
+	return 0;
+}
+
+EXPORT_SYMBOL(do_settimeofday);
+
+
+void do_gettimeofday(struct timeval *tv)
+{
+	unsigned long flags;
+	unsigned long volatile sec, usec, delta, seq;
+
+	do {
+		seq = read_seqbegin_irqsave(&xtime_lock, flags);
+
+		sec = xtime.tv_sec;
+		usec = (xtime.tv_nsec / NSEC_PER_USEC);
+
+		delta = get_linux_timer() - get_ccount();
+
+	} while (read_seqretry_irqrestore(&xtime_lock, seq, flags));
+
+	usec += (((unsigned long) CCOUNT_PER_JIFFY - delta)
+		 * (unsigned long) NSEC_PER_CCOUNT) / NSEC_PER_USEC;
+
+	for (; usec >= 1000000; sec++, usec -= 1000000)
+		;
+
+	tv->tv_sec = sec;
+	tv->tv_usec = usec;
+}
+
+EXPORT_SYMBOL(do_gettimeofday);
 #endif
 
 /*
@@ -143,11 +216,13 @@ again:
 }
 
 #ifndef CONFIG_GENERIC_CALIBRATE_DELAY
+/* Called from start_kernel() and secondary_start_kernel() */
 void __cpuinit calibrate_delay(void)
 {
 	loops_per_jiffy = CCOUNT_PER_JIFFY;
-	printk("Calibrating delay loop (skipped)... "
-	       "%lu.%02lu BogoMIPS preset\n",
+
+	printk("%s: Calibrating delay loop (skipped)... "
+	       "%lu.%02lu BogoMIPS preset\n", __func__,
 	       loops_per_jiffy/(1000000/HZ),
 	       (loops_per_jiffy/(10000/HZ)) % 100);
 }

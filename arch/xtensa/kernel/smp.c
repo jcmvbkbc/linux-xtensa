@@ -46,10 +46,10 @@ extern DEFINE_PER_CPU(unsigned long, asid_cache);
 #if 0
 const cpumask_t cpu_possible_map;
 const cpumask_t cpu_online_map;
-#endif
 
 EXPORT_SYMBOL(cpu_possible_map);
 EXPORT_SYMBOL(cpu_online_map);
+#endif
 
 /* IPI (Inter Process Interrupt) */
 

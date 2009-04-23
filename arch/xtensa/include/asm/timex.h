@@ -15,6 +15,7 @@
 
 #include <asm/processor.h>
 #include <linux/stringify.h>
+#include <linux/autoconf.h>
 
 #define _INTLEVEL(x)	XCHAL_INT ## x ## _LEVEL
 #define INTLEVEL(x)	_INTLEVEL(x)
@@ -37,14 +38,19 @@
 #define CLOCK_TICK_RATE 	1193180	/* (everyone is using this value) */
 #define CLOCK_TICK_FACTOR       20 /* Factor of both 10^6 and CLOCK_TICK_RATE */
 
+/* Defaults used of platform doesn't provide platform_calibrate_ccount() */
+#define DEFAULT_CCOUNT_PER_JIFFY (CONFIG_XTENSA_CPU_CLOCK*(CONFIG_XTENSA_CPU_CLOCK_UNITS/HZ))
+#define DEFAULT_NSEC_PER_CCOUNT  1000000000UL/(CONFIG_XTENSA_CPU_CLOCK * CONFIG_XTENSA_CPU_CLOCK_UNITS)
+
+/* Set by platform_calibrate_ccount() */
 #ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
+extern unsigned long nsec_per_ccount;
 extern unsigned long ccount_per_jiffy;
-extern unsigned long ccount_per_nsec;
 #define CCOUNT_PER_JIFFY ccount_per_jiffy
 #define NSEC_PER_CCOUNT  nsec_per_ccount
 #else
-#define CCOUNT_PER_JIFFY (CONFIG_XTENSA_CPU_CLOCK*(1000UL/HZ))
-#define NSEC_PER_CCOUNT (1000000UL / CONFIG_XTENSA_CPU_CLOCK)
+#define CCOUNT_PER_JIFFY DEFAULT_CCOUNT_PER_JIFFY
+#define NSEC_PER_CCOUNT DEFAULT_NSEC_PER_CCOUNT
 #endif
 
 

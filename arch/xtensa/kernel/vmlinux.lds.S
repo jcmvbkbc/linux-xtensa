@@ -19,18 +19,7 @@
 
 #include <variant/core.h>
 #include <asm/core.h>
-
-#if 0
-/*
- * REMIND-TODO:
- *   Having problem using this with LX60 Platform
- *   Getting access to asm macros's being accessed
- *   but not defined.
- *
- * Need by Emlix for KERNELOFFSET
- */
 #include <platform/hardware.h>
-#endif
 
 OUTPUT_ARCH(xtensa)
 ENTRY(_start)
@@ -154,8 +143,6 @@ SECTIONS
   __init_begin = .;
   .init.text : {
   	_sinittext = .;
-/*	*(.init.literal) *(.cpuinit.literal) 
-	*(.devinit.literal) *(.meminit.literal)  */
 	INIT_TEXT
 	_einittext = .;
   }

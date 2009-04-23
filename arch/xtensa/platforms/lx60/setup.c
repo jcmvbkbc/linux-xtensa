@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <linux/stringify.h>
 #include <linux/platform_device.h>
+#include <asm//timex.h>
 
 #include <../drivers/net/open_eth.h>
 
@@ -36,6 +37,7 @@
 #include <asm/bootparam.h>
 #include <platform/lcd.h>
 #include <platform/hardware.h>
+#include <variant/core.h>
 
 void platform_halt(void)
 {
@@ -50,6 +52,23 @@ void platform_power_off(void)
 	local_irq_disable();
 	while (1);
 }
+
+#ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
+/* 
+ * Called from time_init(); more that just calibrating, 
+ * completly establishes the clock rate from the Board
+ * specific FPGA registers. See section 4.2.5 of Avnet
+ * LX200 Users guide.
+ */
+void platform_calibrate_ccount(void)
+{
+  long *clk_freq_p = (long *)(XTBOARD_FPGAREGS_PADDR + XTBOARD_CLKFRQ_OFS);
+  long  clk_freq = *clk_freq_p;
+
+  ccount_per_jiffy = clk_freq/HZ;
+  nsec_per_ccount = 1000000000UL/clk_freq;
+}
+#endif
 
 void platform_restart(void)
 {

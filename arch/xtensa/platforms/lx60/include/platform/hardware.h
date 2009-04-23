@@ -8,6 +8,7 @@
  * Copyright (C) 2009 Tensilica Inc.
  */
 
+#if 0
 /*
  * This file contains the hardware configuration of the LX60 board.
  *
@@ -20,20 +21,13 @@
  *	open_eth.c to use new platform data structures (Soon).
  *						-piet
  */
-#if 1
 #undef __XTENSA_LX60_HARDWARE_H 
 #endif
 
 #ifndef __XTENSA_LX60_HARDWARE_H
 #define __XTENSA_LX60_HARDWARE_H
 
-#if 1
-#include <asm/processor.h>
-#endif
-
-#if 1
 #include <platform/system.h>
-#endif
 
 /* By default NO_IRQ is defined to 0 in Linux, but we use the
    interrupt 0 for UART... */
@@ -86,8 +80,8 @@
  *  Device addresses and parameters.
  */
 
-/* UART crystal frequency in Hz */
-#define DUART16552_XTAL_FREQ	(CONFIG_XTENSA_CPU_CLOCK * 1000)
+/* UART crystal frequency in Hz; same as CPU Clock Frequency for LX60/LX200 */
+#define DUART16552_XTAL_FREQ	(CONFIG_XTENSA_CPU_CLOCK * CONFIG_XTENSA_CPU_CLOCK_UNITS)
 
 /* UART */
 #define DUART16552_VADDR	(XSHAL_IOBLOCK_BYPASS_VADDR+0xD050020)
@@ -100,6 +94,13 @@
 #define OETH_BASE_ADDR		(XSHAL_IOBLOCK_BYPASS_VADDR+0xD030000)
 #define OETH_SRAM_BUFF_BASE	(XSHAL_IOBLOCK_BYPASS_VADDR+0xD800000)
 #define OETH_BASE_IO_ADDR	IOADDR(0xD030000)
+
+/* 
+ * Clock Speed - derived from Xtensa/OS/include/xtensa/xtav60/xtensa/xtav60.h 
+ *               See Avnet LX200 Board Users Guide Section 4.2.5
+ */
+#define XTBOARD_FPGAREGS_PADDR          (XSHAL_IOBLOCK_BYPASS_VADDR + 0x0D020000)
+#define XTBOARD_CLKFRQ_OFS              0x04    /* clock frequency Hz (read-only) */
 
 /* MAC registers + RX and TX descriptors */
 #define OETH_REGS_SIZE  	0x1000  

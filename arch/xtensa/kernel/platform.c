@@ -7,11 +7,12 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2005 Tensilica Inc.
+ * Copyright (C) 2005 - 2009 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  */
 
+#include <linux/autoconf.h>
 #include <linux/types.h>
 #include <linux/pci.h>
 #include <linux/time.h>
@@ -40,8 +41,12 @@ _F(int,  pcibios_fixup, (void), { return 0; });
 #ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
 _F(void, calibrate_ccount, (void),
 {
-  printk ("ERROR: Cannot calibrate cpu frequency! Assuming 100MHz.\n");
-  ccount_per_jiffy = 100 * (1000000UL/HZ);
+  printk("\n");
+  printk("%s: No Platform Specific routine available to calibrate cpu frequency!\n", __func__);
+  printk("%s: Using Defaults derived from kernel .config file.\n", __func__);
+
+  ccount_per_jiffy = DEFAULT_CCOUNT_PER_JIFFY;
+  nsec_per_ccount = DEFAULT_NSEC_PER_CCOUNT;
 });
 #endif
 

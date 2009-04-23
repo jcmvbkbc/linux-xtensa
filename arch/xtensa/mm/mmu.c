@@ -79,7 +79,7 @@ void __init init_mmu(void)
 	set_dtlbcfg_register(0);
 #endif
 
-	flush_tlb_all();	/* Flush the Auto-Refill TLB Ways (0...3) */
+	local_flush_tlb_all();	/* Flush the Auto-Refill TLB Ways (0...3) */
 
 	/* Set rasid register to a known value. */
 
