@@ -1195,7 +1195,8 @@ unhandled_double:
 
 
 /*
- * fast system calls.
+ * fast system calls - We come here directly from the exception dispatch_table;
+ *                     who's address is back in register $excsave1.
  *
  * WARNING:  The kernel doesn't save the entire user context before
  * handling a fast system call.  These functions are small and short,
@@ -1210,7 +1211,9 @@ unhandled_double:
  *   a2:	new stack pointer, original in DEPC
  *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	dispatch table
+ *   excsave_1:	&per_cpu(exc_table, CPU)
+ *
+ *   This is a common entry point for both std and fast systems calls.
  */
 
 ENTRY(fast_syscall_kernel)
@@ -1228,6 +1231,9 @@ ENTRY(fast_syscall_kernel)
 	_beqz	a0, fast_syscall_spill_registers
 	_beqi	a0, __NR_xtensa, fast_syscall_xtensa
 
+#	Save state and prepare to call C code 
+#	via system_call() code below.
+#
 	j	kernel_exception
 
 ENTRY(fast_syscall_user)
@@ -1262,7 +1268,7 @@ ENTRY(fast_syscall_unrecoverable)
 
 
 /*
- * sysxtensa syscall handler
+ * xtensa syscall handler:
  *
  * int sysxtensa (SYS_XTENSA_ATOMIC_SET,     ptr, val,    unused);
  * int sysxtensa (SYS_XTENSA_ATOMIC_ADD,     ptr, val,    unused);
@@ -1275,10 +1281,10 @@ ENTRY(fast_syscall_unrecoverable)
  *   a0:	a2 (syscall-nr), original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in a0 and DEPC
- *   a3:	dispatch table, original in excsave_1
+ *   a3:	a3
  *   a4..a15:	unchanged
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table, original in excsave_1
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1310,10 +1316,12 @@ ENTRY(fast_syscall_unrecoverable)
 67:
 
 ENTRY(fast_syscall_xtensa)
-89: j 89b
-	xsr	a3, EXCSAVE_1		# restore a3, excsave1
+#ifdef CONFIG_SMP
+89:	j	89b			# Syscall not supported for SMP
+#endif
 
-	s32i	a7, a2, PT_AREG7	# we need an additional register
+	s32i	a7, a2, PT_AREG7	# we need additional registers
+
 	movi	a7, 4			# sizeof(unsigned int)
 	access_ok a3, a7, a0, a2, .Leac	# a0: scratch reg, a2: sp
 
@@ -1325,7 +1333,7 @@ ENTRY(fast_syscall_xtensa)
 
 .Lswp:	/* Atomic compare and swap */
 
-TRY	l32i	a0, a3, 0		# read old value
+TRY	l32i	a0, a3, 0		# read old value from formal ptr:a3
 	bne	a0, a4, 1f		# same as old value? jump
 TRY	s32i	a5, a3, 0		# different, modify value
 	l32i	a7, a2, PT_AREG7	# restore a7
@@ -1375,16 +1383,18 @@ CATCH
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	 dispatch table
  *
  * Note: We assume the stack pointer is EXC_TABLE_KSTK in the fixup handler.
  */
 
 ENTRY(fast_syscall_spill_registers)
+#ifdef CONFIG_SMP
+99: 	j 	99b			# Shouldn't be use with SMP
+#endif
 
-99: j 99b
 	/* Register a FIXUP handler (pass current wb as a parameter) */
 
 	movi	a0, fast_syscall_spill_registers_fixup
