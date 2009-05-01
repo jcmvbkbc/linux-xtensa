@@ -55,7 +55,7 @@ _start:	_j	2f
 2:	l32r	a0, 1b
 	jx	a0
 
-	.text
+	.section .init.text, "ax"
 	.global _startup
 	.align 4
 _startup:

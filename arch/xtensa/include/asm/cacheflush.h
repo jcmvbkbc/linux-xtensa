@@ -14,6 +14,7 @@
 #ifdef __KERNEL__
 
 #include <linux/mm.h>
+#include <linux/autoconf.h>
 #include <asm/processor.h>
 #include <asm/page.h>
 
@@ -67,8 +68,8 @@ extern void __flush_invalidate_dcache_range(unsigned long, unsigned long);
 #if defined(CONFIG_MMU) && defined(DCACHE_ALIASING_POSSIBLE)
 extern void __flush_invalidate_dcache_page_alias(unsigned long, unsigned long);
 #else
-static inline void __flush_invalidate_dcache_page_alias(unsigned long v, unsigned long p) 
-{
+static inline void __flush_invalidate_dcache_page_alias(unsigned long virt,
+							unsigned long phys) { }
 	/* 
 	 * Using static inline instead of #define to avoid unused
 	 * variable compile warnings in calling functions.
@@ -79,12 +80,8 @@ static inline void __flush_invalidate_dcache_page_alias(unsigned long v, unsigne
 #if defined(CONFIG_MMU) && defined(ICACHE_ALIASING_POSSIBLE)
 extern void __invalidate_icache_page_alias(unsigned long, unsigned long);
 #else
-static inline void __invalidate_icache_page_alias(unsigned long v, unsigned long p)
-{
-	/* 
-	 * Using static inline instead of #define to avoid unused
-	 * variable compile warnings in calling functions.
-	 */
+static inline void __invalidate_icache_page_alias(unsigned long virt,
+						unsigned long phys) { } 
 }
 #endif
 
@@ -110,7 +107,11 @@ static inline void __invalidate_icache_page_alias(unsigned long v, unsigned long
 
 #if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 
+#ifdef CONFIG_SMP
 extern void flush_cache_all(void);
+#else
+#define flush_cache_all local_flush_cache_all
+#endif
 
 #define local_flush_cache_all()						\
 	do {								\
@@ -130,10 +131,17 @@ extern void flush_dcache_page(struct page*);
 #define flush_dcache_page(page)		do { } while (0)
 #endif
 
+#ifdef CONFIG_SMP
 extern void flush_cache_range(struct vm_area_struct*, ulong, ulong);
-extern void local_flush_cache_range(struct vm_area_struct*, ulong, ulong);
 extern void flush_cache_page(struct vm_area_struct*, unsigned long, unsigned long);
+#else
+#define flush_cache_range local_flush_cache_range
+#define flush_cache_page  local_flush_cache_page
+#endif
+
+extern void local_flush_cache_range(struct vm_area_struct*, ulong, ulong);
 extern void local_flush_cache_page(struct vm_area_struct*, unsigned long, unsigned long);
+
 
 /*
  * For Our VIPT cache flush_anon_page() likely is redundant 

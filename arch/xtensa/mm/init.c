@@ -26,11 +26,9 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 
-#include <asm/pgtable.h>
 #include <asm/bootparam.h>
 #include <asm/page.h>
 #include <asm/setup.h>
-
 
 /* References to section boundaries */
 

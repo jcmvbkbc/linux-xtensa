@@ -84,7 +84,5 @@ extern int platform_recv_ipi_message(void);
 
 extern __init int platform_boot_secondary(unsigned int, struct task_struct *);
 
-
-
 #endif	/* _XTENSA_PLATFORM_H */
 

@@ -29,7 +29,6 @@
 #include <asm-generic/mm_hooks.h>
 #include <asm-generic/percpu.h>
 
-
 #if (XCHAL_HAVE_TLBS != 1)
 # error "Linux must have an MMU!"
 #endif

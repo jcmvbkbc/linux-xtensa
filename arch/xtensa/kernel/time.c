@@ -62,11 +62,15 @@ static struct irqaction timer_irqaction = {
 
 void __init time_init(void)
 {
+	xtime.tv_nsec = 0;
+	xtime.tv_sec = read_persistent_clock();
+
+	set_normalized_timespec(&wall_to_monotonic,
+		-xtime.tv_sec, -xtime.tv_nsec);
 #ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
 	printk("time_init: Platform Calibrating CPU frequency\n");
 	platform_calibrate_ccount();
 #endif
-
 	printk("%s: ccount_per_jiffy:%lu [%d.%02d MHz], nsec_per_ccount:%lu\n", __func__,
 		(unsigned long) CCOUNT_PER_JIFFY,
 		(int)CCOUNT_PER_JIFFY/(1000000/HZ),
@@ -78,15 +82,7 @@ void __init time_init(void)
 		clocksource_hz2mult(CCOUNT_PER_JIFFY * HZ,
 				ccount_clocksource.shift);
 	clocksource_register(&ccount_clocksource);
-
-#else /* !CONFIG_GENERIC_CLOCK */
-	xtime.tv_nsec = 0;
-	xtime.tv_sec = read_persistent_clock();	/* 0 for Xtensa processors */
-
-	set_normalized_timespec(&wall_to_monotonic,
-		-xtime.tv_sec, -xtime.tv_nsec);
 #endif /* CONFIG_GENERIC_CLOCK */
-
 	/* Initialize the linux timer interrupt. */
 
 	set_linux_timer(get_ccount() + CCOUNT_PER_JIFFY);
@@ -167,6 +163,7 @@ void do_gettimeofday(struct timeval *tv)
 EXPORT_SYMBOL(do_gettimeofday);
 #endif
 
+
 /*
  * The timer interrupt is called HZ times per second.
  */
@@ -199,7 +196,6 @@ again:
 		write_seqlock(&xtime_lock);
 
 		do_timer(ticks); /* Linux handler in kernel/timer.c */
-
 		write_sequnlock(&xtime_lock);
 
 		/* Allow platform to do something useful (Wdog). */

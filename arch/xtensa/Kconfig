@@ -52,7 +52,6 @@ config HZ
 	int
 	default 100
 
-
 source "init/Kconfig"
 source "kernel/Kconfig.freezer"
 
@@ -103,7 +102,7 @@ config XTENSA_VARIANT_DC232B
 	  This variant refers to Tensilica's Diamond 232L Standard core Rev.B (LE).
 
 config XTENSA_VARIANT_S6000
-	bool "fsf - default (not generic) configuration"
+	bool "s6000 - Stretch software configurable processor"
 	select VARIANT_IRQ_SWITCH
 	select ARCH_REQUIRE_GPIOLIB
 	select XTENSA_VARIANT_HASCODE
@@ -249,12 +248,9 @@ config SERIAL_CONSOLE
 
 config XTENSA_ISS_NETWORK
 	def_bool n
-	depends on ARCH_HAS_SMP
-	help
-	  Enabled SMP Software; allows more than one CPU/CORE
-	  to be activated during startup.
 
 endmenu
+
 
 
 menu "Xtensa Platform options"
@@ -304,7 +300,6 @@ config XTENSA_PLATFORM_CUSTOM
 	You will be prompted for a platform name.
 
 endchoice
-
 config XTENSA_PLATFORM_CUSTOM_NAME
 	string "Custom Platform Name"
 	depends on XTENSA_PLATFORM_CUSTOM
@@ -387,6 +382,7 @@ source "mm/Kconfig"
 
 endmenu
 
+
 menu "Xtensa Bus options"
 
 config PCI
@@ -429,9 +425,8 @@ menu "Xtensa Executable file formats"
 
 # only elf supported
 config KCORE_ELF
-	bool "Support for kernel core ELF format files via /proc/kcore"
+	def_bool y
         depends on PROC_FS
-	default y
         help
           If you enabled support for /proc file system then the file
           /proc/kcore will contain the kernel core image in ELF format. This

@@ -10,8 +10,6 @@
 # for "archclean" and "archdep" for cleaning up and making dependencies for
 # this architecture
 
-# Core and platform configurations
-
 #
 # Remove Quotes from Variant and Platform Names;
 # as well as Extra CFLAGS if Optimized for Debugging.
@@ -51,8 +49,12 @@ ifneq ($(SUBARCH),$(ARCH))
   endif
 endif
 
-# We need to have a 'variant' configured, so exclude this line for 
-# make config/clean/etc.
+# Only build variant and/or platform if it includes a Makefile
+
+buildvar := $(shell test -a $(srctree)/arch/xtensa/variants/$(VARIANT)/Makefile && echo arch/xtensa/variants/$(VARIANT)/)
+buildplf := $(shell test -a $(srctree)/arch/xtensa/platforms/$(PLATFORM)/Makefile && echo arch/xtensa/platforms/$(PLATFORM)/)
+
+# Find libgcc.a
 
 ifneq ($(strip $(VARIANT)),)
 LIBGCC := $(shell $(CC) $(KBUILD_CFLAGS) -print-libgcc-file-name)
@@ -60,18 +62,12 @@ endif
 
 head-y		:= arch/xtensa/kernel/head.o
 core-y		+= arch/xtensa/kernel/ arch/xtensa/mm/
-ifneq ($(VARIANT_HASCODE),)
-core-y		+= arch/xtensa/variants/$(VARIANT)/
-endif
-ifneq ($(PLATFORM),)
-core-y		+= arch/xtensa/platforms/$(PLATFORM)/
-endif
+core-y		+= $(buildvar) $(buildplf)
 libs-y		+= arch/xtensa/lib/ $(LIBGCC)
 
 boot		:= arch/xtensa/boot
 
 # archprepare: checkbin $(archinc)/.configured
-
 archprepare: checkbin 
 
 #

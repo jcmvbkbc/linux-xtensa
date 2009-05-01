@@ -236,7 +236,8 @@ static __inline__ __sum16 csum_ipv6_magic(const struct in6_addr *saddr,
 		"1:\t"
 		: "=r" (sum), "=&r" (__dummy)
 		: "r" (saddr), "r" (daddr),
-		  "r" (htonl(len)), "r" (htonl(proto)), "0" (sum));
+		  "r" (htonl(len)), "r" (htonl(proto)), "0" (sum)
+		: "memory");
 
 	return csum_fold(sum);
 }

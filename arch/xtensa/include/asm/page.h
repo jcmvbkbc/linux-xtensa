@@ -176,6 +176,7 @@ extern void copy_user_page(void*, void*, unsigned long, struct page*);
  * These macros are for conversion of kernel address, not user
  * addresses.
  */
+
 #define ARCH_PFN_OFFSET         (PLATFORM_DEFAULT_MEM_START >> PAGE_SHIFT)
 
 #define __pa(x)			((unsigned long) (x) - PAGE_OFFSET)
@@ -193,7 +194,6 @@ extern void copy_user_page(void*, void*, unsigned long, struct page*);
 #ifdef CONFIG_MMU
 #define WANT_PAGE_VIRTUAL
 #endif
-
 
 #endif /* __ASSEMBLY__ */
 

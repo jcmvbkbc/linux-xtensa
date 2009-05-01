@@ -110,7 +110,7 @@ int show_interrupts(struct seq_file *p, void *v)
 		seq_printf(p, "%10u ", kstat_irqs(i));
 #else
 		for_each_online_cpu(j)
-			seq_printf(p, "%10u ", kstat_cpu(j).irqs[i]);
+			seq_printf(p, "%10u ", kstat_irqs_cpu(i, j));
 #endif
 		seq_printf(p, " %14s", irq_desc[i].chip->typename);
 		seq_printf(p, "  %s", action->name);
@@ -147,19 +147,10 @@ static void xtensa_irq_unmask(unsigned int irq)
 	set_sr (per_cpu(cached_irq_mask, cpu), INTENABLE);
 }
 
-__attribute__((weak)) 
-void variant_irq_enable(unsigned int irq) {
-}
-
 static void xtensa_irq_enable(unsigned int irq)
 {
 	variant_irq_enable(irq);
 	xtensa_irq_unmask(irq);
-}
-
-
-__attribute__((weak)) 
-void variant_irq_disable(unsigned int irq) { 
 }
 
 static void xtensa_irq_disable(unsigned int irq)
