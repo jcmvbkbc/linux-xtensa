@@ -74,7 +74,6 @@ static inline void __flush_invalidate_dcache_page_alias(unsigned long virt,
 	 * Using static inline instead of #define to avoid unused
 	 * variable compile warnings in calling functions.
 	 */
-}
 #endif
 
 #if defined(CONFIG_MMU) && defined(ICACHE_ALIASING_POSSIBLE)
@@ -82,7 +81,6 @@ extern void __invalidate_icache_page_alias(unsigned long, unsigned long);
 #else
 static inline void __invalidate_icache_page_alias(unsigned long virt,
 						unsigned long phys) { } 
-}
 #endif
 
 /*

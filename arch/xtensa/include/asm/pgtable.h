@@ -495,6 +495,12 @@ extern  void update_mmu_cache(struct vm_area_struct * vma,
 
 typedef pte_t *pte_addr_t;
 
+/*
+ * Like ARM, we provide our own arch_get_unmapped_area to cope with VIPT caches.
+ */
+#define HAVE_ARCH_UNMAPPED_AREA
+
+
 /*  
  * __HAVE_ARCH_ENTER_LAZY_MMU_MODE:
  * These virtualization hooks might be handy for TLB/CACHE testing.

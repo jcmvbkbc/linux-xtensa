@@ -65,6 +65,7 @@ asmlinkage long xtensa_mmap2(unsigned long addr, unsigned long len,
 	int error = -EBADF;
 	struct file * file = NULL;
 
+#if 1
 	/*
 	 * REMIND-FIXME:
 	 *
@@ -79,11 +80,15 @@ asmlinkage long xtensa_mmap2(unsigned long addr, unsigned long len,
 	 * here when:
 	 *	addr == XCHAL_KIO_CACHED_VADDR, or,
 	 *	addr == XCHAL_KIO_BYPASS_VADDR 
+	 *
+	 * The addition of arch_get_unmapped_area() does
+	 * NOT appear to removed the need for this workaround.
 	 */
 	if (len > 30720000) {
 		error = EFBIG;
 		goto out;
 	}
+#endif
 
 	flags &= ~(MAP_EXECUTABLE | MAP_DENYWRITE);
 	if (!(flags & MAP_ANONYMOUS)) {

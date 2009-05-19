@@ -245,8 +245,10 @@ void __init init_IRQ(void)
 			/* IRQs: [2, 3:UART, 4:OETH, 5] External Interrupts */
 			set_irq_chip_and_handler(index, &xtensa_mx_irq_chip,	/* MX */
 						 handle_level_irq);
+
+		else
 #endif
-		else if (mask & XCHAL_INTTYPE_MASK_SOFTWARE)
+		if (mask & XCHAL_INTTYPE_MASK_SOFTWARE)
 			set_irq_chip_and_handler(index, &xtensa_irq_chip,
 						 handle_simple_irq);
 
