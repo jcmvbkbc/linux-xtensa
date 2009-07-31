@@ -39,6 +39,7 @@
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
+#include <asm/coprocessor.h>
 #include <asm/kgdb.h>
 
 #ifdef CONFIG_KGDB
@@ -161,6 +162,12 @@ COPROCESSOR(7),
  */
 
 DEFINE_PER_CPU(unsigned long, exc_table[EXC_TABLE_SIZE/4]);
+
+DEFINE_PER_CPU(struct coprocessor_owner, coprocessor_owner);
+
+struct coprocessor_owner *coprocessor_owner_ptrs[NR_CPUS];
+
+dispatch_init_table_t *exc_table_ptrs[NR_CPUS];
 
 void die(const char*, struct pt_regs*, long);
 
@@ -369,9 +376,18 @@ static void set_handler(int idx, void (*handler)(void))
 void __init trap_init(void)
 {
 	int i;
+	int cpu;
 	unsigned long excsave1;
 
 	printk("trap_init %d\n", smp_processor_id());
+
+	/* 
+	 * Set up some global pointers to per_cpu info 
+	 */
+	for (cpu = 0; cpu < NR_CPUS; cpu++) {
+		coprocessor_owner_ptrs[cpu] = &per_cpu(coprocessor_owner, cpu);
+		exc_table_ptrs[cpu] = (dispatch_init_table_t *) per_cpu(exc_table, cpu);
+	}
 
 	/* Setup default vectors. */
 

@@ -155,21 +155,42 @@ typedef struct { XCHAL_CP6_SA_LIST(2) } xtregs_cp6_t
 	__attribute__ ((aligned (XCHAL_CP6_SA_ALIGN)));
 typedef struct { XCHAL_CP7_SA_LIST(2) } xtregs_cp7_t
 	__attribute__ ((aligned (XCHAL_CP7_SA_ALIGN)));
+#if 1
+typedef struct coprocessor_owner {
+	struct thread_info *coprocessor_ti[XCHAL_CP_MAX];
+} coprocessor_owner_t;
 
+#else
+extern DEFINE_PER_CPU(coprocessor_owner_t, coprocessor_owner);
 extern struct thread_info* coprocessor_owner[XCHAL_CP_MAX];
+#endif
+
 extern void coprocessor_save(void*, int);
 extern void coprocessor_load(void*, int);
 extern void coprocessor_flush(struct thread_info*, int);
 extern void coprocessor_restore(struct thread_info*, int);
+extern void manage_coprocessors(void *, int);
 
-extern void coprocessor_release_all(struct thread_info*, unsigned long);
-extern void coprocessor_flush_all(struct thread_info*, unsigned long);
+/*
+ * Commands passed to manage_coprocessor()
+ */
+#define CP_FLUSH_ALL			1	/* Flush All CP Registers to thread_info */
+#define CP_RELEASE_ALL			2	/* Release Ownership of All Coprocessors */
+#define CP_FLUSH_AND_RELEASE_ALL	3	/* Flush All CP Regs and Release Ownership of CP */
+#define CP_SWITCH			4	/* Switching out, bind to CPU if not debugged */
+
 
 static inline void coprocessor_clear_cpenable(void)
 {
 	unsigned long i = 0;
 	WSR_CPENABLE(i);
 }
+
+static inline void coprocessor_set_cpenable(unsigned long cpenable)
+{
+	WSR_CPENABLE(cpenable);
+}
+
 static inline unsigned long coprocessor_get_cpenable(void)
 {
 	unsigned long cpenable;

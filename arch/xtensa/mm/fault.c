@@ -236,8 +236,8 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 	/* Oops. The kernel tried to access some bad page. We'll have to
 	 * terminate things with extreme prejudice.
 	 */
-	printk(KERN_ALERT "Unable to handle kernel paging request at virtual "
-	       "address %08lx\n pc = %08lx, ra = %08lx\n",
+	printk(KERN_ALERT "%s: Unable to handle kernel paging request at virtual "
+	       "address 0x%08lx\n pc = 0x%08lx, ra = 0x%08lx\n", __func__,
 	       address, regs->pc, regs->areg[0]);
 
 	dump_stack();

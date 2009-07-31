@@ -8,9 +8,10 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2003 - 2008 Tensilica Inc.
+ * Copyright (C) 2003 - 2009 Tensilica Inc.
  *
  * Marc Gauthier <marc@tensilica.com> <marc@alumni.uwaterloo.ca>
+ * Pete Delaney <piet@tensilica.com>
  */
 
 
@@ -28,15 +29,18 @@
 #include <asm/signal.h>
 #include <asm/tlbflush.h>
 
+#if 0
 /*
+ * NOT BEING USED
+ *
  * Entry condition:
  *
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	dispatch table	[OUT OF DATE]
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	a3		[OUT OF DATE]
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -48,6 +52,8 @@ ENTRY(fast_io_protect)
 	wsr	a0, EXCSAVE_1
 	movi	a0, unrecoverable_exception
 	callx0	a0
+#endif
+
 
 #if XTENSA_HAVE_COPROCESSORS
 
@@ -182,7 +188,7 @@ ENTRY(coprocessor_flush)
 	entry	a1, 32
 
 	/* Set corresponding CPENABLE bit -> (sar:cp-index, a3: 1<<cp-index)*/
-	ssl	a3			# SAR: 32 - coprocessor_number
+	ssl	a3			# set Shift about for left shift; $SAR = 32 - coprocessor_number
 	movi	a4, 1
 	rsr	a15, CPENABLE
 	sll	a4, a4
@@ -190,15 +196,15 @@ ENTRY(coprocessor_flush)
 	wsr	a4, CPENABLE
 	rsync
 
-	s32i	a0, a1, 0
+	s32i	a0, a1, 0		# Save a0 on the stack
 	movi	a0, .Lsave_cp_regs_jump_table
-	addx8	a3, a3, a0
-	l32i	a4, a3, 4
+	addx8	a3, a3, a0		# a3 = save_cp_regs_jump_table[index]
+	l32i	a4, a3, 4		# a4 = 
 	l32i	a3, a3, 0
-	add	a2, a2, a4
+	add	a2, a2, a4		# a2 = &thead_info + index * 0x48:72
 	beqz	a3, 1f
 	add	a0, a0, a3
-	callx0	a0
+	callx0	a0			# a2: tepiti->xtregs_cp a4:scratch_register
 1:	l32i	a0, a1, 0
 	wsr	a15, CPENABLE		# restore CPENABLE
 	retw
@@ -217,28 +223,32 @@ ENTRY(coprocessor_restore)
 1:	l32i	a0, a1, 0
 	retw
 
+#if 0
+ENTRY(fast_coprocessor_double)
+	wsr	a0, EXCSAVE_1	[OUT OF DATE]
+	movi	a0, unrecoverable_exception
+	callx0	a0
+#endif
+
 /*
+ * We come here from the exception dispatch table for coprocessor exceptions.
+ *
  * Entry condition:
  *
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
  */
 
-ENTRY(fast_coprocessor_double)
-	wsr	a0, EXCSAVE_1
-	movi	a0, unrecoverable_exception
-	callx0	a0
-
+	.extern coprocessor_owner_ptrs
 ENTRY(fast_coprocessor)
 	/* Save remaining registers a1-a3 and SAR */
-	xsr	a3, EXCSAVE_1
 	s32i	a3, a2, PT_AREG3
 	rsr	a3, SAR
 	s32i	a1, a2, PT_AREG1
@@ -259,8 +269,13 @@ ENTRY(fast_coprocessor)
 	rsr	a3, EXCCAUSE
 	addi	a3, a3, -EXCCAUSE_COPROCESSOR0_DISABLED
 
-	/* Set corresponding CPENABLE bit -> (sar:cp-index, a3: 1<<cp-index)*/
-
+	/* 
+	 * Set corresponding CPENABLE bit -> (sar:cp-index, a3: 1<<cp-index)
+	 * Prior to the exception $cpenable and current->stack.ti->cpenable 
+	 * were identical comming out of switch_to(). Here we or in the new 
+	 * bit to the $cpenable register and below we update the current
+	 * task's thread info ti->cpenable.
+	 */
 	ssl	a3			# SAR: 32 - coprocessor_number
 	movi	a2, 1
 	rsr	a0, CPENABLE
@@ -269,17 +284,31 @@ ENTRY(fast_coprocessor)
 	wsr	a0, CPENABLE
 	rsync
 
-	/* Retrieve previous owner. (a3 still holds CP number) */
-
-	movi	a0, coprocessor_owner	# list of owners
-	addx4	a0, a3, a0		# entry for CP
-	l32i	a4, a0, 0
+	/* 
+	 * Retrieve previous owner. (a3 still holds CP number)
+	 *
+	 * Use use coprocessor_owner_ptrs to get the coprocessor_owner[]
+	 * for the current cpu; where:
+	 *
+	 *	coprocessor_owner_ptrs[cpu] = per_cpu(coprocessor_owner, cpu);
+	 */
+	movi	a0, coprocessor_owner_ptrs
+	rsr     a4, PRID                # a4 = cpu
+	beqz	a4, 01f
+	nop
+	nop
+01:
+	addx4	a0, a4, a0		# a0 = &coprocessor_owner_ptrs[cpu]
+	l32i    a0, a0, 0               # a0 = coprocessor_owner_ptrs[cpu]
+	addx4	a0, a3, a0		# a0 = coprocessor_owner[CP nr]
+	l32i	a4, a0, 0		# a4 = prev owners thread_info
 
 	beqz	a4, 1f			# skip 'save' if no previous owner
 
 	/* Disable coprocessor for previous owner. (a2 = 1 << CP number) */
 
-	l32i	a5, a4, THREAD_CPENABLE
+0:	l32i	a5, a4, THREAD_CPENABLE
+	beqz	a5, 0b			# hang if insain
 	xor	a5, a5, a2		# (1 << cp-id) still in a2
 	s32i	a5, a4, THREAD_CPENABLE
 
@@ -296,18 +325,34 @@ ENTRY(fast_coprocessor)
 	add	a2, a2, a4
 	add	a4, a3, a5		# a4: address of save routine
 	jx	a4
+	/* Note that only a0 and a1 were preserved above. */
 
-	/* Note that only a0 and a1 were preserved. */
-
+	/*
+	 * Use use coprocessor_owner_ptrs to get the coprocessor_owner[]
+	 * for the current cpu; where:
+	 *
+	 *	coprocessor_owner_ptrs[cpu] = per_cpu(coprocessor_owner, cpu);
+	 */
 2:	rsr	a3, EXCCAUSE
 	addi	a3, a3, -EXCCAUSE_COPROCESSOR0_DISABLED
-	movi	a0, coprocessor_owner
-	addx4	a0, a3, a0
+	movi	a0, coprocessor_owner_ptrs 
+	rsr	a4, PRID		# a4 = cpu
+	beqz	a4, 21f
+	nop
+	nop
+21:
+	addx4   a0, a4, a0              # a0 = &coprocessor_owner_ptrs[cpu]
+	l32i	a0, a0, 0		# a0 = coprocessor_owner_ptrs[cpu]
+	addx4	a0, a3, a0		# a0 = &coprocessor_owner[CP nr]
 
-	/* Set new 'owner' (a0 points to the CP owner, a3 contains the CP nr) */
-
+	/* 
+	 * Set new 'owner' (a0 points to the CP owner, a3 contains the CP nr).
+	 * Also update current threads ti->cpenable to current $cpenable
+	 */
 1:	GET_THREAD_INFO (a4, a1)
-	s32i	a4, a0, 0
+	s32i	a4, a0, 0		# coprocessor_owner[CP nr] = a4:current_thread_info
+	rsr     a5, CPENABLE		# $a5 = $cpenable
+	s32i    a5, a4, THREAD_CPENABLE	# current_thread_info->CPENABLE = $cpenable
 
 	/* Get context save area and 'call' load routine. */
 
@@ -334,10 +379,6 @@ ENTRY(fast_coprocessor)
 	l32i	a1, a1, PT_AREG1
 
 	rfe
-
-	.data
-ENTRY(coprocessor_owner)
-	.fill XCHAL_CP_MAX, 4, 0
 
 #endif /* XTENSA_HAVE_COPROCESSORS */
 

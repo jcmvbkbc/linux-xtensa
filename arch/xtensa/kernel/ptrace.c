@@ -130,13 +130,13 @@ int ptrace_getxregs(struct task_struct *child, void __user *uregs)
 		return -EIO;
 
 #if XTENSA_HAVE_COPROCESSORS
-	/* Flush all coprocessor registers to memory. */
-	preempt_disable();
-	coprocessor_flush_all(ti, ti->cpenable);
-	preempt_enable();
+	manage_coprocessors(child, CP_FLUSH_ALL);
+
+	/*                          to              from  */
 	ret |= __copy_to_user(&xtregs->cp0, &ti->xtregs_cp,
 			      sizeof(xtregs_coprocessor_t));
-#endif
+#endif	/* XTENSA_HAVE_COPROCESSORS */
+
 	ret |= __copy_to_user(&xtregs->opt, &regs->xtregs_opt,
 			      sizeof(xtregs->opt));
 	ret |= __copy_to_user(&xtregs->user,&ti->xtregs_user,
@@ -153,13 +153,10 @@ int ptrace_setxregs(struct task_struct *child, void __user *uregs)
 	int ret = 0;
 
 #if XTENSA_HAVE_COPROCESSORS
-	/* Flush all coprocessors before we overwrite them. */
-	preempt_disable();
-	coprocessor_flush_all(ti, ti->cpenable);
-	coprocessor_release_all(ti, ti->cpenable);
-	ti->cpenable = 0;
-	preempt_enable();
+	/* Flush and release all coprocessors before we overwrite CP registers. */
+	manage_coprocessors(child, CP_FLUSH_AND_RELEASE_ALL);
 
+	/*                             to            from   */
 	ret |= __copy_from_user(&ti->xtregs_cp, &xtregs->cp0, 
 				sizeof(xtregs_coprocessor_t));
 #endif

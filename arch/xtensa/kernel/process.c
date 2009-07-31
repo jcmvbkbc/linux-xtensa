@@ -7,11 +7,12 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2009 Tensilica Inc.
  *
  * Joe Taylor <joe@tensilica.com>
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com, marc@alumni.uwaterloo.ca>
+ * Pete Delaney <piet@tensilica.com>
  * Kevin Chea
  */
 
@@ -31,12 +32,14 @@
 #include <linux/module.h>
 #include <linux/mqueue.h>
 #include <linux/fs.h>
+#include <linux/autoconf.h>
 
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
 #include <asm/system.h>
 #include <asm/io.h>
 #include <asm/processor.h>
+#include <asm/coprocessor.h>
 #include <asm/platform.h>
 #include <asm/mmu.h>
 #include <asm/irq.h>
@@ -49,70 +52,220 @@ extern void ret_from_fork(void);
 void (*pm_power_off)(void) = NULL;
 EXPORT_SYMBOL(pm_power_off);
 
-
 #if XTENSA_HAVE_COPROCESSORS
+extern DEFINE_PER_CPU(coprocessor_owner_t, coprocessor_owner);
 
-/* 
- * coprocessor_release_all() - release coprocessors for the specified thread.
- *
- * Note that this function doesn't flush the contents of the coprocessors
- * to the thread_info area.
- *
- * This function must be called with preemption disabled!
- *
- * The caller must ensure to clear cpenable for the threak ti!
- */
+#ifdef CONFIG_LAZY_SMP_COPROCESSOR_REGISTER_FLUSHING
+volatile int lazy_smp_coprocessor_flushing_enabled = 1;
+#else
+volatile int lazy_smp_coprocessor_flushing_enabled = 0;
+#endif
 
-void coprocessor_release_all(struct thread_info *ti, unsigned long cpenable)
-{
-	unsigned long cpenable;
-	int i;
+#ifdef CONFIG_DEBUG_KERNEL
+int process_debug = 1;
 
-	/* Make sure we don't switch tasks during this operation. */
+#define dprintk(args...) \
+	do { \
+		if (process_debug) printk(KERN_DEBUG args); \
+	} while (0)
 
-	preempt_disable();
-
-	/* Walk through all cp owners and release it for the requested one. */
-
-	for (i = 0; i < XCHAL_CP_MAX; i++)
-		if (coprocessor_owner[i] == ti)
-	for (i = 0; i < XCHAL_CP_MAX; i++) {
-		if (coprocessor_owner[i] == ti) {
-			coprocessor_owner[i] = 0;
-			cpenable &= ~(1 << i);
-		}
-}
+volatile int check_hifitest_registers = 0;
 
 /*
- * coprocessor_flush_all() - flush all coprocessors for the specified thread.
- *
- * This function must be called with preemption disabled!
+ * This function is only used with a hifi test programs that puts the pid into a 
+ * hifi2 TIE Register, incremnets other TIE registers, and checks to make sure they 
+ * are in sync with a integer counterpart. 
  */
-
-void coprocessor_flush_all(struct thread_info *ti, unsigned long cpenable)
+static inline void hifitest_register_check(struct thread_info *owner_ti, int cp_num)
 {
-	unsigned long cpenable;
-	int i;
+	if (check_hifitest_registers) {
+		struct task_struct *owner_tsk = owner_ti->task;
+		struct thread_info tmp_ti;
+		int owner_pid = owner_tsk->pid;
+		long long *aep0_ptr;
+		long long long_aep0;
+		int aep0;
+
+		tmp_ti = *owner_ti;
+		coprocessor_flush(&tmp_ti, cp_num);
+	
+		aep0_ptr = (long long *) &tmp_ti.xtregs_cp.cp1.aep0;
+	
+		long_aep0 = *aep0_ptr;
+		aep0 = long_aep0 & 0XFFFFFF;
+	
+		if (aep0 != owner_pid) {
+			dprintk("%s: owner_pid:%d\n", __func__, owner_pid);
+			dprintk("%s: aep0:%d\n", __func__, aep0);
+		}
+	}
+	return;
+}
+#else
+#define check_hifitest_registers 0
+#define hifitest_register_check(ti, cp_num)
+#define dprintk(args...)
+#endif /* CONFIG_DEBUG_KERNEL */
+
+/*
+ * The task owning a coprocessor (CP) and it's associated registers
+ * has it's task info ti_cpenable indicating which coprocessors it ownes.
+ *
+ * Prior to running the __switch_to() asm code has set the cpenable
+ * register bits allowing it to continue using the CP. When a CP
+ * owner switches out we bind the task to the current CPU and release
+ * it's bind once it gives up ownership of the CP. This makes it possible
+ * to use the Lazy saveing of the CP registers in an SMP environment.
+ *
+ * The CP owner is typically changed by a CP exception which saves
+ * the current CP registers and it's cpenable register in the current task->ti,
+ * restores the CP registers for the current task. and it's copy of the
+ * cpenable register. The current threads cpenable register is always
+ * in sync with the cpenable register.
+ *
+ * Here we manages the coprocessor registers, cpenable register,
+ * and the list of pointers to owners of the coprocessros.
+ *					-piet
+ */
+void manage_coprocessors(void *prev, int cmd) {
+	struct task_struct *task = (struct task_struct *) prev;
+	struct thread_info *ti = task_thread_info(task);
+	struct thread_info *current_ti = current_thread_info();
+	unsigned long ti_cpenable;
+	unsigned long cpu_cpenable;
+	int cpu = smp_processor_id();
 
 	preempt_disable();
 
-	cpenable = ti->cpenable;
-	
 	/*
-	 * For all bits set in cpenable, check the owner
-	 * and flush it, if it matches.
-	 */
+	 * While a thread is running the cpenable register
+	 * should be identical to the copy in it's thread info.
+ 	 */
+	cpu_cpenable = coprocessor_get_cpenable();
+	ti_cpenable = ti->cpenable;
+	BUG_ON((ti == current_ti) && ((cpu_cpenable != ti_cpenable) || current_ti->cpu != cpu));
 
-	for (i = 0; i < XCHAL_CP_MAX; i++) {
-		if ((cpenable & 1) != 0 && coprocessor_owner[i] == ti)
-			coprocessor_flush(ti, i);
-		cpenable >>= 1;
+#ifdef CONFIG_SMP
+	if ( unlikely(task->ptrace) || unlikely(!lazy_smp_coprocessor_flushing_enabled) ) {
+		/*
+		 * Better to just flush the CP registers for proceses
+		 * being debuged via ptrace. Otherwise we would have to cross
+		 * call and disable interrupts instead of just preventing
+		 * preemption.
+		 */
+		if (task->ptrace) {
+			dprintk("%s: task:%p->ptrace:0x%x; cmd = CP_FLUSH_AND_RELEASE_ALL;\n", __func__, task, task->ptrace);
+		}
+		if (likely(cmd == CP_SWITCH)) {
+			cmd = CP_FLUSH_AND_RELEASE_ALL;
+		}
 	}
+#endif
+	if (ti_cpenable) {
+		struct coprocessor_owner *owners = &per_cpu(coprocessor_owner, cpu);
+		int i;
 
+		for (i = 0; i < XCHAL_CP_MAX; i++) {
+			struct thread_info *owner_ti = owners->coprocessor_ti[i];
+			unsigned long cpenable_bit = (1 << i);
+
+			if (ti == owner_ti) {
+				BUG_ON((ti_cpenable & cpenable_bit) == 0);
+				switch(cmd) {
+				case CP_FLUSH_ALL:
+					/*
+		 			 * Note: Temporally sets CPENABLE while saving registers.
+		 			 */
+					BUG_ON(cpu != ti->cpu);
+					coprocessor_flush(ti, i);
+					break;
+
+				case CP_FLUSH_AND_RELEASE_ALL:
+					BUG_ON(cpu != ti->cpu);
+					coprocessor_flush(ti, i);
+					/* fall through */
+
+				case CP_RELEASE_ALL:
+					owners->coprocessor_ti[i] = NULL;
+					ti_cpenable &= ~cpenable_bit;
+					ti->cpenable = ti_cpenable;
+
+					if (ti == current_ti) {
+						/* 
+						 * We are the current task, so we keep the cpenable
+						 * in sync with us.
+						 */
+						BUG_ON(cpu != ti->cpu);
+					 	coprocessor_set_cpenable(ti_cpenable);
+					}
+					break;
+#ifdef CONFIG_SMP
+				case CP_SWITCH:
+					BUG_ON(ti != current_ti);
+					if (unlikely(((task->flags & PF_THREAD_BOUND) == 0))) {
+						const cpumask_t current_mask = cpumask_of_cpu(cpu);
+
+						dprintk("%s: (prev->flags & PF_THREAD_BOUND) == 0\n", __func__);
+
+						if ((current_ti->flags & _TIF_COPRORESSOR_BOUND)) {
+							panic("%s: !PF_THREAD_BOUND but CP owner and _TIF_COPRORESSOR_BOUND\n", __func__);
+						} else {
+							dprintk("%s: !PF_THREAD_BOUND && !TIF_COPRORESSOR_BOUND\n", __func__);
+							BUG_ON(current_ti->flags & _TIF_COPRORESSOR_BOUND); 
+
+							current_ti->saved_cpus_allowed = task->cpus_allowed;
+							current_ti->saved_nr_cpus_allowed = task->rt.nr_cpus_allowed;
+							current_ti->bound_cpus_allowed = current_mask;
+							task->cpus_allowed = current_mask;
+							task->flags |= PF_THREAD_BOUND;
+							current_ti->flags |= _TIF_COPRORESSOR_BOUND;
+						}
+					}
+					if (check_hifitest_registers) {
+						hifitest_register_check(owner_ti, i);	/* Optimized out in performance kernels */
+					}
+					break;
+#endif
+				default:
+					BUG():
+
+				} /* switch(cmd) */
+			} /* ti == owner_t1 */
+		} /* for XCHAL_CP_MAX */
+	} else {
+		/*
+		 * Task no longer own any co-processors,
+		 * if I previously bound myself to the
+		 * current cpu it's now fine to un-bind.
+		 */ 
+#ifdef CONFIG_SMP
+		if (unlikely((cmd == CP_SWITCH) && (task->flags & PF_THREAD_BOUND) != 0)) {
+			struct thread_info *current_ti = current_thread_info();
+
+			/* 
+			 * We could be a bound task like one of the migration threads;
+			 * Make sure we bound the thread.
+			 */
+			if (unlikely((current_ti->flags & _TIF_COPRORESSOR_BOUND) != 0)) {
+
+				dprintk("%s: PF_THREAD_BOUND && _TIF_COPRORESSOR_BOUND; UN-BINDING Thread\n", __func__);
+
+				if (unlikely(!cpus_equal(task->cpus_allowed, current_ti->bound_cpus_allowed))) {
+					panic("%s: task->cpus_allowed != current_ti->bound_cpus_allowed", __func__);
+				}
+				task->cpus_allowed = current_ti->saved_cpus_allowed;
+				task->rt.nr_cpus_allowed = current_ti->saved_nr_cpus_allowed;
+				current_ti->saved_cpus_allowed = cpumask_of_cpu(0);
+				current_ti->bound_cpus_allowed = cpumask_of_cpu(0);
+				task->flags &= ~PF_THREAD_BOUND;
+				current_ti->flags &= ~_TIF_COPRORESSOR_BOUND;
+			}
+		}
+	}
+#endif
 	preempt_enable();
 }
-
-#endif
+#endif /* XTENSA_HAVE_COPROCESSORS */
 
 #if defined(CONFIG_DEBUG_KERNEL) && defined(CONFIG_SMP)
 unsigned long idle_jiffies[NR_CPUS];
@@ -134,8 +287,8 @@ void cpu_idle_monitor(int sched)
 	if ((cpu >= 0) && (cpu <= NR_CPUS)) {
 		idle_count[cpu]++;
 		if (dt > (60 * HZ) ) {
-			printk(KERN_DEBUG "%s: cpu:%d, ccount:%08lx, dt:%d, idle_count:[%lu, %lu]\n", __func__,
-					       cpu,    ccount,       dt,    idle_count[0],  idle_count[1]);
+			dprintk(KERN_DEBUG "%s: cpu:%d, ccount:%08lx, dt:%d, idle_count:[%lu, %lu]\n", __func__,
+					        cpu,    ccount,       dt,    idle_count[0],  idle_count[1]);
 
 			idle_jiffies[cpu] = jiffies;	
 		}
@@ -173,34 +326,14 @@ void cpu_idle(void)
 void exit_thread(void)
 {
 #if XTENSA_HAVE_COPROCESSORS
-	preempt_disable();
-
-	coprocessor_release_all(current_thread_info(),
-				coprocessor_get_cpenable());
-	current_thread_info()->cpenable = 0;
-	coprocessor_clear_cpenable();
-
-	preempt_enable();
+	manage_coprocessors(current, CP_RELEASE_ALL);
 #endif
 }
 
-/*
- * Flush thread state. This is called when a thread does an execve()
- * Note that we flush coprocessor registers for the case execve fails.
- */
 void flush_thread(void)
 {
 #if XTENSA_HAVE_COPROCESSORS
-	struct thread_info *ti = current_thread_info();
-
-	preempt_disable();
-
-	coprocessor_flush_all(ti, ti->cpenable);
-	coprocessor_release_all(ti, ti->cpenable);
-	ti->cpenable = 0;
-	coprocessor_clear_cpenable();
-
-	preempt_enable();
+	manage_coprocessors(current, CP_FLUSH_AND_RELEASE_ALL);
 #endif
 }
 
@@ -210,13 +343,7 @@ void flush_thread(void)
 void prepare_to_copy(struct task_struct *tsk)
 {
 #if XTENSA_HAVE_COPROCESSORS
-	struct thread_info *ti = task_thread_info(tsk);
-
-	preempt_disable();
-
-	coprocessor_flush_all(ti, ti->cpenable);
-
-	preempt_enable();
+	manage_coprocessors(tsk, CP_FLUSH_ALL);
 #endif
 }
 
@@ -392,18 +519,22 @@ long xtensa_execve(char __user *name, char __user * __user *argv,
                    struct pt_regs *regs)
 {
 	long error;
-	char * filename;
+	char *filename;
+	struct task_struct *tsk = current;
 
 	filename = getname(name);
 	error = PTR_ERR(filename);
 	if (IS_ERR(filename))
 		goto out;
 		
-	// REMIND: release coprocessor?
+	/*
+	 * coprocessors are released by do_execve() via
+	 * flush_thread() called by flush_old_exec().
+	 */
 	error = do_execve(filename, argv, envp, regs);
 	if (error == 0) {
 		task_lock(current);
-		current->ptrace &= ~PT_DTRACE;
+		tsk->ptrace &= ~PT_DTRACE;
 		task_unlock(current);
 	}
 	putname(filename);

@@ -7,12 +7,13 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2005, 2006 Tensilica Inc.
+ * Copyright (C) 2005, 2009 Tensilica Inc.
  * Copyright (C) 1991, 1992  Linus Torvalds
  * 1997-11-28  Modified for POSIX.1b signals by Richard Henderson
  *
  * Chris Zankel <chris@zankel.net>
  * Joe Taylor <joe@tensilica.com>
+ * Pete Delaney <piet@tensilica.com>
  */
 
 #include <linux/signal.h>
@@ -161,12 +162,9 @@ setup_sigcontext(struct rt_sigframe __user *frame, struct pt_regs *regs)
 		return err;
 
 #if XTENSA_HAVE_COPROCESSORS
-	preempt_disable();
-	coprocessor_flush_all(ti, coprocessor_get_cpenable());
-	coprocessor_release_all(ti, coprocessor_get_cpenable());
-	ti->cpenable = 0;
-	coprocessor_clear_cpenable();
-	preempt_enable();
+	manage_coprocessors(current, CP_FLUSH_AND_RELEASE_ALL);
+	
+	/*                               to             from   */
 	err |= __copy_to_user(&frame->xtregs.cp, &ti->xtregs_cp,
 			      sizeof (frame->xtregs.cp));
 #endif
@@ -222,20 +220,18 @@ restore_sigcontext(struct pt_regs *regs, struct rt_sigframe __user *frame)
 	if (err)
 		return err;
 
- 	/* The signal handler may have used coprocessors in which
+ 	/* 
+	 * The signal handler may have used coprocessors in which
 	 * case they are still enabled.  We disable them to force a
 	 * reloading of the original task's CP state by the lazy
 	 * context-switching mechanisms of CP exception handling.
 	 * Also, we essentially discard any coprocessor state that the
-	 * signal handler created. */
-
+	 * signal handler created. 
+	 */
 #if XTENSA_HAVE_COPROCESSORS
-	preempt_disable();
-	coprocessor_release_all(ti, coprocessor_get_cpenable());
-	ti->cpenable = 0;
-	coprocessor_clear_cpenable();
-	preempt_enable();
-	
+	manage_coprocessors(current, CP_RELEASE_ALL);
+
+	/*                             to                from    */
 	err |= __copy_from_user(&ti->xtregs_cp, &frame->xtregs.cp,
 				sizeof (frame->xtregs.cp));
 #endif

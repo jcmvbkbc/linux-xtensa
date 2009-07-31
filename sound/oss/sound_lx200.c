@@ -13,7 +13,7 @@
 #include <asm/io.h>
 
 #include <asm/hardware.h>
-#include <asm/platform/system.h>
+#include <platform/system.h>
 
 #include <linux/module.h>       /* Specifically, a module */
 #include <linux/kernel.h>       /* We're doing kernel work */

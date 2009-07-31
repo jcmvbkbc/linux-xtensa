@@ -219,6 +219,25 @@ config NR_CPUS
         range 2 32
         default "4"
 
+config LAZY_SMP_COPROCESSOR_REGISTER_FLUSHING
+	bool "Enable Lazy Flushing of Coprocessor Registers"
+	default true
+	depends on SMP
+	help
+	  Enable SMP configurations to use the classic Lazy Flushing
+	  algorithm that's standard for non-SMP configurations. The
+	  SMP implementation binds the a task owning a co-processor
+	  to it's current processor. Once the task no longer owns
+	  the coprocessor, it's no longer bound to the cpu.
+
+	  On SMP systems if not enabled, the coprocessor registers
+	  are flushed every time the process switches to another task.
+	
+	  On Non-SMP systems the existing Lazy Flushing is still always used. 
+
+	  Performance difference doesn't appear to be significant for 
+	  configurations with only a few TIE registers; HiFI-2 for example.
+
 
 config GENERIC_TIME
 	bool "Use Generic Time Code"

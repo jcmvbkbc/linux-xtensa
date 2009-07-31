@@ -115,18 +115,20 @@ struct platform_device lx60_oeth_platform_device = {
 /* very early init */
 void __init platform_setup(char **cmdline)
 {
-	if (cmdline[0])
-		printk("lx60 %s('%s')\n", __func__, cmdline[0]);
-	else
-		printk("lx60 %s(void)\n", __func__);
+	if (cmdline) {
+		if (cmdline[0])
+			printk("lx60 %s('%s')\n", __func__, cmdline[0]);
+		else
+			printk("lx60 %s(void)\n", __func__);
+	}
 }
 
 /* early initialization, before secondary cpu's have been brought up */
 
 void platform_init(bp_tag_t *first)
 {
-	printk("lx60 %s(first:%p)\n", __func__, first);
-
+	if( first )
+		printk("lx60 %s(first:%p)\n", __func__, first);
 }
 
 static int lx60_init(void)

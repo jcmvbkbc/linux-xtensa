@@ -1,5 +1,5 @@
 /*
- * include/asm-xtensa/system.h
+ * arch/xtensa/include/asm/system.h
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
@@ -86,23 +86,41 @@ extern void *_switch_to(void *last, void *next);
 #endif	/* __ASSEMBLY__ */
 
 /*
- * TIF_THREAD_ACTIVE is being used by gdb ps/btt macros
+ * TIF_CURRENTLY_RUNNING is being used by gdb ps/btt macros
  * to know if a task is currenty running a it's CPU.
  */
 #define prepare_arch_switch(next)                                \
 do {                                                             \
-	set_tsk_thread_flag(next, TIF_CURRENTLY_RUNNING);        \
+	clear_tsk_thread_flag(next, TIF_CURRENTLY_RUNNING);      \
 } while(0)
 
 #define finish_arch_switch(prev)                                 \
 do {                                                             \
-	clear_tsk_thread_flag(prev, TIF_CURRENTLY_RUNNING);      \
+	set_tsk_thread_flag(prev, TIF_CURRENTLY_RUNNING);        \
 } while(0)
 
-#define switch_to(prev,next,last)		\
-do {						\
-	(last) = _switch_to(prev, next);	\
+#ifdef CONFIG_SMP
+/* 
+ * For SMP systems we either flush to coprocessor state or bind the task to 
+ * the CPU while it ownes the CP. If being debuged (ptrace) we always flush. 
+ */
+#define switch_to(prev,next,last)						\
+do {										\
+	manage_coprocessors((void *)prev, CP_SWITCH);				\
+	(last) = _switch_to(prev, next);					\
 } while(0)
+
+#else
+
+/* 
+ * For non-SMP systems all Lazy Coprocessor Flushing is done in coprocessor.S
+ * No flushing or process binding has to be done in manage_coprocessors(). 
+ */
+#define switch_to(prev,next,last)						\
+do {										\
+	(last) = _switch_to(prev, next);					\
+} while(0)
+#endif
 
 /*
  * Atomic compare and exchange.  Compare OLD with MEM, if identical,

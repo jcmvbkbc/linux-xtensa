@@ -2166,8 +2166,8 @@ ENTRY(_switch_to)
 	mov	a12, a2			# preserve 'prev' (a2)
 	mov	a13, a3			# and 'next' (a3)
 
-	l32i	a4, a2, TASK_THREAD_INFO
-	l32i	a5, a3, TASK_THREAD_INFO
+	l32i	a4, a2, TASK_THREAD_INFO # a4 = prev->ti
+	l32i	a5, a3, TASK_THREAD_INFO # a5 = next->ti
 
 	save_xtregs_user a4 a6 a8 a9 a10 a11 THREAD_XTREGS_USER
 
@@ -2182,12 +2182,14 @@ ENTRY(_switch_to)
 	rsync
 	s32i	a3, a3, EXC_TABLE_FIXUP	/* enter critical section */
 
-	/* Switch CPENABLE */
-
 #if (XTENSA_HAVE_COPROCESSORS || XTENSA_HAVE_IO_PORTS)
-	l32i	a3, a5, THREAD_CPENABLE
-	xsr	a3, CPENABLE
-	s32i	a3, a4, THREAD_CPENABLE
+	/* 
+	 * Swap CPENABLE register from prev->ti.cpenable to next->ti.cpenable;
+	 * See manage_coprocessors() in process.c for details.
+	 */
+	l32i	a3, a5, THREAD_CPENABLE	# a3 = next->ti.cpenable
+	xsr	a3, CPENABLE		# cpenable = next->ti.cpenable
+	s32i	a3, a4, THREAD_CPENABLE	# prev->ti.cpenable = previous cpenable
 #endif
 
 	/* Flush register file. */

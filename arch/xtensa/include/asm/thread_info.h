@@ -15,15 +15,10 @@
 
 #ifndef __ASSEMBLY__
 # include <asm/processor.h>
+# include <linux/types.h>
+# include <linux/cpumask.h>
 #endif
 
-/*
- * low level task data that entry.S needs immediate access to
- * - this struct should fit entirely inside of one cache line
- * - this struct shares the supervisor stack pages
- * - if the contents of this structure are changed, the assembly constants
- *   must also be changed
- */
 
 #ifndef __ASSEMBLY__
 
@@ -42,6 +37,13 @@ typedef struct xtregs_coprocessor {
 
 #endif
 
+/*
+ * low level task data that entry.S needs immediate access to
+ * - this struct should fit entirely inside of one cache line
+ * - this struct shares the supervisor stack pages
+ * - if the contents of this structure are changed, the assembly constants
+ *   must also be changed
+ */
 struct thread_info {
 	struct task_struct	*task;		/* main task structure */
 	struct exec_domain	*exec_domain;	/* execution domain */
@@ -55,9 +57,21 @@ struct thread_info {
 
 	unsigned long		cpenable;
 
-	/* Allocate storage for extra user states and coprocessor states. */
 #if XTENSA_HAVE_COPROCESSORS
-	xtregs_coprocessor_t	xtregs_cp;
+	/* 
+	 * Allocate storage for extra user states and coprocessor states. 
+	 * Likely a bit better if Lazy Binding structure members were in
+	 * struct thread_struct but it seems easier to #include cpumask_t
+	 * stuff here.
+	 *				-piet
+	 */
+	xtregs_coprocessor_t	xtregs_cp;		/* Lazy Co-processor  Regs */
+#ifdef CONFIG_SMP
+	cpumask_t		saved_cpus_allowed;	/* Saved mask of CP owner before binding */
+	cpumask_t		bound_cpus_allowed;	/* Mask of CP owner before binding */
+	int 			saved_nr_cpus_allowed;	/* Saved sched_rt_entity.nr_cpus_allowed */
+	int			cpu_allowed_saved;
+#endif
 #endif
 	xtregs_user_t		xtregs_user;
 };
@@ -151,6 +165,7 @@ static inline struct thread_info *current_thread_info(void)
 
 #define TIF_POLLING_NRFLAG	16	/* true if poll_idle() is polling TIF_NEED_RESCHED */
 #define TIF_CURRENTLY_RUNNING	17	/* True if thread is currently running on it's CPU */
+#define TIF_COPRORESSOR_BOUND	18	/* True of owner of coprocessor bound cpu while it ownes the CP */
 
 #define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)
 #define _TIF_SIGPENDING		(1<<TIF_SIGPENDING)
@@ -160,6 +175,7 @@ static inline struct thread_info *current_thread_info(void)
 #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
 #define _TIF_CURRENTLY_RUNNING	(1<<TIF_CURRENTLY_RUNNING)
 #define _TIF_RESTORE_SIGMASK	(1<<TIF_RESTORE_SIGMASK)
+#define _TIF_COPRORESSOR_BOUND	(1<<TIF_RESTORE_SIGMASK)
 
 #define _TIF_WORK_MASK		0x0000FFFE	/* work to do on interrupt/exception return */
 #define _TIF_ALLWORK_MASK	0x0000FFFF	/* work to do on any return to u-space */

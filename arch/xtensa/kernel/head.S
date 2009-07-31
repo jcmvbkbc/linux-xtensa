@@ -55,6 +55,9 @@ _start:	_j	2f
 2:	l32r	a0, 1b
 	jx	a0
 
+	/*
+	 * We come here for both primary and secondary processors
+	 */
 	.section .init.text, "ax"
 	.global _startup
 	.align 4
@@ -87,7 +90,9 @@ _startup:
 	/* Clear debugging registers. */
 
 #if XCHAL_HAVE_DEBUG
+#if XCHAL_NUM_IBREAK > 0
 	wsr	a0, IBREAKENABLE
+#endif
 	wsr	a0, ICOUNT
 	movi	a1, 15
 	wsr	a0, ICOUNTLEVEL
