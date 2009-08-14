@@ -96,6 +96,18 @@ _bootparam:
 	.short	0
 	.long	0
 
+	.section	.bss			# Place for xt-gdb to store TIE variables
+	.align	16
+	.globl spill_location_0			# area for TIE Register Spilling (set/show)
+	.globl spill_location_1
+	.globl spill_location_2
+spill_location_0:
+	.fill	128,4,0				# 128 Longs Reserved
+spill_location_1:
+	.fill	128,4,0				# 128 Longs Reserved
+spill_location_2:
+	.fill	128,4,0				# 128 Longs Reserved
+
 	.section	.ResetVector.remapped_text, "x"
 	.global         _RemappedResetVector
 

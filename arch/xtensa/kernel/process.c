@@ -227,7 +227,7 @@ void manage_coprocessors(void *prev, int cmd) {
 					break;
 #endif
 				default:
-					BUG():
+					BUG();
 
 				} /* switch(cmd) */
 			} /* ti == owner_t1 */
@@ -261,8 +261,8 @@ void manage_coprocessors(void *prev, int cmd) {
 				current_ti->flags &= ~_TIF_COPRORESSOR_BOUND;
 			}
 		}
-	}
 #endif
+	}
 	preempt_enable();
 }
 #endif /* XTENSA_HAVE_COPROCESSORS */

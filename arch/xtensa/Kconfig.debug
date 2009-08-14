@@ -175,6 +175,7 @@ config OPTIMIZE_INLINING
 # Will Set default for menu in linux/lib/Kconfig.debug.
 # Need to fix code like spill_registers() use of ar7 in 
 # include/asm-xtensa/system.h before enableing this.
+# Also show_stack() needs to be fixed.
 #
 config FRAME_POINTER
 	bool 

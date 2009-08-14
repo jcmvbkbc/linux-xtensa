@@ -245,6 +245,7 @@ void
 do_illegal_instruction(struct pt_regs *regs)
 {
 	struct task_struct *tsk = current;
+	int cpu = smp_processor_id();
 
 #if defined(CONFIG_KGDB) && defined(CONFIG_KGDB_BREAKS_WITH_ILLEGAL_INSTRUCTION)
 	if (memcmp((void *)regs->pc, (void *)&break_inst, 
@@ -259,8 +260,8 @@ do_illegal_instruction(struct pt_regs *regs)
 
 	/* If in user mode, send SIGILL signal to current process. */
 
-	printk("%s: Illegal Instruction in tsk:%p->comm:'%s' (pid = %d, pc = %#010lx)\n",
-	    __func__, tsk, tsk->comm, task_pid_nr(tsk), regs->pc);
+	printk("%s: Illegal Instruction on cpu:%d in tsk:%p->comm:'%s' (pid = %d, pc = %#010lx)\n",
+	    __func__, cpu, tsk, tsk->comm, task_pid_nr(tsk), regs->pc);
 
 	force_sig(SIGILL, tsk);
 }

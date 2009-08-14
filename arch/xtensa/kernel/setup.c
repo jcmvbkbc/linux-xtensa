@@ -544,6 +544,10 @@ int xchal_have_spanning_way = XCHAL_HAVE_SPANNING_WAY;
 
 int thread_size = CONFIG_STACK_SIZE;
 
+long spill_location_0[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
+long spill_location_1[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
+long spill_location_2[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
+
 
 #ifdef CONFIG_PROC_FS
 
