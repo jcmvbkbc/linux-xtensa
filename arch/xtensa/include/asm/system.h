@@ -288,7 +288,11 @@ static inline void spill_registers(void)
 		"wsr	a13," __stringify(SAR) "\n\t"
 		"wsr	a14," __stringify(PS) "\n\t"
 		:: "a" (&a0), "a" (&ps)
+#ifdef CONFIG_FRAME_POINTER
+		: "a2", "a3", "a4",       "a11", "a12", "a13", "a14", "a15", "memory");
+#else
 		: "a2", "a3", "a4", "a7", "a11", "a12", "a13", "a14", "a15", "memory");
+#endif
 }
 
 #define arch_align_stack(x) (x)

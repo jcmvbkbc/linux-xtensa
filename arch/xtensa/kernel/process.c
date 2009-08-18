@@ -59,7 +59,7 @@ extern DEFINE_PER_CPU(coprocessor_owner_t, coprocessor_owner);
 volatile int lazy_smp_coprocessor_flushing_enabled = 1;
 #else
 volatile int lazy_smp_coprocessor_flushing_enabled = 0;
-#endif
+#endif /* CONFIG_LAZY_SMP_COPROCESSOR_REGISTER_FLUSHING */
 
 #ifdef CONFIG_DEBUG_KERNEL
 int process_debug = 1;
@@ -68,13 +68,21 @@ int process_debug = 1;
 	do { \
 		if (process_debug) printk(KERN_DEBUG args); \
 	} while (0)
+#else
+#define dprintk(args...)
+#endif
 
+#if defined(CONFIG_DEBUG_KERNEL) && defined(XCHAL_HAVE_HIFI)
 volatile int check_hifitest_registers = 0;
 
 /*
  * This function is only used with a hifi test programs that puts the pid into a 
  * hifi2 TIE Register, incremnets other TIE registers, and checks to make sure they 
- * are in sync with a integer counterpart. 
+ * are in sync with a integer counterpart. It was helpfull in knowing ASAP when the
+ * coprocessor registers were out of sync.
+ *
+ * REMIND: Will likely remove on push upstream. Might come in handy if another ARCH
+ *         has a mechanizm for lazy saves that I missed and we want to switch to it.         
  */
 static inline void hifitest_register_check(struct thread_info *owner_ti, int cp_num)
 {
@@ -101,11 +109,10 @@ static inline void hifitest_register_check(struct thread_info *owner_ti, int cp_
 	}
 	return;
 }
-#else
+#else  /* !(CONFIG_DEBUG_KERNEL && XCHAL_HAVE_HIFI) */
 #define check_hifitest_registers 0
 #define hifitest_register_check(ti, cp_num)
-#define dprintk(args...)
-#endif /* CONFIG_DEBUG_KERNEL */
+#endif /* (CONFIG_DEBUG_KERNEL && XCHAL_HAVE_HIFI) */
 
 /*
  * The task owning a coprocessor (CP) and it's associated registers
@@ -234,7 +241,7 @@ void manage_coprocessors(void *prev, int cmd) {
 		} /* for XCHAL_CP_MAX */
 	} else {
 		/*
-		 * Task no longer own any co-processors,
+		 * Task no longer owns any co-processors;
 		 * if I previously bound myself to the
 		 * current cpu it's now fine to un-bind.
 		 */ 

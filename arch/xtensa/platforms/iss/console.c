@@ -8,7 +8,7 @@
  * Copyright (C) 2001-2005 Tensilica Inc.
  *   Authors	Christian Zankel, Joe Taylor
  */
-
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -177,6 +177,9 @@ static void rs_wait_until_sent(struct tty_struct *tty, int timeout)
 	/* Stub, once again.. */
 }
 
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30))
+
 static int rs_proc_show(struct seq_file *m, void *v)
 {
 	seq_printf(m, "serinfo:1.0 driver:%s\n", serial_version);
@@ -195,6 +198,23 @@ static const struct file_operations rs_proc_fops = {
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
+#else
+static int rs_read_proc(char *page, char **start, off_t off, int count,
+			int *eof, void *data)
+{
+	int len = 0;
+	off_t begin = 0;
+
+	len += sprintf(page, "serinfo:1.0 driver:%s\n", serial_version);
+	*eof = 1;
+
+	if (off >= len + begin)
+		return 0;
+
+	*start = page + (off - begin);
+	return ((count < begin + len - off) ? count : begin + len - off);
+}
+#endif
 
 static struct tty_operations serial_ops = {
 	.open = rs_open,
@@ -206,7 +226,11 @@ static struct tty_operations serial_ops = {
 	.chars_in_buffer = rs_chars_in_buffer,
 	.hangup = rs_hangup,
 	.wait_until_sent = rs_wait_until_sent,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30))
 	.proc_fops = &rs_proc_fops,
+#else
+	.read_proc = rs_read_proc,
+#endif
 };
 
 int __init rs_init(void)

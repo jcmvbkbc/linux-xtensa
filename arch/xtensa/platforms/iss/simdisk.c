@@ -17,9 +17,11 @@
 #include	<linux/blkdev.h>
 #include	<linux/bio.h>
 #include	<linux/proc_fs.h>
+#if 0
 #include	<asm/semaphore.h>
+#endif
 #include	<asm/uaccess.h>
-#include	<asm/platform/simcall.h>
+#include	<platform/simcall.h>
 
 #define SIMDISK_MAJOR 240
 

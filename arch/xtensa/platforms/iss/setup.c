@@ -59,7 +59,9 @@ void platform_restart(void)
 			     "wsr	a2, " __stringify(ICOUNTLEVEL) "\n\t"
 			     "movi	a2, 0\n\t"
 			     "wsr	a2, " __stringify(ICOUNT) "\n\t"
+#if XCHAL_NUM_IBREAK > 1
 			     "wsr	a2, " __stringify(IBREAKENABLE) "\n\t"
+#endif
 			     "wsr	a2, " __stringify(LCOUNT) "\n\t"
 			     "movi	a2, 0x1f\n\t"
 			     "wsr	a2, " __stringify(PS) "\n\t"
@@ -140,7 +142,7 @@ int msg[NR_CPUS];
 
 void platform_send_ipi_message(cpumask_t callmask, int message)
 {
-	register long ra asm("a0");
+	UNUSED register long ra asm("a0");
 #if 1
 	if (cpu_isset(0, callmask)) {
 		msg[0] |= 1 << message;
