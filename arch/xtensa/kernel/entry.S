@@ -1227,8 +1227,8 @@ ENTRY(fast_syscall_kernel)
 	l32i	a0, a2, PT_DEPC
 	bgeui	a0, VALID_DOUBLE_EXCEPTION_ADDRESS, fast_syscall_unrecoverable
 
-	rsr	a0, DEPC			# get syscall-nr
-	_beqz	a0, fast_syscall_spill_registers
+	rsr	a0, DEPC				# get syscall-nr
+	_beqz	a0, fast_syscall_spill_registers	# Handle System call __NR_spill:0
 	_beqi	a0, __NR_xtensa, fast_syscall_xtensa
 
 #	Save state and prepare to call C code 
@@ -1376,7 +1376,7 @@ CATCH
 
 
 
-/* fast_syscall_spill_registers.
+/* fast_syscall_spill_registers, System call number 0.
  *
  * Entry condition:
  *
@@ -1387,25 +1387,28 @@ CATCH
  *   depc:	a2, original value saved on stack (PT_DEPC)
  *   excsave_1:	 dispatch table
  *
- * Note: We assume the stack pointer is EXC_TABLE_KSTK in the fixup handler.
+ * Note: 
+ *    We assume the stack pointer is EXC_TABLE_KSTK in the fixup handler.
+ *
+ *   This syscall is still used by C++; for example, it's being called from:
+ *	  Software/xcc/gcc/gcc/config/xtensa/lib2funcs.S
+ *   It's used to set up the stack so that arbitrary frames can be accessed.
  */
-
 ENTRY(fast_syscall_spill_registers)
-#ifdef CONFIG_SMP
-99: 	j 	99b			# Shouldn't be use with SMP
-#endif
 
-	/* Register a FIXUP handler (pass current wb as a parameter) */
-
+	/* 
+	 * Register a FIXUP handler (pass current wb as a parameter).
+	 * Need to swap a3 and EXCSAVE_1 as we are using Joe's exception convention.
+	 */
+	xsr     a3, EXCSAVE_1           # SAVE a3 and get dispatch table
 	movi	a0, fast_syscall_spill_registers_fixup
 	s32i	a0, a3, EXC_TABLE_FIXUP
 	rsr	a0, WINDOWBASE
 	s32i	a0, a3, EXC_TABLE_PARAM
+	xsr	a3, EXCSAVE_1		# RESTORE a3 and excsave_1
 
-	/* Save a3 and SAR on stack. */
-
+	/* Save Users a3, a4 and SAR on stack. */
 	rsr	a0, SAR
-	xsr	a3, EXCSAVE_1		# restore a3 and excsave_1
 	s32i	a3, a2, PT_AREG3
 	s32i	a4, a2, PT_AREG4
 	s32i	a0, a2, PT_AREG5	# store SAR to PT_AREG5
