@@ -113,29 +113,27 @@ typedef struct tagtable {
 #define __tagtable(tag, fn) static tagtable_t __tagtable_##fn 		\
 	__attribute__((used, __section__(".taglist"))) = { tag, fn }
 
-/* parse current tag */
-
-static int __init_refok parse_tag_mem(const bp_tag_t *tag)
+/* 
+ * parse current memory info tag:
+ */
+static int __init parse_tag_mem(const bp_tag_t *tag)
 {
-	bp_memory_t *mi = (bp_memory_t*)(tag->data);
-	int i = 0;
+	meminfo_t *mi = (meminfo_t*)(tag->data);
 
-	if (mi->type != BP_MEMORY_TYPE_SYSMEM)
+	if (mi->type != MEMORY_TYPE_CONVENTIONAL)
 		return -1;
 
-	while (i < mi->nr_banks) {
-		bp_memory_bank_t* bank = &mi->bank[i];
-
-		if (mi->nr_banks >= SYSMEM_BANKS_MAX) {
-			printk(KERN_WARNING
-			       "Ignoring memory bank 0x%08lx size %ldKB\n",
-			       bank->start, bank->end - bank->start);
-			return -EINVAL;
-		}
-		sysmem.bank[sysmem.nr_banks].start = PAGE_ALIGN(bank->start);
-		sysmem.bank[sysmem.nr_banks].end   = bank->end & PAGE_SIZE;
-		sysmem.nr_banks++;
+	if (sysmem.nr_banks >= SYSMEM_BANKS_MAX) {
+		printk(KERN_WARNING
+		       "Ignoring memory bank 0x%08lx size %ldKB\n",
+		       (unsigned long)mi->start,
+		       (unsigned long)mi->end - (unsigned long)mi->start);
+		return -EINVAL;
 	}
+	sysmem.bank[sysmem.nr_banks].type  = mi->type;
+	sysmem.bank[sysmem.nr_banks].start = PAGE_ALIGN(mi->start);
+	sysmem.bank[sysmem.nr_banks].end   = mi->end & PAGE_MASK;
+	sysmem.nr_banks++;
 
 	return 0;
 }
@@ -144,7 +142,7 @@ __tagtable(BP_TAG_MEMORY, parse_tag_mem);
 
 #ifdef CONFIG_BLK_DEV_INITRD
 
-static int __init_refok parse_tag_initrd(const bp_tag_t* tag)
+static int __init_refok parse_tag_initrd(const bp_tag_t *tag)
 {
 	bp_memory_bank_t* mi;
 	mi = (bp_memory_bank_t*)(tag->data);
@@ -158,9 +156,8 @@ __tagtable(BP_TAG_INITRD, parse_tag_initrd);
 
 #endif /* CONFIG_BLK_DEV_INITRD */
 
-static int __init_refok parse_tag_cmdline(const bp_tag_t* tag)
+static int __init_refok parse_tag_cmdline(const bp_tag_t *tag)
 {
-return 0;
 	strncpy(command_line, (char*)(tag->data), COMMAND_LINE_SIZE);
 	command_line[COMMAND_LINE_SIZE - 1] = '\0';
 	return 0;
@@ -168,11 +165,14 @@ return 0;
 
 __tagtable(BP_TAG_COMMAND_LINE, parse_tag_cmdline);
 
+
+/* TODO: Add __tagtable(BP_TAG_SERIAL_BAUDRATE, ) sent by u-boot */
+
 /*
  * Currently only the primary processor has boot params.
  * You shouldn't get here from _startup() on secondary processors.
  */
-static int __init parse_bootparam(const bp_tag_t* tag)
+static int __init parse_bootparam(const bp_tag_t *tag)
 {
 	extern tagtable_t __tagtable_begin, __tagtable_end;
 	tagtable_t *t;
@@ -180,11 +180,11 @@ static int __init parse_bootparam(const bp_tag_t* tag)
 	/* Boot parameters must start with a BP_TAG_FIRST tag. */
 
 	if (tag->id != BP_TAG_FIRST) {
-		printk(KERN_WARNING "Invalid boot parameters!\n");
+		printk(KERN_WARNING "%s: Invalid boot parameters!\n", __func__);
 		return 0;
 	}
 
-	tag = (bp_tag_t*)((unsigned long)tag + sizeof(bp_tag_t) + tag->size);
+	tag = (bp_tag_t *)((unsigned long)tag + sizeof(bp_tag_t) + tag->size);
 
 	/* Parse all tags. */
 
@@ -196,9 +196,10 @@ static int __init parse_bootparam(const bp_tag_t* tag)
 			}
 		}
 		if (t == &__tagtable_end)
-			printk(KERN_WARNING "Ignoring tag "
-			       "0x%08x\n", tag->id);
-		tag = (bp_tag_t*)((unsigned long)(tag + 1) + tag->size);
+			printk(KERN_WARNING "%s: Ignoring tag "
+			       "0x%04x\n", __func__, tag->id);
+
+		tag = (bp_tag_t *)((unsigned long)(tag + 1) + tag->size);
 	}
 
 	return 0;

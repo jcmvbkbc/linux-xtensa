@@ -7,7 +7,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005  Tensilica Inc.
+ * Copyright (C) 2001 - 2009  Tensilica Inc.
  *
  * (Concept borrowed from the 68K port)
  */
@@ -15,7 +15,7 @@
 #ifndef _XTENSA_BOOTPARAM_H
 #define _XTENSA_BOOTPARAM_H
 
-#define BP_VERSION 0x0001
+#define BP_VERSION 0x0001		/* Sent with first tag */
 
 #define BP_TAG_COMMAND_LINE	0x1001	/* command line (0-terminated string)*/
 #define BP_TAG_INITRD		0x1002	/* ramdisk addr and size (bp_meminfo) */
@@ -39,21 +39,23 @@ typedef struct bp_tag {
 #define bp_tag_next(tag)						\
 	(((bp_tag_t*)((unsigned long)((tag) + 1)) + (tag)->size))
 
-typedef struct bp_memory_bank {
-  int node;
+typedef struct meminfo {
+  unsigned long type;
   unsigned long start;
   unsigned long end;
-} bp_memory_bank_t;
+} meminfo_t;
 
-#define BP_MEMORY_TYPE_SYSMEM		0x1000
-#define BP_MEMORY_TYPE_FLASH		0x2000
-#define BP_MEMORY_TYPE_INITRD		0x3000
+#define SYSMEM_BANKS_MAX 5
 
-typedef struct bp_memory {
+#define MEMORY_TYPE_CONVENTIONAL	0x1000
+#define MEMORY_TYPE_NONE		0x2000
+
+typedef struct sysmem_info {
   int nr_banks;
-  unsigned long type;
-  bp_memory_bank_t bank[0];
-} bp_memory_t;
+  meminfo_t bank[SYSMEM_BANKS_MAX];
+} sysmem_info_t;
+
+extern sysmem_info_t sysmem;
 
 #endif	/* __ASSEMBLY__ */
 #endif	/* _XTENSA_BOOTPARAM_H */

@@ -13,19 +13,4 @@
 
 #define COMMAND_LINE_SIZE	256
 
-#define SYSMEM_BANKS_MAX	4
-
-typedef struct sysmem_bank {
-	unsigned long start;
-	unsigned long end;
-	int node;
-} sysmem_bank_t;
-
-typedef struct sysmem_info {
-	int nr_banks;
-	sysmem_bank_t bank[SYSMEM_BANKS_MAX];
-} sysmem_info_t;
-
-extern sysmem_info_t __initdata sysmem;
-
 #endif

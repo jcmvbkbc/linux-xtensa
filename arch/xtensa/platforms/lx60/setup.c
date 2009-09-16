@@ -117,7 +117,7 @@ void __init platform_setup(char **cmdline)
 {
 	if (cmdline) {
 		if (cmdline[0])
-			printk("lx60 %s('%s')\n", __func__, cmdline[0]);
+			printk("lx60 %s(cmdline[0]:'%s')\n", __func__, cmdline[0]);
 		else
 			printk("lx60 %s(void)\n", __func__);
 	}
@@ -125,10 +125,10 @@ void __init platform_setup(char **cmdline)
 
 /* early initialization, before secondary cpu's have been brought up */
 
-void platform_init(bp_tag_t *first)
+void platform_init(bp_tag_t *bootparams)
 {
-	if( first )
-		printk("lx60 %s(first:%p)\n", __func__, first);
+	if( bootparams )
+		printk("lx60 %s(bootparams:%p)\n", __func__, bootparams);
 }
 
 static int lx60_init(void)
