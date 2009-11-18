@@ -26,9 +26,9 @@
 #include <asm/platform.h>
 
 #ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
-unsigned long ccount_per_jiffy;		/* per 1/HZ */
-unsigned long nsec_per_ccount;		/* nsec per ccount increment */
+unsigned long ccount_per_jiffy;					/* per 1/HZ */
 #endif
+unsigned long nsec_per_ccount = DEFAULT_NSEC_PER_CCOUNT;	/* nsec per ccount increment */
 
 #ifdef CONFIG_GENERIC_TIME
 static cycle_t ccount_read(void)

@@ -172,11 +172,23 @@ void __init zones_init(void)
 	unsigned long zones_size[MAX_NR_ZONES];
 	int i;
 
-	/* All pages are DMA-able, so we put them all in the DMA zone. */
-
-	zones_size[ZONE_DMA] = max_low_pfn - ARCH_PFN_OFFSET;
-	for (i = 1; i < MAX_NR_ZONES; i++)
+	for (i = 0; i < MAX_NR_ZONES; i++)
 		zones_size[i] = 0;
+
+#if 0
+	/* All pages are DMA-able, so we put them all in the DMA zone. */
+	zones_size[ZONE_DMA] = max_low_pfn - ARCH_PFN_OFFSET;
+#else
+	/* 
+	 * Xtensa doesn't need a ZONE_DMA. I386 needs it because
+	 * ISA cards can only access the lower 16MB of memory.
+	 *
+	 * REMIND: 
+ 	 *    ARM enables CONFIG_ZONE_DMA in all of their default configs. 
+	 *    Why?
+	 */
+	zones_size[ZONE_NORMAL] = max_low_pfn - ARCH_PFN_OFFSET;
+#endif
 
 #ifdef CONFIG_HIGHMEM
 	zones_size[ZONE_HIGHMEM] = max_pfn - max_low_pfn;

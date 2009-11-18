@@ -545,6 +545,12 @@ int xchal_have_spanning_way = XCHAL_HAVE_SPANNING_WAY;
 
 int thread_size = CONFIG_STACK_SIZE;
 
+#ifdef CONFIG_SMP
+int arch_is_running_smp = 1;
+#else
+int arch_is_running_smp = 0;
+#endif
+
 long spill_location_0[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
 long spill_location_1[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
 long spill_location_2[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
