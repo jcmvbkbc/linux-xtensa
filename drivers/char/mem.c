@@ -35,6 +35,10 @@
 # include <linux/efi.h>
 #endif
 
+#ifdef CONFIG_XTENSA
+extern const struct file_operations kio_fops;
+#endif
+
 /*
  * Architectures vary in how they handle caching for addresses
  * outside of main memory.
@@ -891,9 +895,11 @@ static const struct file_operations kmsg_fops = {
 static int memory_open(struct inode * inode, struct file * filp)
 {
 	int ret = 0;
+	int dev_minor;
 
 	lock_kernel();
-	switch (iminor(inode)) {
+	dev_minor = iminor(inode);
+	switch (dev_minor) {
 		case 1:
 			filp->f_op = &mem_fops;
 			filp->f_mapping->backing_dev_info =
@@ -935,6 +941,21 @@ static int memory_open(struct inode * inode, struct file * filp)
 			filp->f_op = &oldmem_fops;
 			break;
 #endif
+
+#ifdef CONFIG_XTENSA
+		/*
+		 * KIO is a Xtensa demo of using remap_pfn_range() to mmap 
+		 * an unused part of the ethernets KIO memory on a LX60/LX200.
+		 *
+  		 * /dev/kio:
+  		 *      mknod /dev/kio c 1 101
+  		 *	crw-r--r--    1 root     root     101,   0 Feb  4 20:58 /dev/kio
+  		 *	see code in kio.c
+  		 */
+		case 101:
+			filp->f_op = &kio_fops;
+			break;
+#endif	
 		default:
 			unlock_kernel();
 			return -ENXIO;
@@ -970,6 +991,10 @@ static const struct {
 	{11,"kmsg",    S_IRUGO | S_IWUSR,           &kmsg_fops},
 #ifdef CONFIG_CRASH_DUMP
 	{12,"oldmem",    S_IRUSR | S_IWUSR | S_IRGRP, &oldmem_fops},
+#endif
+
+#ifdef  CONFIG_XTENSA
+	{101,"kio",    S_IRUSR | S_IWUSR | S_IRGRP, &kio_fops},
 #endif
 };
 
