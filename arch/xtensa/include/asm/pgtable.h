@@ -42,6 +42,10 @@
  *	invalid_pte_table for absent mappings.
  *
  * The individual pages are 4 kB big with special pages for the empty_zero_page.
+ *  
+ *  Details on the Xtensa ARCH are available in the Xtensa ISA
+ *   http://www.tensilica.com/products/literature-docs/documentation/xtensa-isa-databook.htm
+ *
  */
 
 #define PGDIR_SHIFT	22
@@ -90,14 +94,51 @@
 
 
 /*
- * Xtensa Linux config PTE layout (when present):
- *	31-12:	PPN
- *	11-6:	Software
- *	5-4:	RING
- *	3-0:	CA
+ * For the Xtensa architecture, the PTE layout is as follows:
  *
- * A pte is considered to be 'present' if it's valid, not swapped out
- * and the protection bits are meaningful.
+ *   PTE type    31------12  11---7   6   5-4  3 2   1 0   Cache  Note
+ *               ----------------------------------------
+ *              |           | Software  | Hard Ware Prot |
+ *              |  PPN      | ??WAD | P | RI | CacheAttr |         *0
+ *               ----------------------------------------
+ *   present    |  PPN      | ??WAD | ? | RI | 0 0 | w x | bypass  *1
+ *   present    |  PPN      | ??WAD | ? | RI | 0 1 | w x | wrback  *1
+ *   present    |  PPN      | ??WAD | ? | RI | 1 0 | w x | wrthru  *1
+ *   present    |  PPN      | ??WAD | 1 | 01 | 1 1 | 0 0 | PAGE_NONE (no rwx)
+ *   swap       | index   | typ | 1 | 0 | 01 | 1 1 | 0 0 |
+ *   none       |       ???     | 0 | 0 | 01 | 1 1 | 0 0 |
+ *   reserved   |                       | RI | 1 1 | 0 1 |
+ *   file       |  file page offset     | 01 | 1 1 | 1 0 |
+ *   reserved   |                       | RI | 1 1 | 1 1 |         *2
+ *               ----------------------------------------
+ *
+ *   NOTE *0:   MMU Cache Attributes are explained at Table 4-144 in 
+ *              section 4.6.5.10 of the Xtensa ISA.
+ *   Note *1:   MMU v1 has a "v" (valid) bit instead of an "x" (execute) bit.
+ *   Note *2:   MMU v1 treats this also as "present", with similar format.
+ *
+ *   Legend:
+ *   PPN	Physical Page Number
+ *   RI		ring (0=privileged, 1-3=user)
+ *   CacheAttr	CA field (cache attribute, a.k.a. AM = access mode)
+ *   P		page with CA=1100 is present (disambiguating)
+ *   ??WAD	software bits (?=unassigned, W=writable, A=accessed, D=dirty)
+ *   w		page is writable
+ *   x		page is executable
+ *   index	swap offset / PAGE_SIZE (19 bits -> 2 GB)
+ *   typ	swap type (5 bits -> 32 types) (identifies swap file!?!?)
+ *   file page offset	26-bit offset into the file, in increments of PAGE_SIZE
+ *			(for files up to 256 GB)
+ *
+ * A PTE must never have any of the values marked as reserved.
+ * Thus a PTE is either:
+ *	present		maps to a physical page in memory
+ *	file		?? would map to that portion of a file if accessed ??
+ *	swap		swapped out to disk at the indicated offset
+ *	none		not mapped (access will cause a fault)
+ *
+ * We need the PAGE_PRESENT bit to distinguish present but not-readable
+ * (PAGE_NONE) from other non-readable PTEs (none, file, swap).
  *
  * Similar to the Alpha and MIPS ports, we need to keep track of the ref
  * and mod bits in software.  We have a software "you can read
@@ -105,32 +146,32 @@
  * process read from the page.  On the same token we have a software
  * writable bit and the real hardware one which actually lets the
  * process write to the page.
- *
- * See further below for PTE layout for swapped-out pages.
  */
-
 #define _PAGE_HW_EXEC		(1<<0)	/* hardware: page is executable */
 #define _PAGE_HW_WRITE		(1<<1)	/* hardware: page is writable */
 
-#define _PAGE_FILE		(1<<1)	/* non-linear mapping, if !present */
-#define _PAGE_PROTNONE		(3<<0)	/* special case for VM_PROT_NONE */
+#define _PAGE_RIGHTS_FILE	(1<<1)	/* non-linear mapping, if !present */
+#define _PAGE_RIGHTS_NONE	(0<<0)	/* special case for VM_PROT_NONE */
+#define _PAGE_RIGHTS_MASK	(3<<0)	/* Bits 1..0 */
 
 /* None of these cache modes include MP coherency:  */
 #define _PAGE_CA_BYPASS		(0<<2)	/* bypass, non-speculative */
 #define _PAGE_CA_WB		(1<<2)	/* write-back */
 #define _PAGE_CA_WT		(2<<2)	/* write-through */
-#define _PAGE_CA_MASK		(3<<2)
-#define _PAGE_INVALID		(3<<2)
+#define _PAGE_CA_MASK		(3<<2)	/* Bits 3..2 */
+#define _PAGE_CA_INVALID	(3<<2)
 
 #define _PAGE_KERNEL		(0<<4)	/* user access (ring = 1) */
 #define _PAGE_USER		(1<<4)	/* user access (ring = 1) */
 #define _PAGE_RING_MASK		(3<<4)	/* access bits (ring = 0||1||2||3) */
 
-/* Software - bits 6 7 .  8 9 10 11*/
-#define _PAGE_WRITABLE_BIT	6
-#define _PAGE_WRITABLE		(1<<6)	/* software: page writable */
+/* Software - bits 6 7 .  8 9 10 11 */
+#define _PAGE_PRESENT		(1<<6)	/* software: page present */
 #define _PAGE_DIRTY		(1<<7)	/* software: page dirty */
+#define _PAGE_SWAP		(1<<7)	/* software: swap */
 #define _PAGE_ACCESSED		(1<<8)	/* software: page accessed (read) */
+#define _PAGE_WRITABLE		(1<<9)	/* software: page writable */
+#define _PAGE_WRITABLE_BIT	9
 #define _PAGE_SOFTWARE_MASK	(0x3F<<6)
 
 /* 
@@ -138,30 +179,39 @@
  * set bit 0 to indicate a valid PTE 
  */
 #if XCHAL_HW_VERSION_MAJOR < 2000
-# define _PAGE_VALID		(1<<0)
-# define MMU_V1 1
+# define _PAGE_VALID	(1<<0)
+# define MMU_V1 	1
 #else
-# define _PAGE_VALID		0
-# define MMU_V1 0
+# define _PAGE_VALID	0
+# define MMU_V1 	0
 #endif
 
 #define _PAGE_CHG_MASK	(PAGE_MASK | _PAGE_ACCESSED | _PAGE_DIRTY)
-#define _PAGE_PRESENT	(_PAGE_VALID | _PAGE_CA_WB | _PAGE_ACCESSED)
+#define _PAGE_BASE	(_PAGE_VALID | _PAGE_CA_WB | _PAGE_ACCESSED)
+#define _PAGE_FILE	(_PAGE_KERNEL | _PAGE_CA_INVALID | _PAGE_RIGHTS_FILE )
+#define  PAGE_PROT_MASK (_PAGE_RING_MASK | _PAGE_CA_MASK | _PAGE_RIGHTS_MASK )	/* 0x3F: Bits 5...0 */
 
 #ifdef CONFIG_MMU
-
-#define PAGE_NONE	   __pgprot(_PAGE_INVALID | _PAGE_USER | _PAGE_PROTNONE)
-#define PAGE_COPY	   __pgprot(_PAGE_PRESENT | _PAGE_USER)
-#define PAGE_COPY_EXEC	   __pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_HW_EXEC)
-#define PAGE_READONLY	   __pgprot(_PAGE_PRESENT | _PAGE_USER)
-#define PAGE_READONLY_EXEC __pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_HW_EXEC)
-#define PAGE_SHARED	   __pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_WRITABLE)
+#define WITH_PAGE_USER
+#ifdef  WITH_PAGE_USER
+#define PAGE_NONE	   __pgprot(_PAGE_CA_INVALID | _PAGE_PRESENT | _PAGE_USER | _PAGE_RIGHTS_NONE)
+#else
+#define PAGE_NONE	   __pgprot(_PAGE_CA_INVALID | _PAGE_RIGHTS_NONE)
+#endif
+#define PAGE_COPY	   __pgprot(_PAGE_BASE | _PAGE_USER)
+#define PAGE_COPY_EXEC	   __pgprot(_PAGE_BASE | _PAGE_USER | _PAGE_HW_EXEC)
+#define PAGE_READONLY	   __pgprot(_PAGE_BASE | _PAGE_USER)
+#define PAGE_READONLY_EXEC __pgprot(_PAGE_BASE | _PAGE_USER | _PAGE_HW_EXEC)
+#define PAGE_SHARED	   __pgprot(_PAGE_BASE | _PAGE_USER | _PAGE_WRITABLE)
 #define PAGE_SHARED_EXEC \
-	__pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_WRITABLE | _PAGE_HW_EXEC)
-#define PAGE_KERNEL	   __pgprot(_PAGE_PRESENT | _PAGE_HW_WRITE)
-#define PAGE_KERNEL_EXEC   __pgprot(_PAGE_PRESENT|_PAGE_HW_WRITE|_PAGE_HW_EXEC)
+	__pgprot(_PAGE_BASE | _PAGE_USER | _PAGE_WRITABLE | _PAGE_HW_EXEC)
+#define PAGE_KERNEL	   __pgprot(_PAGE_BASE | _PAGE_HW_WRITE)
+#define PAGE_KERNEL_EXEC   __pgprot(_PAGE_BASE|_PAGE_HW_WRITE|_PAGE_HW_EXEC)
 
-#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
+/*
+ * Maybe this wasn't a good idea
+ */
+#if 0 && defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 # define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_BYPASS)
 #else
 # define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_WB)
@@ -237,28 +287,40 @@ static inline void pgtable_cache_init(void) { }
  *	(pte & _RING_MASK) == 0
  *	(pte && _PAGE_SOFTWARE_MASK) == 0
  */
-#define pte_none(pte)	 (pte_val(pte) == (_PAGE_INVALID | _PAGE_USER) )
+#ifdef WITH_PAGE_USER
+#define pte_none(pte)	 ((pte_val(pte) & (PAGE_PROT_MASK|_PAGE_PRESENT)) == (_PAGE_CA_INVALID | _PAGE_USER) )
+#else
+#define pte_none(pte)	 ((pte_val(pte) & (PAGE_PROT_MASK|_PAGE_PRESENT)) == (_PAGE_CA_INVALID) )
+#endif
 
 /*
  * pte_present() returns true if the pte_pfn(pte) and protection bits are valid.
  */
 #if MMU_V1
-#define pte_present(pte) (((pte_val(pte) & _PAGE_CA_MASK) != _PAGE_INVALID)	\
-	               || ((pte_val(pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE))
+#define pte_present(pte) (((pte_val(pte) & _PAGE_CA_MASK) != _PAGE_CA_INVALID)	\
+	               || ((pte_val(pte) & _PAGE_RIGHTS_MASK) == _PAGE_RIGHTS_MASK))
 #else
-#define pte_present(pte) ((pte_val(pte) & _PAGE_CA_MASK) != _PAGE_INVALID)
+#define pte_present(pte) ((pte_val(pte) & _PAGE_CA_MASK) != _PAGE_CA_INVALID \
+			|| (pte_val(pte) & (_PAGE_PRESENT|_PAGE_RIGHTS_MASK)) == _PAGE_PRESENT)
 #endif
 
 /*
  * Set the pte to be pte_none; pte has no mapping
  */
+#ifdef WITH_PAGE_USER
 #define pte_clear(mm, addr, ptep)                                               \
 	do {                                                                    \
 		if (mm != NULL)							\
-			update_pte(ptep, __pte(_PAGE_INVALID | _PAGE_USER));    \
+			update_pte(ptep, __pte(_PAGE_CA_INVALID | _PAGE_USER));    \
 		else                                                            \
-			update_pte(ptep, __pte(_PAGE_INVALID | _PAGE_USER));    \
-	} while(0)                                                              \
+			update_pte(ptep, __pte(_PAGE_CA_INVALID | _PAGE_USER));    \
+	} while(0)
+#else
+#define pte_clear(mm,addr,ptep)                                         \
+        do { update_pte(ptep, __pte(_PAGE_CA_INVALID)); } while(0)
+#endif
+	
+
 
 #define pmd_none(pmd)	 (!pmd_val(pmd))
 #define pmd_present(pmd) (pmd_val(pmd) & PAGE_MASK)
@@ -276,7 +338,13 @@ static inline int pte_special(pte_t pte) { return 0; }
 /*
  * This macro is only valid if pte_present() is NOT true.
  */
-static inline int pte_file(pte_t pte)  { return pte_val(pte) & _PAGE_FILE; }
+static inline int pte_file(pte_t pte)  {
+	int retval;
+
+	retval =  ((pte_val(pte) & PAGE_PROT_MASK) == _PAGE_FILE);
+
+	return(retval);
+}
 
 static inline pte_t pte_wrprotect(pte_t pte)	
 	{ pte_val(pte) &= ~(_PAGE_WRITABLE | _PAGE_HW_WRITE); return pte; }
@@ -309,14 +377,17 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 	return __pte((pte_val(pte) & _PAGE_CHG_MASK) | pgprot_val(newprot));
 }
 
+static inline void update_pte_bp(void) {}
 /*
  * Certain architectures need to do special things when pte's
  * within a page table are directly modified.  Thus, the following
  * hook is made available.
  */
-static inline void update_pte(pte_t *ptep, pte_t pteval)
+static inline void update_pte(pte_t *ptep, pte_t pte)
 {
-	*ptep = pteval;
+	*ptep = pte;
+
+	if ((pte_val(pte) & PAGE_PROT_MASK) == 0X1f) update_pte_bp();
 
 #if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 	/* 
@@ -324,7 +395,8 @@ static inline void update_pte(pte_t *ptep, pte_t pteval)
 	 * Invalidating to make sure we always use what's in physical memory.
 	 * REMIND:
 	 *    This is in Chris's code that Joe checked in but NOT in
-	 *    Chris's linux-next repo.
+	 *    Chris's linux-next repo. Need to double check vmcode
+	 *    against Christian's current stuff; a number of differences exist.
 	 */
 	__asm__ __volatile__ ("dhwb %0, 0" :: "a" (ptep));
 #endif
@@ -410,33 +482,33 @@ ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
  * Format of swap pte:
  *  bit	   0	   MBZ
  *  bit	   1	   page-file (must be zero)
- *  bits   2 -  3  page hw access mode (must be 11: _PAGE_INVALID)
+ *  bits   2 -  3  page hw access mode (must be 11: _PAGE_CA_INVALID)
  *  bits   4 -  5  ring protection (must be 01: _PAGE_USER)
  *  bits   6 - 10  swap type (5 bits -> 32 types)
  *  bits  11 - 31  swap offset / PAGE_SIZE (21 bits -> 8GB)
  
  * Format of file pte:
  *  bit	   0	   MBZ
- *  bit	   1	   page-file (must be one: _PAGE_FILE)
- *  bits   2 -  3  page hw access mode (must be 11: _PAGE_INVALID)
+ *  bit	   1	   page-file (must be one: _PAGE_RIGHTS_FILE)
+ *  bits   2 -  3  page hw access mode (must be 11: _PAGE_CA_INVALID)
  *  bits   4 -  5  ring protection (must be 01: _PAGE_USER)
  *  bits   6 - 31  file offset / PAGE_SIZE
  */
 
-#define __swp_type(entry)	(((entry).val >> 6) & 0x1f)
-#define __swp_offset(entry)	((entry).val >> 11)
+#define __swp_type(entry)	(((entry).val >> 8) & 0x1f)
+#define __swp_offset(entry)	((entry).val >> 13)
 #define __swp_entry(type,offs)	\
-	((swp_entry_t) {((type) << 6) | ((offs) << 11) | _PAGE_INVALID})
+	((swp_entry_t) {((type) << 8) | ((offs) << 13) | _PAGE_SWAP | _PAGE_CA_INVALID})
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
 
 /*
- * The following only work if pte_present() is not true.
+ * The following file #defines only work if pte_present() is not true.
  */
-#define PTE_FILE_MAX_BITS	28
-#define pte_to_pgoff(pte)	(pte_val(pte) >> 4)
+#define PTE_FILE_MAX_BITS	26			/* 32 - 6 */
+#define pte_to_pgoff(pte)	(pte_val(pte) >> 6)
 #define pgoff_to_pte(off)	\
-	((pte_t) { ((off) << 4) | _PAGE_INVALID | _PAGE_FILE })
+	((pte_t) { ((off) << 6) | _PAGE_FILE })
 
 #endif /*  !defined (__ASSEMBLY__) */
 
