@@ -278,11 +278,10 @@ void __init init_IRQ(void)
 
 	platform_init_irq();
 
+#ifdef 	CONFIG_ARCH_HAS_SMP
 	/* Enable all interrupts that are controlled by the external PIC */
 	per_cpu(cached_irq_mask, smp_processor_id()) |= 0x3c;
 	set_sr(0x3c, INTENABLE);
-
-#ifdef 	CONFIG_ARCH_HAS_SMP
 
 #ifdef 	CONFIG_SMP
 	smp_init_irq();
