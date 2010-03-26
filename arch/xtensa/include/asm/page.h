@@ -84,7 +84,7 @@
  * using an alias with the kernel addresses. 
  */
 
-#if DCACHE_WAY_SIZE > PAGE_SIZE && XCHAL_DCACHE_IS_WRITEBACK
+#if DCACHE_WAY_SIZE > PAGE_SIZE
 # define DCACHE_ALIASING_POSSIBLE
 # define DCACHE_ALIAS_ORDER	(DCACHE_WAY_SHIFT - PAGE_SHIFT)
 # define DCACHE_ALIAS_MASK	(PAGE_MASK & (DCACHE_WAY_SIZE - 1))
@@ -108,6 +108,10 @@
 # define ICACHE_ALIAS_MASK      0
 # define ICACHE_ALIAS(a)        0
 # define ICACHE_ALIAS_EQ(a,b)   0
+#endif
+
+#if defined(DCACHE_ALIASING_POSSIBLE) || defined(ICACHE_ALIASING_POSSIBLE)
+# define CACHE_ALIASING_POSSIBLE
 #endif
 
 #ifdef __ASSEMBLY__
