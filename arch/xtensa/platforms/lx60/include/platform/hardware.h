@@ -28,6 +28,7 @@
 #define __XTENSA_LX60_HARDWARE_H
 
 #include <platform/system.h>
+#include <asm/core.h>
 
 /* By default NO_IRQ is defined to 0 in Linux, but we use the
    interrupt 0 for UART... */
@@ -64,16 +65,16 @@
 
 /*  UART interrupt: */
 #ifdef CONFIG_ARCH_HAS_SMP
-#define DUART16552_INTNUM	3
+#define DUART16552_INTNUM	XCHAL_EXTINT3_NUM
 #else
-#define DUART16552_INTNUM	0
+#define DUART16552_INTNUM	XCHAL_EXTINT0_NUM
 #endif
 
 /*  Ethernet interrupt:  */
 #ifdef CONFIG_ARCH_HAS_SMP
-#define OETH_IRQ                4
+#define OETH_IRQ                XCHAL_EXTINT4_NUM
 #else
-#define OETH_IRQ                1
+#define OETH_IRQ                XCHAL_EXTINT1_NUM
 #endif
 #define OETH_REQUEST_IRQ_FLAG   0
 /*
