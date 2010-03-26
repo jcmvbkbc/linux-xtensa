@@ -118,10 +118,39 @@
 
 /*
  * These are used to make use of C type-checking..
+ * It's also usefull for debugging to show bit more clearly with gdb.
  */
+typedef enum {
+	bypass = 0,
+	wrback = 1,
+	wrthru = 2,
+	invalid = 3
+} cache_attr_t;
 
-typedef struct { unsigned long pte; } pte_t;		/* page table entry */
-typedef struct { unsigned long pgd; } pgd_t;		/* PGD table entry */
+typedef enum {
+	kern = 0,
+	user = 1,
+	ring2 = 2,
+	ring3 = 3
+} ring_t;
+
+typedef union  { 
+	unsigned long pte;
+	struct {				/* Little Endian Form */
+		unsigned int x:1;		/* Bit 0: executable */
+		unsigned int w:1;		/* Bit 1: writable */
+		cache_attr_t attr:2;		/* Bit 2...3: cache attr */
+		ring_t ring:2;			/* Bits 4...5: Ring */
+		unsigned int present:1;		/* Bit 6: present */
+		unsigned int dirty:1;		/* Bit 7: dirty */
+		unsigned int accessed:1;	/* Bit 8: Accessed */
+		unsigned int writable:1;	/* Bit 9: Writeable */
+		unsigned int _unused:2;		/* Bit 10...11: <Available> */
+		unsigned int ppn:20;		/* Bits 12...31: Page Number */
+	} present;
+} pte_t;					/* page table entry */
+
+typedef struct { unsigned long pgd; } pgd_t;	/* PGD table entry */
 typedef struct { unsigned long pgprot; } pgprot_t;
 typedef struct page *pgtable_t;
 

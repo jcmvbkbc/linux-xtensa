@@ -36,9 +36,10 @@ define show_mem_pte
     set $pgt = *(unsigned*)($gpd + $vaddrpdo)
     printf "task:0x%08x, pgd:0x%08x+0x%x, pgt:0x%08x+0x%x\n", $task, $gpd, $vaddrpdo, $pgt, $vaddrpto
 
-    set $pte = *(unsigned*)($pgt + $vaddrpto)
+    set $pte_addr = (unsigned*)($pgt + $vaddrpto)
+    set $pte = *$pte_addr
     set $paddr = ($pte & 0xFFFFF000) + $vaddrofs
-    printf "Vaddr:0x%08x maps to Paddr:0x%08x pte:0x%08x.lsb:0x%03x\n", $vaddr, $paddr, $pte, ($pte & 0xFFF)
+    printf "Vaddr:0x%08x maps to Paddr:0x%08x pte:0x%08x.lsb:0x%03x = *pte_addr:0x%08x\n", $vaddr, $paddr, $pte, ($pte & 0xFFF), $pte_addr
 end
 document show_mem_pte
   Show the physical memory copy of PTE entry for the specified virtual address.

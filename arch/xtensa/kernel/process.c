@@ -62,7 +62,7 @@ volatile int lazy_smp_coprocessor_flushing_enabled = 0;
 #endif /* CONFIG_LAZY_SMP_COPROCESSOR_REGISTER_FLUSHING */
 
 #ifdef CONFIG_DEBUG_KERNEL
-int process_debug = 1;
+int process_debug = 0;
 
 #define dprintk(args...) \
 	do { \

@@ -96,20 +96,22 @@
 /*
  * For the Xtensa architecture, the PTE layout is as follows:
  *
+ *              |<- PAGE ->|
+ *              |<- MASK ->|
  *   PTE type    31------12  11---7   6   5-4  3 2   1 0   Cache  Note
  *               ----------------------------------------
  *              |           | Software  | Hard Ware Prot |
  *              |  PPN      | ??WAD | P | RI | CacheAttr |         *0
  *               ----------------------------------------
- *   present    |  PPN      | ??WAD | ? | RI | 0 0 | w x | bypass  *1
- *   present    |  PPN      | ??WAD | ? | RI | 0 1 | w x | wrback  *1
- *   present    |  PPN      | ??WAD | ? | RI | 1 0 | w x | wrthru  *1
- *   present    |  PPN      | ??WAD | 1 | 01 | 1 1 | 0 0 | PAGE_NONE (no rwx)
+ *   present    |  PPN      | ??WAD | 1 | RI | 0 0 | w x | bypass  *1
+ *   present    |  PPN      | ??WAD | 1 | RI | 0 1 | w x | wrback  *1
+ *   present    |  PPN      | ??WAD | 1 | RI | 1 0 | w x | wrthru  *1
+ *   present    |  PPN      | ??WAD | 1 | 01 | 1 1 | 0 0 | PROT_NONE (no rwx)
  *   swap       | index   | typ | 1 | 0 | 01 | 1 1 | 0 0 |
- *   none       |       ???     | 0 | 0 | 01 | 1 1 | 0 0 |
- *   reserved   |                       | RI | 1 1 | 0 1 |
- *   file       |  file page offset     | 01 | 1 1 | 1 0 |
- *   reserved   |                       | RI | 1 1 | 1 1 |         *2
+ *   pte_none   |       ???     | 0 | 0 | 01 | 1 1 | 0 0 |
+ *   reserved   |                   | 0 | RI | 1 1 | 0 1 |
+ *   file       |  file page offset | 0 | 01 | 1 1 | 1 0 |
+ *   reserved   |                   | 0 | RI | 1 1 | 1 1 |         *2
  *               ----------------------------------------
  *
  *   NOTE *0:   MMU Cache Attributes are explained at Table 4-144 in 
@@ -137,8 +139,8 @@
  *	swap		swapped out to disk at the indicated offset
  *	none		not mapped (access will cause a fault)
  *
- * We need the PAGE_PRESENT bit to distinguish present but not-readable
- * (PAGE_NONE) from other non-readable PTEs (none, file, swap).
+ * We need the PAGE_PRESENT bit to distinguish present but not accessable, 
+ * ie: rwx == 0, (PROT_NONE) from other non-readable PTEs (none, file, swap).
  *
  * Similar to the Alpha and MIPS ports, we need to keep track of the ref
  * and mod bits in software.  We have a software "you can read
@@ -166,11 +168,11 @@
 #define _PAGE_RING_MASK		(3<<4)	/* access bits (ring = 0||1||2||3) */
 
 /* Software - bits 6 7 .  8 9 10 11 */
-#define _PAGE_PRESENT		(1<<6)	/* software: page present */
-#define _PAGE_DIRTY		(1<<7)	/* software: page dirty */
-#define _PAGE_SWAP		(1<<7)	/* software: swap */
-#define _PAGE_ACCESSED		(1<<8)	/* software: page accessed (read) */
-#define _PAGE_WRITABLE		(1<<9)	/* software: page writable */
+#define _PAGE_PRESENT		(1<<6)	/* 0X40: software: page present */
+#define _PAGE_DIRTY		(1<<7)	/* 0X80: software: page dirty */
+#define _PAGE_SWAP		(1<<7)	/* 0X80: software: swap */
+#define _PAGE_ACCESSED		(1<<8)	/* 0X100: software: page accessed (read) */
+#define _PAGE_WRITABLE		(1<<9)	/* 0X200: software: page writable */
 #define _PAGE_WRITABLE_BIT	9
 #define _PAGE_SOFTWARE_MASK	(0x3F<<6)
 
@@ -187,16 +189,20 @@
 #endif
 
 #define _PAGE_CHG_MASK	(PAGE_MASK | _PAGE_ACCESSED | _PAGE_DIRTY)
-#define _PAGE_BASE	(_PAGE_VALID | _PAGE_CA_WB | _PAGE_ACCESSED)
+#define _PAGE_BASE	 (_PAGE_VALID | _PAGE_CA_WB | _PAGE_ACCESSED | _PAGE_PRESENT) 
 #define _PAGE_FILE	(_PAGE_KERNEL | _PAGE_CA_INVALID | _PAGE_RIGHTS_FILE )
 #define  PAGE_PROT_MASK (_PAGE_RING_MASK | _PAGE_CA_MASK | _PAGE_RIGHTS_MASK )	/* 0x3F: Bits 5...0 */
 
 #ifdef CONFIG_MMU
 #define WITH_PAGE_USER
 #ifdef  WITH_PAGE_USER
-#define PAGE_NONE	   __pgprot(_PAGE_CA_INVALID | _PAGE_PRESENT | _PAGE_USER | _PAGE_RIGHTS_NONE)
+/*
+ * PROT_NONE means the page is protected and NONE of the access modes are allowed, ie: RWX == 0
+ * NB: Other ARCH use PAGE_NOTE to imply this but it's use is local to pgtable.h.
+ */
+#define PAGE_PROT_NONE	   __pgprot(_PAGE_CA_INVALID | _PAGE_PRESENT | _PAGE_USER | _PAGE_RIGHTS_NONE)
 #else
-#define PAGE_NONE	   __pgprot(_PAGE_CA_INVALID | _PAGE_RIGHTS_NONE)
+#define PAGE_PROT_NONE	   __pgprot(_PAGE_CA_INVALID | _PAGE_PRESENT | _PAGE_RIGHTS_NONE)
 #endif
 #define PAGE_COPY	   __pgprot(_PAGE_BASE | _PAGE_USER)
 #define PAGE_COPY_EXEC	   __pgprot(_PAGE_BASE | _PAGE_USER | _PAGE_HW_EXEC)
@@ -209,9 +215,13 @@
 #define PAGE_KERNEL_EXEC   __pgprot(_PAGE_BASE|_PAGE_HW_WRITE|_PAGE_HW_EXEC)
 
 /*
- * Maybe this wasn't a good idea
+ * Systems with Cache Aliasing have to worry about the pages
+ * accessed by the pte existing in the cache and not being
+ * flushed with the pte changed by the kernel.
+ *
+ * REMIND: Try to removed this for SMP systems without CACHE_ALIASING.
  */
-#if 0 && defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
+#if defined(CACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 # define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_BYPASS)
 #else
 # define _PAGE_DIRECTORY (_PAGE_VALID | _PAGE_ACCESSED | _PAGE_CA_WB)
@@ -219,7 +229,7 @@
 
 #else /* no mmu */
 
-# define PAGE_NONE       __pgprot(0)
+# define PAGE_PROT_NONE  __pgprot(0)
 # define PAGE_SHARED     __pgprot(0)
 # define PAGE_COPY       __pgprot(0)
 # define PAGE_READONLY   __pgprot(0)
@@ -234,7 +244,7 @@
  * What follows is the closest we can get by reasonable means..
  * See linux/mm/mmap.c for protection_map[] array that uses these definitions.
  */
-#define __P000	PAGE_NONE		/* private --- */
+#define __P000	PAGE_PROT_NONE		/* private --- */
 #define __P001	PAGE_READONLY		/* private --r */
 #define __P010	PAGE_COPY		/* private -w- */
 #define __P011	PAGE_COPY		/* private -wr */
@@ -243,7 +253,7 @@
 #define __P110	PAGE_COPY_EXEC		/* private xw- */
 #define __P111	PAGE_COPY_EXEC		/* private xwr */
 
-#define __S000	PAGE_NONE		/* shared  --- */
+#define __S000	PAGE_PROT_NONE		/* shared  --- */
 #define __S001	PAGE_READONLY		/* shared  --r */
 #define __S010	PAGE_SHARED		/* shared  -w- */
 #define __S011	PAGE_SHARED		/* shared  -wr */
@@ -283,7 +293,7 @@ static inline void pgtable_cache_init(void) { }
 /*
  * pte_none() returns true if page has no mapping at all.
  * Makes sure the other fields of the pte are NULL:
- *	(pte & _PAGE_MASK) == 0
+ *	(pte & _PAGE_MASK) == 0			PPN == 0
  *	(pte & _RING_MASK) == 0
  *	(pte && _PAGE_SOFTWARE_MASK) == 0
  */
@@ -389,16 +399,20 @@ static inline void update_pte(pte_t *ptep, pte_t pte)
 
 	if ((pte_val(pte) & PAGE_PROT_MASK) == 0X1f) update_pte_bp();
 
-#if defined(DCACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
+#if defined(CACHE_ALIASING_POSSIBLE) || defined(CONFIG_SMP)
 	/* 
 	 * Use a "Data Cache Hit Writeback Invalidate" to force this pte to memory.
 	 * Invalidating to make sure we always use what's in physical memory.
+	 * This is done to avoid cache aliases in the Page Tables and should
+	 * be kept in sync with the _PAGE_DIRECTORY definition above.
+	 *
 	 * REMIND:
 	 *    This is in Chris's code that Joe checked in but NOT in
 	 *    Chris's linux-next repo. Need to double check vmcode
 	 *    against Christian's current stuff; a number of differences exist.
+	 *
 	 */
-	__asm__ __volatile__ ("dhwb %0, 0" :: "a" (ptep));
+	__asm__ __volatile__ ("dhwbi %0, 0" :: "a" (ptep));
 #endif
 
 }
@@ -484,7 +498,9 @@ ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
  *  bit	   1	   page-file (must be zero)
  *  bits   2 -  3  page hw access mode (must be 11: _PAGE_CA_INVALID)
  *  bits   4 -  5  ring protection (must be 01: _PAGE_USER)
- *  bits   6 - 10  swap type (5 bits -> 32 types)
+ *  bits   6       present == 0
+ *  bits   7       swap == 1
+ *  bits   8 - 10  swap type (3 bits -> 8 types)
  *  bits  11 - 31  swap offset / PAGE_SIZE (21 bits -> 8GB)
  
  * Format of file pte:
@@ -492,7 +508,8 @@ ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
  *  bit	   1	   page-file (must be one: _PAGE_RIGHTS_FILE)
  *  bits   2 -  3  page hw access mode (must be 11: _PAGE_CA_INVALID)
  *  bits   4 -  5  ring protection (must be 01: _PAGE_USER)
- *  bits   6 - 31  file offset / PAGE_SIZE
+ *  bits   6       present = 0
+ *  bits   7 - 31  file offset / PAGE_SIZE
  */
 
 #define __swp_type(entry)	(((entry).val >> 8) & 0x1f)
@@ -505,10 +522,10 @@ ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 /*
  * The following file #defines only work if pte_present() is not true.
  */
-#define PTE_FILE_MAX_BITS	26			/* 32 - 6 */
-#define pte_to_pgoff(pte)	(pte_val(pte) >> 6)
+#define PTE_FILE_MAX_BITS	25			/* 32 - 7 */
+#define pte_to_pgoff(pte)	(pte_val(pte) >> 7)
 #define pgoff_to_pte(off)	\
-	((pte_t) { ((off) << 6) | _PAGE_FILE })
+	((pte_t) { ((off) << 7) | _PAGE_FILE })
 
 #endif /*  !defined (__ASSEMBLY__) */
 
