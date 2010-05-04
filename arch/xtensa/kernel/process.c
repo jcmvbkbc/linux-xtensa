@@ -372,6 +372,16 @@ void prepare_to_copy(struct task_struct *tsk)
  *
  * Note: This is a pristine frame, so we don't need any spill region on top of
  *       childregs.
+ *
+ * The fun part:  if we're keeping the same VM (i.e. cloning a thread,
+ * not an entire process), we're normally given a new usp, and we CANNOT share
+ * any live address register windows.  If we just copy those live frames over,
+ * the two threads (parent and child) will overflow the same frames onto the
+ * parent stack at different times, likely corrupting the parent stack (esp.
+ * if the parent returns from functions that called clone() and calls new
+ * ones, before the child overflows its now old copies of its parent windows).
+ * One solution is to spill windows to the parent stack, but that's fairly
+ * involved.  Much simpler to just not copy those live frames across.
  */
 
 int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
@@ -390,31 +400,56 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	else
 		childregs = (struct pt_regs*)tos - 1;
 
+	/* This does not copy all the regs.  In a bout of brilliance or madness,
+	   ARs beyond a0-a15 exist past the end of the struct. */
 	*childregs = *regs;
 
 	/* Create a call4 dummy-frame: a0 = 0, a1 = childregs. */
 	*((int*)childregs - 3) = (unsigned long)childregs;
 	*((int*)childregs - 4) = 0;
 
-	childregs->areg[1] = tos;
 	childregs->areg[2] = 0;
 	p->set_child_tid = p->clear_child_tid = NULL;
 	p->thread.ra = MAKE_RA_FOR_CALL((unsigned long)ret_from_fork, 0x1);
 	p->thread.sp = (unsigned long)childregs;
 
 	if (user_mode(regs)) {
-
 		int len = childregs->wmask & ~0xf;
+
+		if (clone_flags & CLONE_VM) {
+			/* If keeping the same stack, child might do a call8
+			   (or call12) following the clone() or vfork() call,
+			   and require a caller stack frame for the call8
+			   overflow to work.  Ensure we spill at least the
+			   caller's sp to enable this.  This normally only
+			   happens for vfork() calls.  */
+			if (regs->areg[1] == usp  /* same stack */
+			    && len != 0  /* caller window is live */ ) {
+				int windowsize = (regs->areg[0] >> 30) & 3;
+				int caller_ars = (0 - windowsize*4) & (XCHAL_NUM_AREGS - 1);
+				put_user(regs->areg[caller_ars+1], (unsigned __user*)(usp - 12));
+			}
+
+			/* Otherwise, can't share live windows */
+			childregs->wmask = 1;
+			childregs->windowbase = 0;
+			childregs->windowstart = 1;
+		} else {
+			memcpy(&childregs->areg[XCHAL_NUM_AREGS - len/4],
+			       &regs->areg[XCHAL_NUM_AREGS - len/4], len);
+		}
 		childregs->areg[1] = usp;
-		memcpy(&childregs->areg[XCHAL_NUM_AREGS - len/4],
-		       &regs->areg[XCHAL_NUM_AREGS - len/4], len);
+
 // FIXME: we need to set THREADPTR in thread_info...
-		if (clone_flags & CLONE_SETTLS)
-			childregs->areg[2] = childregs->areg[6];
+//		if (clone_flags & CLONE_SETTLS)
+//			childregs->areg[2] = childregs->areg[6];
 
 	} else {
 		/* In kernel space, we start a new thread with a new stack. */
 		childregs->wmask = 1;
+		childregs->windowbase = 0;
+		childregs->windowstart = 1;
+		childregs->areg[1] = tos;
 	}
 
 #if (XTENSA_HAVE_COPROCESSORS || XTENSA_HAVE_IO_PORTS)

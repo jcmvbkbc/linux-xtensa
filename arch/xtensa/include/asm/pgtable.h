@@ -436,7 +436,7 @@ set_pmd(pmd_t *pmdp, pmd_t pmdval)
 	 * Use a "Data Cache Hit Writeback Invalidate" to force this pmd to memory.
 	 * Invalidating to make sure we always use what's in physical memory.
 	 */
-	__asm__ __volatile__ ("dhwb %0, 0" :: "a" (pmdp));
+	__asm__ __volatile__ ("dhwbi %0, 0" :: "a" (pmdp));
 #endif
 }
 

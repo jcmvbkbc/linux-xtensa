@@ -90,9 +90,9 @@ ENTRY(_UserExceptionVector)
  * We get this exception when we were already in kernel space.
  * We decrement the current stack pointer (kernel) by PT_SIZE plus
  * maximum space reserved register save area for calls we might use:
- *	call4	16		Save 4 registers
- *	call8	32		Save 8 registers
- *	call12	48		Save 8 registers
+ *	call4	16		Save 4  registers
+ *	call8	32		Save 8  registers
+ *	call12	48		Save 12 registers
  *
  * To show the backtrace correcly it's necessary to do a call4
  * followed by call12. With the call12 we can stash most of the
