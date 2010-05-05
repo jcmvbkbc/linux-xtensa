@@ -6,7 +6,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001 - 2005 Tensilica Inc.
+ * Copyright (C) 2001 - 2010 Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  * Joe Taylor	<joe@tensilica.com>
@@ -175,6 +175,7 @@ do_sigbus:
 	/* Kernel mode? Handle exceptions or die */
 	if (!user_mode(regs))
 		bad_page_fault(regs, address, SIGBUS);
+	return;
 
 vmalloc_fault:
 	{
