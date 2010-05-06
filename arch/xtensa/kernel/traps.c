@@ -391,7 +391,9 @@ void __init trap_init(void)
 	     * Set up some global pointers to per_cpu info 
 	     */
 	    for (cpu = 0; cpu < NR_CPUS; cpu++) {
+#if XTENSA_HAVE_COPROCESSORS	
 		coprocessor_owner_ptrs[cpu] = &per_cpu(coprocessor_owner, cpu);
+#endif
 		exc_table_ptrs[cpu] = (dispatch_init_table_t *) per_cpu(exc_table, cpu);
 	    }
 	}

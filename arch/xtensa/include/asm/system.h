@@ -99,10 +99,10 @@ do {                                                             \
 	set_tsk_thread_flag(prev, TIF_CURRENTLY_RUNNING);        \
 } while(0)
 
-#ifdef CONFIG_SMP
+#if defined(CONFIG_SMP) && XTENSA_HAVE_COPROCESSORS
 /* 
- * For SMP systems we either flush to coprocessor state or bind the task to 
- * the CPU while it ownes the CP. If being debuged (ptrace) we always flush. 
+ * For SMP systems with coprocessors we either flush to coprocessor state or bind the
+ * task to the CPU while it ownes the CP. If being debuged (ptrace) we always flush. 
  */
 #define switch_to(prev,next,last)						\
 do {										\
@@ -114,7 +114,8 @@ do {										\
 
 /* 
  * For non-SMP systems all Lazy Coprocessor Flushing is done in coprocessor.S
- * No flushing or process binding has to be done in manage_coprocessors(). 
+ * No flushing or process binding has to be done in manage_coprocessors();
+ * especially if it doesn't have any coprocessors.
  */
 #define switch_to(prev,next,last)						\
 do {										\
