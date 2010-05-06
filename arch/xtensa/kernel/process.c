@@ -294,8 +294,21 @@ void cpu_idle_monitor(int sched)
 	if ((cpu >= 0) && (cpu <= NR_CPUS)) {
 		idle_count[cpu]++;
 		if (dt > (60 * HZ) ) {
-			dprintk(KERN_DEBUG "%s: cpu:%d, ccount:%08lx, dt:%d, idle_count:[%lu, %lu]\n", __func__,
-					        cpu,    ccount,       dt,    idle_count[0],  idle_count[1]);
+			/*
+			 * Currently logging to /var/log/messages only with:
+			 *
+			 *    1. cat /proc/sys/kernel/printk
+			 *       7       7       1       7
+			 *
+			 *    2. Modified /etc/inittab
+			 *       null::respawn:/sbin/klogd -c 7 -n 
+			 *
+			 *    3. Added /etc/syslog.conf
+			 *          kern.* /var/log/messages
+			 *          kern.* /dev/console
+			 */
+			printk(KERN_DEBUG "%s: cpu:%d, ccount:%08lx, dt:%d, idle_count:[%lu, %lu]\n", __func__,
+			                       cpu,    ccount,       dt,    idle_count[0],  idle_count[1]);
 
 			idle_jiffies[cpu] = jiffies;	
 		}
