@@ -194,7 +194,8 @@
 #define  PAGE_PROT_MASK (_PAGE_RING_MASK | _PAGE_CA_MASK | _PAGE_RIGHTS_MASK )	/* 0x3F: Bits 5...0 */
 
 #ifdef CONFIG_MMU
-#define WITH_PAGE_USER
+#undef WITH_PAGE_USER
+
 #ifdef  WITH_PAGE_USER
 /*
  * PROT_NONE means the page is protected and NONE of the access modes are allowed, ie: RWX == 0
@@ -204,6 +205,7 @@
 #else
 #define PAGE_PROT_NONE	   __pgprot(_PAGE_CA_INVALID | _PAGE_PRESENT | _PAGE_RIGHTS_NONE)
 #endif
+
 #define PAGE_COPY	   __pgprot(_PAGE_BASE | _PAGE_USER)
 #define PAGE_COPY_EXEC	   __pgprot(_PAGE_BASE | _PAGE_USER | _PAGE_HW_EXEC)
 #define PAGE_READONLY	   __pgprot(_PAGE_BASE | _PAGE_USER)

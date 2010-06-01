@@ -15,6 +15,7 @@
  */
 
 #include <linux/init.h>
+#include <linux/cpu.h>
 #include <linux/smp.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -30,6 +31,8 @@
 #include <asm/cacheflush.h>
 #include <asm/mxregs.h>
 #include <asm/kdebug.h>
+
+#define DEBUG
 
 #ifdef CONFIG_SMP
 # if XCHAL_HAVE_S32C1I == 0
@@ -152,6 +155,7 @@ void __init secondary_start_kernel(void)
 
 	calibrate_delay();
 
+	notify_cpu_starting(cpu);
 	secondary_irq_init();
 	secondary_time_init();
 	secondary_irq_enable(IPI_IRQ);

@@ -148,6 +148,7 @@ bad_area:
 	 */
 out_of_memory:
 	up_read(&mm->mmap_sem);
+#if 0
 	if (is_global_init(current)) {
 		yield();
 		down_read(&mm->mmap_sem);
@@ -157,6 +158,13 @@ out_of_memory:
 	if (user_mode(regs))
 		do_group_exit(SIGKILL);
 	bad_page_fault(regs, address, SIGKILL);
+#else
+	printk("%s: killing process '%s'\n", __func__, current->comm);
+	if (!user_mode(regs))
+		bad_page_fault(regs, address, SIGKILL);
+	else
+		pagefault_out_of_memory();
+#endif
 	return;
 
 do_sigbus:
@@ -216,12 +224,16 @@ bad_page_fault:
 	return;
 }
 
+void 
+bad_page_fault_bp(void) {}
 
 void
 bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 {
 	extern void die(const char*, struct pt_regs*, long);
 	const struct exception_table_entry *entry;
+	unsigned long ps, epc, epc1, prid, rasid, exsave1, exsave2;
+	unsigned long exccause, ptevaddr, excvaddr, tsk, sp, ra, current_stack_pointer;
 
 	/* Are we prepared to handle this kernel fault?  */
 	if ((entry = search_exception_tables(regs->pc)) != NULL) {
@@ -233,6 +245,21 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 		regs->pc = entry->fixup;
 		return;
 	}
+	bad_page_fault_bp();
+
+	ps = get_sr(PS);
+	epc = get_sr(EPC);
+	epc1 = get_sr(EPC1);
+	prid = get_sr(PRID);
+	rasid = get_sr(RASID);
+	exsave1 = get_sr(EXCSAVE_1);
+	exsave2 = get_sr(EXCSAVE_2);
+	exccause = get_sr(EXCCAUSE);
+	ptevaddr = get_sr(PTEVADDR);
+	excvaddr = get_sr(EXCVADDR);
+	tsk = (unsigned long) current;
+	sp = current->thread.sp;
+	ra = current->thread.ra;
 
 	/* Oops. The kernel tried to access some bad page. We'll have to
 	 * terminate things with extreme prejudice.
@@ -241,7 +268,28 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 	       "address 0x%08lx\n pc = 0x%08lx, ra = 0x%08lx\n", __func__,
 	       address, regs->pc, regs->areg[0]);
 
+	printk(KERN_ALERT "%s: ps:0X%lx, epc:0X%lx, epc1:0X%lx, prid:0X%lx, rasid:0X%lx\n", __func__,
+			       ps,       epc,       epc1,       prid,       rasid);
+
+	printk(KERN_ALERT "%s: exsave1:0X%lx, exsave2:0X%lx, exccause:0X%lx, ptevaddr:0X%lx, excvaddr:0X%lx\n", __func__,
+			       exsave1,       exsave2,       exccause,       ptevaddr,       excvaddr);
+
+	printk(KERN_ALERT "%s: tsk:0X%lx->{thread.{sp:0X%lx, ra:0X%lx}}\n", __func__,
+			       tsk,                sp,       ra);
+
+	printk(KERN_ALERT "%s: regs:%p->{ps:0X%lx, depc:0X%lx, exccause:0X%lx. excvaddr:0X%lx, debugcause:0X%lx\n", __func__,
+			     regs, regs->ps, regs->depc, regs->exccause, regs->excvaddr, regs->debugcause);
+
+	printk(KERN_ALERT "%s: regs:%p->areg[ra:r0:0X%lx, sp:r1:0X%lx, r2:0X%lx, r3:0X%lx, r4:0X%lx, r5:0X%lx, r6:0X%lx]\n", __func__,
+			   regs, regs->areg[0], regs->areg[1], regs->areg[2], regs->areg[3], regs->areg[4], regs->areg[5], regs->areg[5]);
+
+	printk(KERN_ALERT "%s: regs:%p->areg[r7:0X%lx, r8:0X%lx, r9:0X%lx, r10:0X%lx, r11:0X%lx, r12:0X%lx]\n", __func__,
+			  regs, regs->areg[7], regs->areg[8], regs->areg[9], regs->areg[10], regs->areg[11], regs->areg[12]);
+#if 0
 	dump_stack();
+#else
+	show_stack(tsk, (unsigned long *) regs->areg[1]);
+#endif
 
 	die("Oops", regs, sig);
 	do_exit(sig);

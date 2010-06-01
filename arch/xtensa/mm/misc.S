@@ -208,8 +208,12 @@ ENTRY(copy_user_page)
 1:	beqz	a7, 1f
 
 	/* Setup a temporary DTLB with a matching color. */
-
+#if 0
 	movi	a8, TLBTEMP_BASE_2			# base
+#else
+	movi    a8, TLBTEMP_BASE_1 + (1<<(DCACHE_ALIAS_ORDER + PAGE_SHIFT))
+#endif
+
 	add	a7, a3, a5				# ppn
 	add	a3, a8, a4
 	addi	a8, a3, 1				# way1

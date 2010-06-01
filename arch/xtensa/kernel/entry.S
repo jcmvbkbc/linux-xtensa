@@ -459,17 +459,17 @@ ENTRY(NullReturnAddress)			/* For dump_stack() */
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
  *
- * Entry condition for _kernel_exception:
+ * Entry condition to set up for _kernel_exception:
  *
  *   a0-a3 and depc have been saved to PT_AREG0...PT_AREG3 and PT_DEPC
- *   excsave has been restored, and
+ *   excsave has been restored to the pointer to the dispatch table, and
  *   stack pointer (a1) has been set.
  *
  * Note: _kernel_exception might be at an odd adress. Don't use call0..call12
@@ -1550,7 +1550,7 @@ fast_syscall_spill_registers_fixup_return:
  *
  *  - must be called with call0.
  *  - uses a3, a4 and SAR.
- *  - the last 'valid' register of each frame is clobbered.
+ *  - the last 'valid' register of each frame is clobbered. [REMIND: Why?]
  *  - the caller must have registered a fixup handler,
  *        or indicated that it's curently inside a critical section.
  *  - PS_EXCM must be set (PS_WOE cleared?)

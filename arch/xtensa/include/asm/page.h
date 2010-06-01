@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License version2 as
  * published by the Free Software Foundation.
  *
- * Copyright (C) 2001 - 2009 Tensilica Inc.
+ * Copyright (C) 2001 - 2010 Tensilica Inc.
  */
 
 #ifndef _XTENSA_PAGE_H
@@ -84,7 +84,7 @@
  * using an alias with the kernel addresses. 
  */
 
-#if DCACHE_WAY_SIZE > PAGE_SIZE
+#if DCACHE_WAY_SIZE > PAGE_SIZE && XCHAL_DCACHE_IS_WRITEBACK
 # define DCACHE_ALIASING_POSSIBLE
 # define DCACHE_ALIAS_ORDER	(DCACHE_WAY_SHIFT - PAGE_SHIFT)
 # define DCACHE_ALIAS_MASK	(PAGE_MASK & (DCACHE_WAY_SIZE - 1))
@@ -182,7 +182,7 @@ static inline __attribute_const__ int get_order(unsigned long size)
 
 #else
 
-# include <asm-generic/page.h>
+# include <asm-generic/getorder.h>
 
 #endif
 
@@ -210,11 +210,11 @@ extern void copy_user_page(void*, void*, unsigned long, struct page*);
  * addresses.
  */
 
-#define ARCH_PFN_OFFSET         (PLATFORM_DEFAULT_MEM_START >> PAGE_SHIFT)
+#define ARCH_PFN_OFFSET		(PLATFORM_DEFAULT_MEM_START >> PAGE_SHIFT)
 
 #define __pa(x)			((unsigned long) (x) - PAGE_OFFSET)
 #define __va(x)			((void *)((unsigned long) (x) + PAGE_OFFSET))
-#define pfn_valid(pfn)          ((pfn) >= ARCH_PFN_OFFSET && ((pfn) - ARCH_PFN_OFFSET) < max_mapnr)
+#define pfn_valid(pfn)		((pfn) >= ARCH_PFN_OFFSET && ((pfn) - ARCH_PFN_OFFSET) < max_mapnr)
 #ifdef CONFIG_DISCONTIGMEM
 # error CONFIG_DISCONTIGMEM not supported
 #endif

@@ -551,9 +551,9 @@ int arch_is_running_smp = 1;
 int arch_is_running_smp = 0;
 #endif
 
-long spill_location_0[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
-long spill_location_1[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
-long spill_location_2[128] __attribute__ ((aligned (XCHAL_NCP_SA_ALIGN)));
+long spill_location_0[128] __attribute__ ((aligned (XCHAL_TOTAL_SA_ALIGN)));
+long spill_location_1[128] __attribute__ ((aligned (XCHAL_TOTAL_SA_ALIGN)));
+long spill_location_2[128] __attribute__ ((aligned (XCHAL_TOTAL_SA_ALIGN)));
 
 
 #ifdef CONFIG_PROC_FS
