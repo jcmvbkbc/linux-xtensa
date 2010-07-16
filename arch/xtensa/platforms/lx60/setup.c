@@ -38,6 +38,7 @@
 #include <platform/lcd.h>
 #include <platform/hardware.h>
 #include <variant/core.h>
+#include <asm/core.h>
 
 void platform_halt(void)
 {

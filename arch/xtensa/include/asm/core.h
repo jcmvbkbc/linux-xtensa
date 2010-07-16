@@ -15,6 +15,9 @@
  * Marc Gauthier <marc@tensilica.com
  */
 
+#ifndef _XTENSA_ASM_CORE_H
+#define _XTENSA_ASM_CORE_H
+
 
 #if defined(XCHAL_HAVE_PTP_MMU) && XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY  
 /* MMU v3 */
@@ -79,3 +82,4 @@
 #define LOAD_MEMORY_ADDRESS  	0xD0001000
 #endif
 
+#endif /* _XTENSA_ASM_CORE_H */

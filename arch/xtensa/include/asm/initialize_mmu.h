@@ -175,6 +175,8 @@
 	// WARNING:
 	//	Code below in step 2b will use this address for a computed branch.
 	//
+	movi	a1, 0		// Set $sp to NULL to minimize gdb confusion trying to walk up the stack
+
 	_call0	1f		// get PC in a PIC manner (don't rely on literal constants)
 0:	j	2f		// a0 = pc; NOTE: we get here AGAIN in Step 2b after remapping to 0X46000000
 				//                REMIND: likely easier to understand if we don't do this
@@ -315,10 +317,9 @@
 1:
 	//  Assuming VECBASE points to system RAM,
 	//  bump it up to where system RAM can now be accessed (cached).
+	//  Typically changing from  0x00001000 to 0xD0000000.
 	//
-	movi	a2, 0xd0000000
-	rsr	a3, vecbase
-	add	a2, a2, a3
+	movi    a2, XCHAL_VECBASE_RESET_VADDR
 	wsr	a2, vecbase
 
 	//  Step 5:  remove temporary mapping.

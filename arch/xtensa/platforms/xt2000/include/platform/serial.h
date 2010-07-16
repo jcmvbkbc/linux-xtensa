@@ -12,6 +12,7 @@
 #define _XTENSA_XT2000_SERIAL_H
 
 #include <variant/core.h>
+#include <asm/core.h>
 #include <asm/io.h>
 
 /*  National-Semi PC16552D DUART:  */
