@@ -129,8 +129,7 @@ struct pt_regs {
 #define REG_GDB_EXCVADDR    0x000002ee
 #define REG_GDB_ORIG_AREG2  0x1
 
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 
 # define task_pt_regs(tsk) ((struct pt_regs*) \
   (task_stack_page(tsk) + KERNEL_STACK_SIZE - (XCHAL_NUM_AREGS-16)*4) - 1)

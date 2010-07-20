@@ -11,8 +11,7 @@
  *  Copyright (C) 2009 Tensilica Inc.
  */
 
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 
 /*
  * void *memset(void *dst, int c, size_t length)

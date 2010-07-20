@@ -12,8 +12,7 @@
 #define _XTENSA_IRQ_H
 
 #include <platform/hardware.h>
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 
 #ifdef CONFIG_VARIANT_IRQ_SWITCH
 #include <variant/irq.h>

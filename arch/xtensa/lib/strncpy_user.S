@@ -11,8 +11,7 @@
  *  Copyright (C) 2002 - 2009 Tensilica Inc.
  */
 
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 #include <linux/errno.h>
 
 /* Load or store instructions that may cause exceptions use the EX macro. */

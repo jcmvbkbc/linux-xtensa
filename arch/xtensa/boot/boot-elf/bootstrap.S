@@ -30,6 +30,7 @@
 #include <asm/pgtable.h>
 #include <asm/page.h>
 #include <asm/cacheasm.h>
+#include <asm/vectors.h>
 #include <linux/linkage.h>
 
 

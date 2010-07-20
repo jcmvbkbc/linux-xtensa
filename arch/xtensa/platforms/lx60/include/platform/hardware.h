@@ -28,7 +28,6 @@
 #define __XTENSA_LX60_HARDWARE_H
 
 #include <platform/system.h>
-#include <asm/core.h>
 
 /* By default NO_IRQ is defined to 0 in Linux, but we use the
    interrupt 0 for UART... */

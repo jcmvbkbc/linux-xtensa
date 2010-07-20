@@ -37,8 +37,7 @@
 #include <asm/bootparam.h>
 #include <platform/lcd.h>
 #include <platform/hardware.h>
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 
 void platform_halt(void)
 {

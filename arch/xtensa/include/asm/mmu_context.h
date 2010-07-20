@@ -20,8 +20,7 @@
 #include <linux/stringify.h>
 #include <linux/sched.h>
 
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 
 #include <asm/pgtable.h>
 #include <asm/cacheflush.h>

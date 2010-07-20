@@ -256,7 +256,7 @@ _DoubleExceptionVector_Hang:
 	 */
 2:	xsr	a0, DEPC		# get DEPC, save a0
 
-	movi	a2, XCHAL_WINDOW_VECTORS_VADDR
+	movi	a2, WINDOW_VECTORS_VADDR
 	_bltu	a0, a2, .Lfixup
 	addi	a2, a2, WINDOW_VECTORS_SIZE
 	_bgeu	a0, a2, .Lfixup

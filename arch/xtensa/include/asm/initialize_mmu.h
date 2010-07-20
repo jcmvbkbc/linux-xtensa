@@ -319,7 +319,7 @@
 	//  bump it up to where system RAM can now be accessed (cached).
 	//  Typically changing from  0x00001000 to 0xD0000000.
 	//
-	movi    a2, XCHAL_VECBASE_RESET_VADDR
+	movi    a2, VECBASE_RESET_VADDR
 	wsr	a2, vecbase
 
 	//  Step 5:  remove temporary mapping.

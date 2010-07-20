@@ -17,8 +17,7 @@
 
 #include <asm-generic/vmlinux.lds.h>
 
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 #include <platform/hardware.h>
 
 OUTPUT_ARCH(xtensa)
@@ -252,88 +251,101 @@ SECTIONS
 
   SECTION_VECTOR (_WindowVectors_text,
 		  .WindowVectors.text,
-		  XCHAL_WINDOW_VECTORS_VADDR, 4,
+		  WINDOW_VECTORS_VADDR, 4,
 		  .dummy)
+
   SECTION_VECTOR (_DebugInterruptVector_literal,
 		  .DebugInterruptVector.literal,
-		  XCHAL_DEBUG_VECTOR_VADDR - 4,
+		  DEBUG_VECTOR_VADDR - 4,
 		  SIZEOF(.WindowVectors.text),
 		  .WindowVectors.text)
+
   SECTION_VECTOR (_DebugInterruptVector_text,
 		  .DebugInterruptVector.text,
-		  XCHAL_DEBUG_VECTOR_VADDR,
+		  DEBUG_VECTOR_VADDR,
 		  4,
 		  .DebugInterruptVector.literal)
+
 #undef LAST
 #define LAST	.DebugInterruptVector.text
+
 #if XCHAL_EXCM_LEVEL >= 2
   SECTION_VECTOR (_Level2InterruptVector_text,
 		  .Level2InterruptVector.text,
-		  XCHAL_INTLEVEL2_VECTOR_VADDR,
+		  INTLEVEL2_VECTOR_VADDR,
 		  SIZEOF(LAST), LAST)
 # undef LAST
 # define LAST	.Level2InterruptVector.text
 #endif
+
 #if XCHAL_EXCM_LEVEL >= 3
   SECTION_VECTOR (_Level3InterruptVector_text,
 		  .Level3InterruptVector.text,
-		  XCHAL_INTLEVEL3_VECTOR_VADDR,
+		  INTLEVEL3_VECTOR_VADDR,
 		  SIZEOF(LAST), LAST)
 # undef LAST
 # define LAST	.Level3InterruptVector.text
 #endif
+
 #if XCHAL_EXCM_LEVEL >= 4
   SECTION_VECTOR (_Level4InterruptVector_text,
 		  .Level4InterruptVector.text,
-		  XCHAL_INTLEVEL4_VECTOR_VADDR,
+		  INTLEVEL4_VECTOR_VADDR,
 		  SIZEOF(LAST), LAST)
 # undef LAST
 # define LAST	.Level4InterruptVector.text
 #endif
+
 #if XCHAL_EXCM_LEVEL >= 5
   SECTION_VECTOR (_Level5InterruptVector_text,
 		  .Level5InterruptVector.text,
-		  XCHAL_INTLEVEL5_VECTOR_VADDR,
+		  INTLEVEL5_VECTOR_VADDR,
 		  SIZEOF(LAST), LAST)
 # undef LAST
 # define LAST	.Level5InterruptVector.text
 #endif
+
 #if XCHAL_EXCM_LEVEL >= 6
   SECTION_VECTOR (_Level6InterruptVector_text,
 		  .Level6InterruptVector.text,
-		  XCHAL_INTLEVEL6_VECTOR_VADDR,
+		  INTLEVEL6_VECTOR_VADDR,
 		  SIZEOF(LAST), LAST)
 # undef LAST
 # define LAST	.Level6InterruptVector.text
 #endif
+
   SECTION_VECTOR (_KernelExceptionVector_literal,
 		  .KernelExceptionVector.literal,
-		  XCHAL_KERNEL_VECTOR_VADDR - 4,
+		  KERNEL_VECTOR_VADDR - 4,
 		  SIZEOF(LAST), LAST)
 #undef LAST
   SECTION_VECTOR (_KernelExceptionVector_text,
 		  .KernelExceptionVector.text,
-		  XCHAL_KERNEL_VECTOR_VADDR,
+		  KERNEL_VECTOR_VADDR,
 		  4,
 		  .KernelExceptionVector.literal)
+
   SECTION_VECTOR (_UserExceptionVector_literal,
 		  .UserExceptionVector.literal,
-		  XCHAL_USER_VECTOR_VADDR - 4,
+		  USER_VECTOR_VADDR - 4,
 		  SIZEOF(.KernelExceptionVector.text),
 		  .KernelExceptionVector.text)
+
   SECTION_VECTOR (_UserExceptionVector_text,
 		  .UserExceptionVector.text,
-		  XCHAL_USER_VECTOR_VADDR,
+		  USER_VECTOR_VADDR,
 		  4,
 		  .UserExceptionVector.literal)
+
   SECTION_VECTOR (_DoubleExceptionVector_literal,
 		  .DoubleExceptionVector.literal,
-		  XCHAL_DOUBLEEXC_VECTOR_VADDR - 16,
+		  DOUBLEEXC_VECTOR_VADDR - 16,
 		  SIZEOF(.UserExceptionVector.text),
 		  .UserExceptionVector.text)
+
   SECTION_VECTOR (_DoubleExceptionVector_text,
 		  .DoubleExceptionVector.text,
-		  XCHAL_DOUBLEEXC_VECTOR_VADDR,
+		  DOUBLEEXC_VECTOR_VADDR,
 		  32,
 		  .DoubleExceptionVector.literal)
   . = LOADADDR(.DoubleExceptionVector.text)+SIZEOF(.DoubleExceptionVector.text);
@@ -342,14 +354,16 @@ SECTIONS
 
   SECTION_VECTOR (_SecondaryResetVector_literal,
 		  .SecondaryResetVector.literal,
-		  XCHAL_RESET_VECTOR1_VADDR - 4,
+		  RESET_VECTOR1_VADDR - 4,
 		  SIZEOF(.DoubleExceptionVector.text),
 		  .DoubleExceptionVector.text)
+
   SECTION_VECTOR (_SecondaryResetVector_text,
 		  .SecondaryResetVector.text,
-		  XCHAL_RESET_VECTOR1_VADDR,
+		  RESET_VECTOR1_VADDR,
 		  4,
 		  .SecondaryResetVector.literal)
+
   . = LOADADDR(.SecondaryResetVector.text)+SIZEOF(.SecondaryResetVector.text);
 
 #endif
@@ -364,7 +378,7 @@ SECTIONS
   .initrd : { *(.initrd) }
   __initrd_end = .;
 
-  .ResetVector.text XCHAL_RESET_VECTOR_VADDR :
+  .ResetVector.text RESET_VECTOR_VADDR :
   {
     *(.ResetVector.text)
   }

@@ -16,8 +16,7 @@
  *  new Xtensa V3 MMU which runs initially with idenity mapping, ie:
  *   			virtual == physical.
  */
-#include <variant/core.h>
-#include <asm/core.h>			/* Remap Core Virtual Addresses */
+#include <asm/vectors.h>
 OUTPUT_ARCH(xtensa)
 ENTRY(_ResetVector)
 

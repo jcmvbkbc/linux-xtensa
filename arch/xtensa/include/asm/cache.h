@@ -11,8 +11,7 @@
 #ifndef _XTENSA_CACHE_H
 #define _XTENSA_CACHE_H
 
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 
 #define L1_CACHE_SHIFT	XCHAL_DCACHE_LINEWIDTH
 #define L1_CACHE_BYTES	XCHAL_DCACHE_LINESIZE

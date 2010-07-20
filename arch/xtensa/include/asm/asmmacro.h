@@ -11,8 +11,7 @@
 #ifndef _XTENSA_ASMMACRO_H
 #define _XTENSA_ASMMACRO_H
 
-#include <variant/core.h>
-#include <asm/core.h>
+#include <asm/vectors.h>
 
 /*
  * Some little helpers for loops. Use zero-overhead-loops
