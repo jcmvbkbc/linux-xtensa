@@ -144,8 +144,8 @@ __tagtable(BP_TAG_MEMORY, parse_tag_mem);
 
 static int __init_refok parse_tag_initrd(const bp_tag_t *tag)
 {
-	bp_memory_bank_t* mi;
-	mi = (bp_memory_bank_t*)(tag->data);
+	meminfo_t* mi;
+	mi = (meminfo_t *)(tag->data);
 	initrd_start = (void*)(mi->start);
 	initrd_end = (void*)(mi->end);
 
