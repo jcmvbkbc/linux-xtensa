@@ -282,10 +282,12 @@ void cpu_idle_monitor(int sched)
 {
 	int cpu = smp_processor_id();
 	int dt = jiffies - idle_jiffies[cpu];
-	int prid;
+	int prid = 0;
 	unsigned long ccount = get_ccount();
 
+#if defined(XCHAL_HAVE_PRID)
 	asm volatile ("rsr %0, "__stringify(PRID)"\n" : "=a" (prid));
+#endif
 
 	if (prid != cpu) panic("cpu");
 

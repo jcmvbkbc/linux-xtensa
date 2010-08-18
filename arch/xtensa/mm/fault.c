@@ -232,7 +232,7 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 {
 	extern void die(const char*, struct pt_regs*, long);
 	const struct exception_table_entry *entry;
-	unsigned long ps, epc, epc1, prid, rasid, exsave1, exsave2;
+	unsigned long ps, epc, epc1, prid = 0, rasid, exsave1, exsave2;
 	unsigned long exccause, ptevaddr, excvaddr, tsk, sp, ra, current_stack_pointer;
 
 	/* Are we prepared to handle this kernel fault?  */
@@ -250,7 +250,10 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 	ps = get_sr(PS);
 	epc = get_sr(EPC);
 	epc1 = get_sr(EPC1);
+
+#if defined(XCHAL_HAVE_PRID)
 	prid = get_sr(PRID);
+#endif
 	rasid = get_sr(RASID);
 	exsave1 = get_sr(EXCSAVE_1);
 	exsave2 = get_sr(EXCSAVE_2);

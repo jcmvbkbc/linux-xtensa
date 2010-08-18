@@ -293,12 +293,15 @@ ENTRY(fast_coprocessor)
 	 *	coprocessor_owner_ptrs[cpu] = per_cpu(coprocessor_owner, cpu);
 	 */
 	movi	a0, coprocessor_owner_ptrs
+
+#if defined(XCHAL_HAVE_PRID) && defined(CONFIG_SMP)
 	rsr     a4, PRID                # a4 = cpu
 	beqz	a4, 01f
 	nop
 	nop
 01:
 	addx4	a0, a4, a0		# a0 = &coprocessor_owner_ptrs[cpu]
+#endif
 	l32i    a0, a0, 0               # a0 = coprocessor_owner_ptrs[cpu]
 	addx4	a0, a3, a0		# a0 = coprocessor_owner[CP nr]
 	l32i	a4, a0, 0		# a4 = prev owners thread_info
@@ -336,12 +339,15 @@ ENTRY(fast_coprocessor)
 2:	rsr	a3, EXCCAUSE
 	addi	a3, a3, -EXCCAUSE_COPROCESSOR0_DISABLED
 	movi	a0, coprocessor_owner_ptrs 
+
+#if defined(XCHAL_HAVE_PRID) && defined(CONFIG_SMP)
 	rsr	a4, PRID		# a4 = cpu
 	beqz	a4, 21f
 	nop
 	nop
 21:
 	addx4   a0, a4, a0              # a0 = &coprocessor_owner_ptrs[cpu]
+#endif
 	l32i	a0, a0, 0		# a0 = coprocessor_owner_ptrs[cpu]
 	addx4	a0, a3, a0		# a0 = &coprocessor_owner[CP nr]
 
