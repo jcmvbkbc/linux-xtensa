@@ -6,10 +6,14 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2002 - 2009 Tensilica Inc.
+ * Copyright (C) 2002 - 2010 Tensilica Inc.
  */
 
 #include <asm/vectors.h>
+
+#if 0
+#undef XCHAL_HAVE_LOOPS		/* Toggle for full coverage testing */
+#endif
 
 	.macro	src_b	r, w0, w1
 #ifdef __XTENSA_EB__
@@ -30,11 +34,9 @@
 
 /*
  * void *memcpy(void *dst, const void *src, size_t len);
- * void *memmove(void *dst, const void *src, size_t len);
- * void *bcopy(const void *src, void *dst, size_t len);
  *
  * This function is intended to do the same thing as the standard
- * library function memcpy() (or bcopy()) for most cases.
+ * library function memcpy() for most cases.
  * However, where the source and/or destination references
  * an instruction RAM or ROM or a data RAM or ROM, that
  * source and/or destination will always be accessed with
@@ -45,8 +47,12 @@
  * !!!!!!!  Handling of IRAM/IROM has not yet
  * !!!!!!!  been implemented.
  *
- * The bcopy version is provided here to avoid the overhead
- * of an extra call, for callers that require this convention.
+ * memmove() and bcopy() are currently provided in C
+ * code in memmove.c and handle src and dst overlap
+ * at the expense of a 75% increase in cpu time for
+ * unaligned data and a 5% inclease for alligned data.
+ * Looking into deriving a new version of memmove()
+ * from this code to get back that lost performace.
  *
  * The (general case) algorithm is as follows:
  *   If destination is unaligned, align it by conditionally
@@ -76,6 +82,7 @@
  */
 
 	.text
+#if 0
 	.align	4
 	.global	bcopy
 	.type   bcopy,@function
@@ -86,6 +93,7 @@ bcopy:
 	mov	a3, a2
 	mov	a2, a5
 	j	.Lcommon	# go to common code for memcpy+bcopy
+#endif
 
 
 /*
@@ -107,7 +115,7 @@ bcopy:
 	s8i	a6, a5, 0
 	addi	a5, a5, 1
 #if !XCHAL_HAVE_LOOPS
-	blt	a3, a7, .Lnextbyte
+	bltu	a3, a7, .Lnextbyte # continue loop if $a3:src < $a7:src_end
 #endif /* !XCHAL_HAVE_LOOPS */
 .Lbytecopydone:
 	retw
@@ -144,9 +152,6 @@ bcopy:
 	.global	memcpy
 	.type   memcpy,@function
 memcpy:
-	.global	memmove
-	.type   memmove,@function
-memmove:
 
 	entry	sp, 16		# minimal stack frame
 	# a2/ dst, a3/ src, a4/ len
@@ -182,7 +187,7 @@ memmove:
 	s32i	a7, a5, 12
 	addi	a5, a5, 16
 #if !XCHAL_HAVE_LOOPS
-	blt	a3, a8, .Loop1
+	bltu	a3, a8, .Loop1  # continue loop if a3:src < a8:src_end
 #endif /* !XCHAL_HAVE_LOOPS */
 .Loop1done:
 	bbci.l	a4, 3, .L2
@@ -260,7 +265,7 @@ memmove:
 	s32i	a9, a5, 12
 	addi	a5, a5, 16
 #if !XCHAL_HAVE_LOOPS
-	blt	a3, a10, .Loop2
+	bltu	a3, a10, .Loop2 # continue loop if a3:src < a10:src_end
 #endif /* !XCHAL_HAVE_LOOPS */
 .Loop2done:
 	bbci.l	a4, 3, .L12
