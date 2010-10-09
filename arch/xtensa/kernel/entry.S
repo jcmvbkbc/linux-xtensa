@@ -129,29 +129,31 @@ _user_exception:
 	 * single step here but prevents gdb from working in user space.
 	 */
 	rsr	a3, SAR
-	s32i	a3, a1, PT_SAR
+	s32i	a3, a1, PT_SAR		# regs->pt_sar = $a3:$sar
 #else
 	/* Save SAR and turn off single stepping */
 	movi	a2, 0
 	rsr	a3, SAR
 	xsr	a2, ICOUNTLEVEL
-	s32i	a3, a1, PT_SAR
-	s32i	a2, a1, PT_ICOUNTLEVEL
+	s32i	a3, a1, PT_SAR		# regs->pt_sar = $a3:$sar
+	s32i	a2, a1, PT_ICOUNTLEVEL	# regs->pt_icountlevel = $a2:$icountlevel
 #endif
 
 	/* 
-	 * Rotate ws so that the current windowbase is at bit0.
-	 * Assume ws = xxwww1yyyy. Rotate ws right, so that a2 = yyyyxxwww1 
+	 * Rotate ws so that the current windowbase:$a2 is at bit0.
+	 * Assume $a3:ws = 0000xxwww1yyyy. Rotate ws right, so that a2 = 0000yyyyxxwww1 
 	 */
-	rsr	a2, WINDOWBASE
-	rsr	a3, WINDOWSTART
-	ssr	a2			# Set Shift Amount Register (SAR)  = WINDOWBASE
-	s32i	a2, a1, PT_WINDOWBASE	# regs->pt_window_base = WINDOWBASE
-	s32i	a3, a1, PT_WINDOWSTART	# regs->pt_window_start = WINDOWSTART
-	slli	a2, a3, 32-WSBITS
-	src	a2, a3, a2
-	srli	a2, a2, 32-WSBITS
-	s32i	a2, a1, PT_WMASK	# needed for restoring registers
+	rsr	a2, WINDOWBASE		# $a2 = $windowbase:0000xxwww1yyyy
+	rsr	a3, WINDOWSTART		# $a3 = $windowstart
+	ssr	a2			# Set Shift Amount Register, $sar = $a2:$windowbase
+	s32i	a2, a1, PT_WINDOWBASE	# regs->pt_window_base = $a2:windowbase
+	s32i	a3, a1, PT_WINDOWSTART	# regs->pt_window_start = $a3:windowstart
+	slli	a2, a3, 32-WSBITS	# $a2 = $a3:WINDOWSTART << 31 - WSBITS
+	src	a2, a3, a2		# $a2 = ($a3 $a2) >> $sar
+	srli	a2, a2, 32-WSBITS	# $a2 = $a2 >> (32-WSBITS) [inserts zeros on left]
+	s32i	a2, a1, PT_WMASK	# $a1:regs->pt_wmask = $a2:WINDOWBASE:0000yyyyxxwww1 ...
+					# ... $a2:WINDOWBASE will be needed for restoring ...
+					# ... registers
 
 	/* Save only live registers. */
 
@@ -213,14 +215,14 @@ _user_exception:
 	addi	a1, a5, -16
 	_bnez	a0, 1b
 
-	/* WINDOWBASE still in SAR! */
+	/* Orignal WINDOWBASE still in SAR, (and $windowbase?) */
 
-	rsr	a2, SAR			# original WINDOWBASE
-	movi	a3, 1
-	ssl	a2
-	sll	a3, a3
+	rsr	a2, SAR			# $a2 = $sar:original_windowbase
+	movi	a3, 1			# $a3 = 1
+	ssl	a2			# set shift amount to $a2:
+	sll	a3, a3			# $a2:WINDOWBASE << $sar
 	wsr	a3, WINDOWSTART		# set corresponding WINDOWSTART bit
-	wsr	a2, WINDOWBASE		# and WINDOWSTART
+	wsr	a2, WINDOWBASE		# $windowbase = $a2
 	rsync
 
 	/* We are back to the original stack pointer (a1) */
@@ -239,13 +241,13 @@ _user_exception:
 	s32i	a2, a1, PT_DEBUGCAUSE
 	s32i	a3, a1, PT_PC
 
-	movi	a2, -1
-	rsr	a3, EXCVADDR
-	s32i	a2, a1, PT_SYSCALL
-	movi	a2, 0
-	s32i	a3, a1, PT_EXCVADDR
-	xsr	a2, LCOUNT
-	s32i	a2, a1, PT_LCOUNT
+	movi	a2, -1			# $a2 = -1 [To Clear Syscall Flag]
+	rsr	a3, EXCVADDR		# $a3 = :$escvaddr
+	s32i	a2, a1, PT_SYSCALL	# regs->pt_syscall = $a1:-1 
+	movi	a2, 0			# $a2 = 0
+	s32i	a3, a1, PT_EXCVADDR	# regs->pt_excvaddr = $a3:$escvaddr
+	xsr	a2, LCOUNT		# $a2 = $lcount, $lcount = $a2:0
+	s32i	a2, a1, PT_LCOUNT	# regs->pt_lcount = $lcount
 
 	/* It is now save to restore the EXC_TABLE_FIXUP variable. */
 
@@ -300,18 +302,27 @@ _user_exception:
 
 	//movi	a4, exc_table
 	rsr	a4, EXCSAVE_1
-	mov	a6, a1			# pass pt_regs which begins at the top of the stack.
-	mov	a7, a0			# pass EXCCAUSE
+	mov	a6, a1			# $a6:regs &pt_regs, which begins at the top of the stack.
+	mov	a7, a0			# $a7:EXCCAUSE passed below in call to second level handler
 	addx4	a4, a0, a4
-	l32i	a4, a4, EXC_TABLE_DEFAULT		# load handler
+	l32i	a4, a4, EXC_TABLE_DEFAULT # $a4 =  exception handler
 
+#if 0
 	/* 
 	 * Restore registers in current frame so backtrace
 	 * correctly shows current state of the kernel function
 	 * causing the exception.
+	 * REMIND:
+	 *	I think this is old code from back when we had common
+	 *	cond for handeling user and kernel exceptions.
 	 */
 	l32i	a2, a1, PT_AREG2
 	l32i	a3, a1, PT_AREG3
+#endif
+	movi	a0, 0			# Null $a0:ReturnAddress Terminates Stack...
+					# Shows up in xt-gdb 'info frame' as 'saved pc 0xc0000000'
+					# because the high order two bits come from the current pc;
+					# here in the 0XC region.	
 
 	/* 
 	 * Call the second-level handle:
@@ -437,8 +448,12 @@ user_exception_exit:
 
 2:	j	common_exception_exit
 
+	.globl Exception_From_User_Space
 	.globl NullReturnAddressEntry
 	.globl NullReturnAddress
+
+ENTRY(Exception_From_User_Space)		/* For gdb */
+	nop
 
 ENTRY(NullReturnAddressEntry)			/* For gdb */
 	nop
@@ -614,11 +629,11 @@ _kernel_exception:
 	 * the back trace.
 	 *
 	 * We are now about to make it look as if a call4 came from the exception PC,
-	 * So we need to or 0X40000 with EPC & 0x3ffffff. This algorithm saves
-	 * an instruction...
+	 * So we need to or 0X40000 with EPC & 0x3ffffff. Instead we use this algorithm 
+	 * which saves an instruction and adds a 0X8000.0000 from from 0xc0000.0000 << 1:
 	 *
-	 *	1 1 x x | x x x x | x x x x | x x x x		r3: EPC | 0XC0000000
-	 *      1 0 0 0   0 0 0 0   0 0 0 0   0 0 0 0		0xc0000 << 1
+	 *	1 1 x x | x x x x | x x x x | x x x x		r3: EPC | 0XC000.0000
+	 *      1 0 0 0   0 0 0 0   0 0 0 0   0 0 0 0		(a4:0xc0000.0000 << 1):0X8000.0000
 	 *      --------------------------------------
 	 *      0 1 x x   x x x x   x x x x   x x x x   
 	 *      
@@ -2207,7 +2222,7 @@ ENTRY(_switch_to)
 
 	rsr	a3, EXCSAVE_1		# exc_table
 	movi	a6, 0
-	addi	a7, a5, PT_REGS_OFFSET	# a7 = ti->(KERNEL_STACK_SIZE - PT_USER_SIZE)
+	addi	a7, a5, PT_REGS_OFFSET	# a7 = ti->PT_REGS_OFFSET:(KERNEL_STACK_SIZE - PT_USER_SIZE)
 	s32i	a6, a3, EXC_TABLE_FIXUP
 	s32i	a7, a3, EXC_TABLE_KSTK	# Store Initial Stack pointer used when comming from user space
 

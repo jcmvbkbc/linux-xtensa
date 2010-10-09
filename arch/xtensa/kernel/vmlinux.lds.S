@@ -30,7 +30,7 @@ jiffies = jiffies_64;
 #endif
 
 #ifndef KERNELOFFSET
-#define KERNELOFFSET 0xd0001000
+#define KERNELOFFSET 0xd0002000
 #endif
 
 /* Note: In the following macros, it would be nice to specify only the
@@ -394,13 +394,27 @@ SECTIONS
 
   
   /*
-   * This is a remapped copy of the Secondary Reset Vector Code.
-   * It keeps gdb in sync with the PC after switching
-   * to the temporary mapping used while setting up 
-   * the V2 MMU mappings for Linux.
+   * These are remapped copies of the Primary and Secondary Reset Vector Code.
+   * This keeps gdb in sync with the PC after switching to the temporary mapping 
+   * used while setting up the V2 MMU mappings for Linux.
    *
-   * Only debug information about this section is put in the kernel image.
+   * Note that only debug information about these sections are put in the 
+   * kernel image.
+   *
+   * With the V3 MMU, as on the commonly used DC_233L, the kernel code is 
+   * loaded at 0X2000 and will mapped temporally to 0X40002000 and then 
+   * finally mapped to it's * linked location at 0XD0002000.
    */
+  .head.text.unmapped 0X2000 (INFO):
+  {
+	*(.head.text.unmapped)
+  }
+
+  .head.text.remapped 0X40002000 (INFO):
+  {
+	*(.head.text.remapped)
+  }
+
   .SecondaryResetVector.remapped_text 0X46000000 (INFO):
   {
 	*(.SecondaryResetVector.remapped_text)

@@ -21,15 +21,15 @@
 #include <variant/core.h>
 
 #define VIRTUAL_MEMORY_ADDRESS  	0xD0000000    /* Will Become VECBASE */
-#define KERNELOFFSET            	0xD0001000    /* Image Virtual Start Address */
+#define KERNELOFFSET            	0xD0002000    /* Image Virtual Start Address */
 
 #if defined(XCHAL_HAVE_PTP_MMU) && XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY  
   /* MMU v3 */
   #define PHYSICAL_MEMORY_ADDRESS 	0x00000000
-  #define LOAD_MEMORY_ADDRESS  	  	0x00001000
+  #define LOAD_MEMORY_ADDRESS  	  	0x00002000
 #else
-  #define KERNELOFFSET            	0xD0001000
-  #define LOAD_MEMORY_ADDRESS     	0xD0001000
+  #define KERNELOFFSET            	0xD0002000
+  #define LOAD_MEMORY_ADDRESS     	0xD0002000
 #endif
 
 #define XC_VADDR(offset)	(VIRTUAL_MEMORY_ADDRESS  + offset)

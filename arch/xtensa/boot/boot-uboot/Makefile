@@ -9,8 +9,14 @@ GZIP_FLAGS = -v9fc
 OBJCOPYFLAGS = --strip-all -R .comment -R .note.gnu.build-id -O binary
 MKIMAGE = $(srctree)/scripts/mkuboot.sh
 
-KERNEL_LOAD  = 0xd0001000
-KERNEL_ENTRY = 0xd0001000
+ifdef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
+KERNEL_LOAD  = 0x00002000
+KERNEL_ENTRY = 0x00002000
+else
+# Pre-V3 MMU or Initializing MMU inside the Reset Vector or Boot Loaded
+KERNEL_LOAD  = 0xd0002000
+KERNEL_ENTRY = 0xd0002000
+endif
 
 vmlinux.bin: vmlinux
 	$(OBJCOPY) $(OBJCOPYFLAGS) $^ $@

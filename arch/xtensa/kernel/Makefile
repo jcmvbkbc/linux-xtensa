@@ -15,6 +15,7 @@ obj-y := align.o entry.o irq.o coprocessor.o process.o ptrace.o \
 #
 KBUILD_AFLAGS += -g3
 AFLAGS_mxpic.o += -mtext-section-literals 
+AFLAGS_head.o += -mtext-section-literals 
 
 #
 # In the Xtensa architecture, assembly generates literals which must always

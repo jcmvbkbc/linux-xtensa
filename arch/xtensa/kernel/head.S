@@ -16,11 +16,13 @@
  * Kevin Chea
  */
 
+#include <asm/bootparam.h>
 #include <asm/processor.h>
+#include <asm/pgtable.h>
 #include <asm/page.h>
 #include <asm/cacheasm.h>
+#include <asm/vectors.h>
 #include <asm/mxregs.h>
-
 #include <linux/linkage.h>
 
 /*
@@ -45,25 +47,130 @@
 	/* The first bytes of the kernel image must be an instruction, so we
 	 * manually allocate and define the literal constant we need for a jx
 	 * instruction.
+	 *
+	 * For MMU_V3 systems this code is loaded at location 0X2000
+	 * but mapped like the rest of the kernel to 0xd000.0000 region.
+	 * An additional control section is provied with the
+	 * debug information for this section running at the location
+	 * is was loaded and starts running at.
 	 */
-
 	.section .head.text, "ax"
 	.globl _start
-_start:	_j	2f
+	.begin  no-absolute-literals
+
+_start:	_j	_SetupMMU
 	.align	4
-1:	.word	_startup
-2:	l32r	a0, 1b
-	jx	a0
+startup_lit:	
+	.word	_startup	# Explicit Absolute Literal used to jump to text init section.
+	.align  4
+	.literal_position	# Put Literals AFTER initial Jmp Instruction
+	 .align  4
+
+_SetupMMU:
+	Offset = _SetupMMU - _start
+
+#ifdef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
+	/* 
+	 * This mmu initialization code is linked at 0xd000.2000.
+	 * A 2nd copy is Linked at 0x0000.2000 for early debugging
+	 * of this code. A 3ed copy,  also used for debuging inside 
+	 * the early initializatin is mapped at at 0x4000.2000.
+	 */
+	#include <asm/initialize_mmu.h>
+#endif
+
+_MMUSetup:
+
+	.end    no-absolute-literals
+
+	l32r	a0, startup_lit		# $a0 = &_startup
+	jx	a0			# jmp    _startup
+
+
+	/**************************************************************************
+	 * This is an unmapped version of the above
+	 * code that sets up the MMU from identity
+	 * mapping to 'Linux mappings' in the TLB.
+	 */
+	.section        .head.text.unmapped, "ax"
+#ifdef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
+	.global         _Unmapped_start
+
+	.org 0			# Need to do org before literals
+_Unmapped_start:
+	.begin  no-absolute-literals
+	 .literal_position
+
+	j      _UnmappedSetupMMU
 
 	/*
-	 * We come here for both primary and secondary processors
+	 * Position Remapped code to same location as
+	 */
+	. = _Unmapped_start + Offset 
+
+_UnmappedSetupMMU:
+	#include <asm/initialize_mmu.h>
+_UnmappedMMUSetup:
+#endif
+	.end    no-absolute-literals
+	/****************************************************************************/
+
+
+
+	/* ---------------------------------------------------------------------------
+	 * This is remapped version of the above
+	 * code that sets up the MMU from identity
+	 * mapping to Linux mappings in the TLB.
+	 */
+	.section        .head.text.remapped, "ax"
+
+#ifdef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
+	.global         _Remmapped_start
+
+	.org 0			# Need to do org before literals
+_Remmapped_start:
+	.begin  no-absolute-literals
+	 .literal_position
+
+	j      _RemappedSetupMMU
+
+	/*
+	 * Position Remapped code to same location as
+	 */
+	. = _Remmapped_start + Offset 
+
+_RemappedSetupMMU:
+	#include <asm/initialize_mmu.h>
+_RemappedMMUSetup:
+#endif
+	.end    no-absolute-literals
+	/* --------------------------------------------------------------------------- */
+
+
+
+#if 0
+	/* 
+	 * Start of Init Text section:
+	 * We come here for both primary and secondary processors.
+	 * It's mapped to the stardard Xtensa linux 0Xd000.0000 region.
 	 */
 	.section .init.text, "ax"
+#else
+	/*
+	 * REMiND:
+	 *	Didn't link correclty having this in init.text where
+	 *      it really belongs. Since it's rather small I'm just
+	 *	including it with the head text.
+	 *						-piet
+	 */
+	.section .head.text, "ax"
+#endif
+	.literal_position
 	.global _startup
 	.align 4
 _startup:
 
-	/* Disable interrupts and exceptions; but allow ocd to service xt-gdb. */
+	/* Disable interrupts and exceptions; but allow xocd to service xt-gdb. */
 
 	movi	a0, XCHAL_DEBUGLEVEL -1
 	wsr	a0, PS
@@ -72,7 +179,6 @@ _startup:
 	 * Preserve the pointer to the boot parameter list in EXCSAVE_1 
 	 * EXCSAVE_1 will be set up to point to exc_table[cpu]
 	 */
-
 	wsr	a2, EXCSAVE_1
 
 	/* Start with a fresh windowbase and windowstart.  */

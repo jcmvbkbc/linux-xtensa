@@ -7,7 +7,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2004 - 2009 by Tensilica Inc.
+ * Copyright (C) 2004 - 2010 by Tensilica Inc.
  *
  * Chris Zankel <chris@zankel.net>
  * Marc Gauthier <marc@tensilica.com>
@@ -18,7 +18,7 @@
 // Derived a bit from from:
 //     $Id: //depot/dev/Boreal/Xtensa/OS/xtos/reset-vector.S#11 $
 
-// Copyright (c) 1999-2009 by Tensilica Inc.  ALL RIGHTS RESERVED.
+// Copyright (c) 1999-2010 by Tensilica Inc.  ALL RIGHTS RESERVED.
 // These coded instructions, statements, and computer programs are the
 // copyrighted works and confidential proprietary information of Tensilica Inc.
 // They may not be modified, copied, reproduced, distributed, or disclosed to
@@ -40,8 +40,6 @@
 
 	.section	.ResetVector.text, "ax"
 	.global         _ResetVector
-	.global         reset			# Place 1st Breakpoint here
-
 _ResetVector:
 	_j _SetupMMU
 
@@ -56,7 +54,12 @@ _ResetVector:
 
 	.align 4
 RomInitAddr:
-	.word 0xd0001000
+							  /* Cores with a V3 MMU have theses parms set */
+#if defined(CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX) && XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
+	.word 0x00002000
+#else
+	.word 0xd0002000
+#endif
 RomBootParam:
 	.word _bootparam
 
@@ -64,20 +67,29 @@ RomBootParam:
 _SetupMMU:
 	Offset = _SetupMMU - _ResetVector
 
+#ifndef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 /* 2nd Copy Linked at 0x4600000 for ddd and xt-gdb */
-#include <asm/initialize_mmu.h>			
+#include <asm/initialize_mmu.h>			 /* Include code to initialize the MMU if not done inside vmlinux */
+#endif
 
 	.end    no-absolute-literals
 
 	rsil    a0, XCHAL_DEBUGLEVEL-1		# Enable xt-gdb Breakpoints
 	rsync
 
+#if !defined(CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX)
+	.global         set_breakpoints		# Place 1st Breakpoint here if mapping MMU here in reset vector...
+						# ... !defined(CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX)
 # 
 # Place 1st Breakpoint Here. Until we get here the MMU is mapped virtual == physical
 # for V3 MMU, so it's not possible in this case to set normal kernel breakpoints as
 # the code wasn't mapped there yet; now it is.
 #
-reset:						
+set_breakpoints:
+#else
+						 # Place Breakpoint in head.S at _startup
+#endif
+
 	l32r    a0, RomInitAddr
 	l32r	a2, RomBootParam
 	movi	a3, 0
@@ -123,7 +135,9 @@ _RemappedResetVector:
         . = _RemappedResetVector + Offset	# Position Remapped code to same location orig code.
 
 _RemappedSetupMMU:
-#include <asm/initialize_mmu.h>                  /* Include code to re-map MMU V3 if needed */
+#ifndef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
+#include <asm/initialize_mmu.h>                  /* Include code to initialize the MMU if not done inside vmlinux */
+#endif
 
 	.end    no-absolute-literals
 
