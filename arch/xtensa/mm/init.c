@@ -120,7 +120,12 @@ void __init bootmem_init(void)
 	max_low_pfn = max_pfn = 0;
 	min_low_pfn = ~0;
 
-	for (i=0; i < sysmem.nr_banks; i++) {
+	for (i = 0; i < sysmem.nr_banks; i++) {
+		printk("%s: sysmem.bank[i:%d].{type:%lx, start:0x%lx, end:0x%lx}\n", __func__, i,
+			    sysmem.bank[i].type, 
+			    sysmem.bank[i].start, 
+			    sysmem.bank[i].end);
+
 		pfn = PAGE_ALIGN(sysmem.bank[i].start) >> PAGE_SHIFT;
 		if (pfn < min_low_pfn)
 			min_low_pfn = pfn;
@@ -135,13 +140,16 @@ void __init bootmem_init(void)
 	max_low_pfn = max_pfn < MAX_MEM_PFN >> PAGE_SHIFT ?
 		max_pfn : MAX_MEM_PFN >> PAGE_SHIFT;
 
+	printk("%s: min_low_pfn:0x%lx, max_low_pfn:0x%lx, max_pfn:0x%lx\n", __func__,
+		    min_low_pfn,       max_low_pfn,       max_pfn);
+
 	/* Find an area to use for the bootmem bitmap. */
 
 	bootmap_size = bootmem_bootmap_pages(max_low_pfn - min_low_pfn);
 	bootmap_size <<= PAGE_SHIFT;
 	bootmap_start = ~0;
 
-	for (i=0; i<sysmem.nr_banks; i++)
+	for (i = 0; i < sysmem.nr_banks; i++)
 		if (sysmem.bank[i].end - sysmem.bank[i].start >= bootmap_size) {
 			bootmap_start = sysmem.bank[i].start;
 			break;
@@ -160,10 +168,9 @@ void __init bootmem_init(void)
 
 	/* Add all remaining memory pieces into the bootmem map */
 
-	for (i=0; i<sysmem.nr_banks; i++)
+	for (i = 0; i < sysmem.nr_banks; i++)
 		free_bootmem(sysmem.bank[i].start,
 			     sysmem.bank[i].end - sysmem.bank[i].start);
-
 }
 
 
@@ -261,9 +268,22 @@ void free_initrd_mem(unsigned long start, unsigned long end)
 }
 #endif
 
+/*
+ * This can be patched by xt-gdb while placing 
+ * breakpoints in init code that would normally
+ * be made free.
+ */
+volatile int  skip_free_of_initmem = 0;
+
 void free_initmem(void)
 {
-	free_reserved_mem(&__init_begin, &__init_end);
-	printk("Freeing unused kernel memory: %dk freed\n",
-	       (&__init_end - &__init_begin) >> 10); 
+	if (skip_free_of_initmem) {
+		printk("%s: Skip Freeing of init memory; avoiding issues with breakpoints.\n", __func__);
+	} else {
+		printk("%s: Freeing unused/init kernel memory: ...", __func__);
+
+		free_reserved_mem(&__init_begin, &__init_end);
+
+		printk(" %dk freed\n", (&__init_end - &__init_begin) >> 10); 
+	}
 }

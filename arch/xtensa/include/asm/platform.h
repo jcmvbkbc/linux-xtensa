@@ -18,6 +18,19 @@
 
 #include <asm/bootparam.h>
 
+enum xtensa_board {
+	AVNET_UNKNOWN = 0,
+	AVNET_LX60  = 1,
+	AVNET_LX110 = 2,
+	AVNET_LX200 = 4
+};
+
+extern enum xtensa_board platform_board;
+extern char *platform_board_name;
+
+extern unsigned int platform_mem_start;
+extern unsigned int platform_mem_size;
+
 /*
  * platform_init is called before the mmu is initialized to give the
  * platform a early hook-up. bp_tag_t is a list of configuration tags

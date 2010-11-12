@@ -36,11 +36,12 @@
 /* Memory configuration. */
 
 #define PLATFORM_DEFAULT_MEM_START 0x00000000
-#define PLATFORM_DEFAULT_MEM_SIZE  0x04000000
+#define PLATFORM_DEFAULT_MEM_SIZE  (CONFIG_XTENSA_PLATFORM_DEFAULT_MEM_SIZE_IN_MB * 1024 * 1024)
+
 
 /* Interrupt configuration. */
 
-#define PLATFORM_NR_IRQS	2
+#define PLATFORM_NR_IRQS	10
 
 /* 
  * Default assignment of LX60 devices to external interrupts. 
@@ -52,14 +53,24 @@
  *   CONFIG_ARCH_HAS_SMP without CONFIG_SMP means to run
  *   without SMP on hardware that supports it.
  *
- *   Systems with SMP support (MX)  have an External Interrupt Distributer
+ *   Systems with SMP support (MX) have an External Interrupt Distributer
  *   which maps External Interripts to Cores:
  *
- *	IPI 0 --> IRQ 0		Priority == 1		Level Triggered
- *	IPI 1 --> IRQ 1		Priority  > 1		Level Triggered
- *	IPI 2 --> IRQ 2		Non Maskable Interrupt 
- * 	UART  --> IRQ 3
- * 	OETH  --> IRQ 4
+ *  External Function         Internal
+ *  -------- ------------        --------
+ *	    IPI 0         --> IRQ 0		Priority == 1		Level Triggered
+ *	    IPI 1         --> IRQ 1		Priority  > 1		Level Triggered
+ *	    IPI 2         --> IRQ 2		Non Maskable Interrupt 
+ *  IRQ 0   UART          --> IRQ 3
+ *  IRQ 1   OETH          --> IRQ 4
+ *
+ *  						LX200			LX110
+ *  IRQ 2   AUDIO         --> IRQ 5		Output Underrun		Output Underrun AND Output Level
+ *  IRQ 3   AUDIO         --> IRQ 6		Output Level		Input  Underrun AND Output Level
+ *  IRQ 4   AUDIO         --> IRQ 7		Output Underrun
+ *  IRQ 5   AUDIO         --> IRQ 8		Input  Level
+ *  IRQ 6   AUDIO                                                       Might be availbale for controler internal ...
+ *                                                                      ... events; didn't confirm or try.
  */
 
 /*  UART interrupt: */
@@ -76,6 +87,14 @@
 #define OETH_IRQ                XCHAL_EXTINT1_NUM
 #endif
 #define OETH_REQUEST_IRQ_FLAG   0
+
+/* 
+ * Audio Driver (/dev/dsp): IRQ Numbers assigned dymically in Audio Driver (sound_lx200.c).
+ * This is done to allow the driver to work for both the LX200 and the LX110. The IRQ
+ * numbers are different for the boards, so I saw little gain by adding constants here.
+ */ 
+
+
 /*
  *  Device addresses and parameters.
  */
@@ -85,9 +104,17 @@
 
 /* UART */
 #define DUART16552_VADDR	(XSHAL_IOBLOCK_BYPASS_VADDR+0xD050020)
+
+/* LX60 LCD Data Addresses. */
+#define LX60_LCD_INSTR_ADDR	(char*)(XSHAL_IOBLOCK_BYPASS_VADDR + 0xD040000)
+#define LX60_LCD_DATA_ADDR	(char*)(XSHAL_IOBLOCK_BYPASS_VADDR + 0xD040004)
+
 /* LCD instruction and data addresses. */
-#define LCD_INSTR_ADDR		(char*)(XSHAL_IOBLOCK_BYPASS_VADDR + 0xD040000)
-#define LCD_DATA_ADDR		(char*)(XSHAL_IOBLOCK_BYPASS_VADDR + 0xD040004)
+#define LX110_LCD_INSTR_ADDR	(char*)(XSHAL_IOBLOCK_BYPASS_VADDR + 0xD0C0000)
+#define LX110_LCD_DATA_ADDR	(char*)(XSHAL_IOBLOCK_BYPASS_VADDR + 0xD0C0004)
+
+#define LX110_USB_CONTROLER_ADDR (char*)(XSHAL_IOBLOCK_BYPASS_VADDR + 0xD0D0000)	/* CYC67300 */
+
 #define DIP_SWITCHES_ADDR	(XSHAL_IOBLOCK_BYPASS_VADDR+0xD02000C)
 
 /*  Opencores Ethernet controller:  */

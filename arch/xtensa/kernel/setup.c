@@ -206,11 +206,30 @@ static int __init parse_bootparam(const bp_tag_t *tag)
 }
 
 /*
- * Initialize architecture. (Early stage)
+ * Initialize architecture for each CPU. (Early stage)
  */
-
 void __init_refok init_arch(bp_tag_t *bp_start)
 {
+	extern void __init trap_init(void);
+#ifdef CONFIG_SMP
+	extern void secondary_trap_init(void);
+	int prid;
+#endif
+
+	/*
+	 * Likely best to set up $excsave1 pointing to the
+	 * exception table as soon as we reach C code.
+	 */
+#ifdef CONFIG_SMP
+	/* With SMP we assume the Processor ID (PRID) register is supported */
+	prid = get_sr(PRID);
+	if (prid == 0) 
+		trap_init();
+	else
+		secondary_trap_init();
+#else
+	trap_init();
+#endif
 
 #if 0
 #ifdef CONFIG_BLK_DEV_INITRD
@@ -230,6 +249,13 @@ void __init_refok init_arch(bp_tag_t *bp_start)
         if (bp_start)
 	  parse_bootparam(bp_start);
 
+	/* 
+  	 * Early hook for platforms; allow them to setup memory banks and 
+  	 * board specific stuff; Ex: gpio for the Stretch a6105 board.
+  	 */
+	platform_init(bp_start);
+
+	/* If platform didn't set up memory, use the default start and size */
 	if (sysmem.nr_banks == 0) {
 		sysmem.nr_banks = 1;
 		sysmem.bank[0].start = PLATFORM_DEFAULT_MEM_START;
@@ -237,9 +263,6 @@ void __init_refok init_arch(bp_tag_t *bp_start)
 				     + PLATFORM_DEFAULT_MEM_SIZE;
 	}
 
-	/* Early hook for platforms */
-
-	platform_init(bp_start);
 
 	/* Initialize MMU. */
 
@@ -398,7 +421,7 @@ void __init setup_arch(char **cmdline_p)
 	boot_command_line[COMMAND_LINE_SIZE-1] = '\0';
 	*cmdline_p = command_line;
 
-	check_s32c1i();
+	check_s32c1i();		/* NOTE: can cause an exception while probing */
 
 	/*
  	 * Likely setup by init_arch() on the primary processor.

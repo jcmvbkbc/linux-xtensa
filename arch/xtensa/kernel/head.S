@@ -58,7 +58,15 @@
 	.globl _start
 	.begin  no-absolute-literals
 
-_start:	_j	_SetupMMU
+_start:	
+	/* 
+	 * Preserve the pointer to the boot parameter list, a2, in EXCSAVE_1.
+	 * EXCSAVE_1 will later be set up to point to exc_table[cpu]
+	 */
+	wsr	a2, EXCSAVE_1
+
+	_j	_SetupMMU
+
 	.align	4
 startup_lit:	
 	.word	_startup	# Explicit Absolute Literal used to jump to text init section.
@@ -111,8 +119,8 @@ _Unmapped_start:
 _UnmappedSetupMMU:
 	#include <asm/initialize_mmu.h>
 _UnmappedMMUSetup:
-#endif
 	.end    no-absolute-literals
+#endif
 	/****************************************************************************/
 
 
@@ -142,8 +150,8 @@ _Remmapped_start:
 _RemappedSetupMMU:
 	#include <asm/initialize_mmu.h>
 _RemappedMMUSetup:
-#endif
 	.end    no-absolute-literals
+#endif
 	/* --------------------------------------------------------------------------- */
 
 
@@ -168,6 +176,13 @@ _RemappedMMUSetup:
 	.literal_position
 	.global _startup
 	.align 4
+
+#if defined(CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX)
+	.global set_breakpoints
+
+set_breakpoints:
+#endif
+
 _startup:
 
 	/* Disable interrupts and exceptions; but allow xocd to service xt-gdb. */
@@ -175,11 +190,6 @@ _startup:
 	movi	a0, XCHAL_DEBUGLEVEL -1
 	wsr	a0, PS
 
-	/* 
-	 * Preserve the pointer to the boot parameter list in EXCSAVE_1 
-	 * EXCSAVE_1 will be set up to point to exc_table[cpu]
-	 */
-	wsr	a2, EXCSAVE_1
 
 	/* Start with a fresh windowbase and windowstart.  */
 
@@ -254,8 +264,11 @@ _startup:
 	/* End of baisc initialization. */
 
 #ifdef CONFIG_SMP
-
-	rsr	a2, PRID
+	/* 
+	 * Notice that we assume with SMP that cores have PRID
+	 * supported by the cores.
+	 */
+	rsr	a2, PRID		
 	bnez	a2, .Lboot_secondary
 
 #endif	/* CONFIG_SMP */

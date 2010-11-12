@@ -27,7 +27,9 @@ static inline void __delay(unsigned long loops)
 static __inline__ u32 xtensa_get_ccount(void)
 {
 	u32 ccount;
+
 	asm volatile ("rsr %0, 234; # CCOUNT\n" : "=r" (ccount));
+
 	return ccount;
 }
 
@@ -39,10 +41,12 @@ static __inline__ void udelay (unsigned long usecs)
 {
 	unsigned long start = xtensa_get_ccount();
 	unsigned long cycles = usecs * (loops_per_jiffy / (1000000UL / HZ));
+	unsigned long ccount;
 
 	/* Note: all variables are unsigned (can wrap around)! */
-	while (((unsigned long)xtensa_get_ccount()) - start < cycles)
-		;
+	do {
+		ccount = (unsigned long) xtensa_get_ccount();
+	} while (ccount - start < cycles);
 }
 
 #endif

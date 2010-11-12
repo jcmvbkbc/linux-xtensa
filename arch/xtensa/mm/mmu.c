@@ -41,11 +41,12 @@ void __init init_mmu(void)
          *  vaddr=0xc0000000 asid=0x01  paddr=0xc0000000  ca=3  ITLB way 6 (512 MB)
          *  vaddr=0xe0000000 asid=0x01  paddr=0xe0000000  ca=4  ITLB way 6 (512 MB)
 	 * 
-	 * The reset vector code remapped KSEG (0xD000000) to map physical memory 
-	 * in way 5 and changed the page size to in way 6 to 256 MB by setting the 
-	 * TLB config register, It removed the (virtual == physical) mappings
-	 * by setting the ASID fields to zero in way 6 and set up the KIO mappings;
-	 * Un-Cached at 0xF0000000 and Cached at 0xE000000.
+	 * For the Primary CPU The reset vector code or _start code in head.S 
+	 * remapped KSEG (0xD000000) to map physical memory in way 5 and changed 
+	 * the page size to in way 6 to 256 MB by setting the TLB config register, 
+	 * It removed the (virtual == physical) mappings by setting the ASID fields 
+	 * to zero in way 6 and set up the KIO mappings; Un-Cached at 0xF0000000 
+	 * and Cached at 0xE000000.
 	 *
 	 * Way 5
 	 *   vaddr=0x40000000 asid=0x00  paddr=0xf8000000  ca=3  ITLB way 5 (128 MB)

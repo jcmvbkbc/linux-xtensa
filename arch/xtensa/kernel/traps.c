@@ -376,32 +376,39 @@ static void set_handler(int idx, void (*handler)(void))
 		per_cpu(exc_table, cpu)[idx] = (unsigned long) handler;
 }
 
+/*
+ * Often called by a platform code earlier that std kernel calls.
+ */
+int prior_trap_init_calls = 0;
+
 void __init trap_init(void)
 {
 	int i;
 	unsigned long excsave1;
+	int cpu =  smp_processor_id();
 
-	printk("trap_init %d\n", smp_processor_id());
+#if 0
+	/* SAFE ? */
+	printk("trap_init(): cpu:%d; prior_trap_init_calls:%d\n", 
+			     cpu,    prior_trap_init_calls);
+#endif
+
+	if (prior_trap_init_calls++) 
+		return;
 
 #if XTENSA_HAVE_COPROCESSORS
-	{
-	    int cpu;
-
-	    /* 
-	     * Set up some global pointers to per_cpu info 
-	     */
-	    for (cpu = 0; cpu < NR_CPUS; cpu++) {
-#if XTENSA_HAVE_COPROCESSORS	
+	/* 
+	 * Set up some global pointers to per_cpu info 
+	 */
+	for (cpu = 0; cpu < NR_CPUS; cpu++) {
 		coprocessor_owner_ptrs[cpu] = &per_cpu(coprocessor_owner, cpu);
-#endif
 		exc_table_ptrs[cpu] = (dispatch_init_table_t *) per_cpu(exc_table, cpu);
-	    }
 	}
 #endif
 
 	/* Setup default vectors. */
 
-	for(i = 0; i < 64; i++) {
+	for (i = 0; i < 64; i++) {
 		set_handler(EXC_TABLE_FAST_USER/4   + i, user_exception);
 		set_handler(EXC_TABLE_FAST_KERNEL/4 + i, kernel_exception);
 		set_handler(EXC_TABLE_DEFAULT/4 + i, (void(*)(void))do_unhandled);
@@ -409,7 +416,7 @@ void __init trap_init(void)
 
 	/* Setup specific handlers. */
 
-	for(i = 0; dispatch_init_table[i].cause >= 0; i++) {
+	for (i = 0; dispatch_init_table[i].cause >= 0; i++) {
 
 		int fast = dispatch_init_table[i].fast;
 		int cause = dispatch_init_table[i].cause;
@@ -437,8 +444,13 @@ void __init trap_init(void)
 void __init secondary_trap_init(void)
 {
 	unsigned long excsave1;
+	int prid;
 
-	printk("secondary_trap_init %d\n", smp_processor_id());
+	prid = get_sr(PRID);
+
+#if 0
+	printk("secondary_trap_init(): prid:%d\n", prid);
+#endif
 
 	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
 

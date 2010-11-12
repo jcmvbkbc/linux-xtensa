@@ -107,7 +107,9 @@ good_area:
 	 * make sure we exit gracefully rather than endlessly redo
 	 * the fault.
 	 */
+#if 0
 survive:
+#endif
 	fault = handle_mm_fault(mm, vma, address, is_write);
 	if (unlikely(fault & VM_FAULT_ERROR)) {
 		if (fault & VM_FAULT_OOM)
@@ -233,7 +235,7 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 	extern void die(const char*, struct pt_regs*, long);
 	const struct exception_table_entry *entry;
 	unsigned long ps, epc, epc1, prid = 0, rasid, exsave1, exsave2;
-	unsigned long exccause, ptevaddr, excvaddr, tsk, sp, ra, current_stack_pointer;
+	unsigned long exccause, ptevaddr, excvaddr, tsk, sp, ra;
 
 	/* Are we prepared to handle this kernel fault?  */
 	if ((entry = search_exception_tables(regs->pc)) != NULL) {
@@ -291,7 +293,7 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 #if 0
 	dump_stack();
 #else
-	show_stack(tsk, (unsigned long *) regs->areg[1]);
+	show_stack((struct task_struct *) tsk, (unsigned long *) regs->areg[1]);
 #endif
 
 	die("Oops", regs, sig);

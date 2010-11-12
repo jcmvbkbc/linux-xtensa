@@ -22,6 +22,9 @@
 #include <asm/mxregs.h>
 #include <asm/cacheasm.h>
 
+/*
+ * Use 'xt-objdump -wph vmlinux' for problems.
+ */
 
 	.section .SecondaryResetVector.text, "ax"
 
@@ -109,6 +112,7 @@ _SetupMMU:
 	 .end    no-absolute-literals	
 
 
+#if 1
 	.section 	.SecondaryResetVector.remapped_text, "ax"
 	.global         _RemappedSecondaryResetVector
 
@@ -125,3 +129,4 @@ _RemappedSetupMMU:
 	#include <asm/initialize_mmu.h> 
 
 	.end    no-absolute-literals
+#endif

@@ -36,12 +36,14 @@ set var $monitor_trace_enabled = 0
 set var $monitor_verify_supported = 1
 set var $monitor_verify_enabled = 1
 
-set var $debug_stress_test = 0
+set var $debug_stress_test = 1
 set var $debug_irq_init = 0
 set var $debug_irqs_disabled = 0
 set var $debug_irq_handler = 0
 set var $debug_uart = 0
 set var $debug_sound = 0
+set var $debug_lcd = 0
+set var $debug_initcalls = 0
 set var $debug_modules = 0
 set var $debug_all_sound = 0
 set var $debug_vm_page_mapcount = 0
@@ -55,10 +57,13 @@ set var $debug_init_arch = 0
 # $debug_reset needed for placing breakpoints with V3 MMU
 set var $debug_reset = 1		
 
+set var $debug_skip_free_initmem = 1
 set var $debug_out_of_memory = 0
 set var $debug_start_kernel = 0
 set var $debug_platform_init = 0
 set var $debug_platform_setup = 0
+set var $debug_setup_arch = 0
+set var $debug_mem_init = 0
 set var $debug_free_area_init_node = 0
 set var $debug_unmap_region = 0
 set var $debug_open_eth = 0
@@ -182,6 +187,22 @@ def set_breakpoints
 		break *&__set_irq_handler
 		break do_interrupt
 		break handle_level_irq
+	end
+
+	if $debug_skip_free_initmem
+		echo "\n"
+		echo "Skip Free of Init Memory; might have breakpoints in init code.\n"	
+		set skip_free_of_initmem = 1
+	end
+
+	if $debug_bootmem_init 
+		echo "\n"
+		echo "Setting Memory Initialization Breakpoints\n"
+		break mem)init
+		break bootmem_init
+		break zones_init
+		break free_reserved_mem
+		break free_initmem
 	end
 
 	if ($mx != 0)
@@ -331,6 +352,13 @@ def set_breakpoints
 		set $platform_setup = $bpnum
 	end
 	
+	if ($debug_setup_arch != 0)
+		echo "\n"
+		echo "Setting 'setup_arch' breakpoint\n"	
+		break setup_arch
+		set $setup_arch = $bpnum
+	end
+	
 	if ($debug_unmap_region != 0)
 	    break unmap_region
 	    set $unmap_region = $bpnum
@@ -349,6 +377,9 @@ def set_breakpoints
 	    
 	    break oom_kill_process
 	    set $oom_kill_process = $bpnum
+	else
+	     echo "\n"
+	     echo "NOT Setting 'out_of_memory' Breakpoints\n"			
 	end
 	
 #
@@ -364,6 +395,9 @@ def set_breakpoints
 		break dump_stack
 		break do_unaligned_user
 		break die 
+	else
+		echo "\n
+		echo "Doing Stress Test; NOT Setting Additional Breakpoints\n"
 	end
 	
 
@@ -379,6 +413,18 @@ def set_breakpoints
                 break ip_local_deliver
                 break ip_rcv_finish
                 break ip_rcv
+	else
+		echo "\n"
+		echo "NOT Setting Open Ethernet Breakpoints\n"
+	end
+
+	if ($debug_initcalls != 0)
+		echo "\n"
+		echo "Setting Initcall Breakpoints\n"
+		break do_one_initcall
+	else
+		 echo "\n"
+		 echo "NOT Setting Initcall Breakpoints\n"
 	end
 
 	if ($debug_modules != 0)
@@ -396,6 +442,9 @@ def set_breakpoints
 		    end
 		end
 		# set apply_relocate_add_enabled = 1
+	else
+		echo "\n"
+		echo "NOT Setting Module Breakpoints\n"	
 	end
 
 	# break print_oops_end_marker
@@ -424,7 +473,7 @@ def set_breakpoints
 
     if ($debug_all_sound != 0) 
 	echo "\n"
-	echo "Setting HiFi-2 Sound Driver Breakpoints\n"
+	echo "Setting ALL HiFi-2 Sound Driver Breakpoints\n"
 	#
 	# HiFI-2 Driver at sound/oss/sound_lx200.c
 	# No Interrupt handler.
@@ -448,7 +497,29 @@ def set_breakpoints
     end
 
     if ($debug_sound != 0)
+	echo "\n"
+	echo "Setting Common HiFi-2 Sound Driver Breakpoints\n"
+	break slx200_audio_open
+	break slx200_audio_write
 	break slx200_fifo_write
+	break slx200_audio_ioctl
+	break i2s_output_interrupt
+	break i2s_input_interrupt
+	break move_full_audio_buffs_to_free_list
+	break release_audio_buffs
+	break slx200_audio_release
+	graph display free_audio_buffs
+	graph display full_audio_buffs
+    else
+	 echo "\n"
+	 echo "NOT Setting Common HiFi-2 Sound Driver Breakpoints\n"	
+    end
+
+    if ($debug_lcd != 0)
+	break lcd_init
+	break lcd_disp_at_pos
+	break lcd_shiftleft
+	break lcd_shiftright
     end
 
 
@@ -487,7 +558,7 @@ def set_breakpoints
 #
 	echo "\n"
 	echo "Setting Misc Breakpoints\n"
-#	break bp 
+	break break_on 
 	break die 
 	break panic
 #	break xtensa_breakpoint

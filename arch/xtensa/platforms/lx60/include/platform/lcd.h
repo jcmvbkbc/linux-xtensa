@@ -13,6 +13,7 @@
 
 /* Display string STR at position POS on the LCD. */
 void lcd_disp_at_pos(char *str, unsigned char pos);
+void lcd_clear(void);
 
 /* Shift the contents of the LCD display left or right. */
 void lcd_shiftleft(void);

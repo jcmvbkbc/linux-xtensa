@@ -268,10 +268,10 @@ config INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 
 config GENERIC_TIME
 	bool "Use Generic Time Code"
-	default false if XTENSA_PLATFORM_LX60
+	default false if XTENSA_PLATFORM_XTAVNET
 	default true
 	help
-	  Tensilica Avnet FPGA Boards (LX60, LX200) are currently experiencing 
+	  Tensilica Avnet FPGA Boards (LX60, LX110, LX200) are currently experiencing 
 	  a problem with nanosleep(). We have tried to to run with Generic
 	  Time but stability doesn't seem to be reproducable. Not using it
 	  for now with LX60.
@@ -279,14 +279,14 @@ config GENERIC_TIME
 
 config XTENSA_CALIBRATE_CCOUNT
 	bool "Calibrate/Auto-Configure the CPU Clock Rate"
-	default y if XTENSA_PLATFORM_LX60
+	default y if XTENSA_PLATFORM_XTAVNET
 	default n
 	help
 	  On some platforms (XT2000, for example), the CPU clock rate can
 	  vary.  The frequency can be determined, however, by measuring
 	  against a well known, fixed frequency, such as an UART oscillator.
 
-	  On the LX60 platform the CPU clock rate can be automatically 
+	  On the XTAVNET platform the CPU clock rate can be automatically 
 	  configured from the FPGA registers.
 
 config SERIAL_CONSOLE
@@ -325,14 +325,17 @@ config XTENSA_PLATFORM_S6105
 	bool "S6105"
 	select SERIAL_CONSOLE
 
-config XTENSA_PLATFORM_LX60
-	bool "LX60"
+config XTENSA_PLATFORM_XTAVNET
+	bool "Avnet Board"
 	select OPENCORES_ETHERNET
+	select SOUND
+	select SOUND_PRIME
+	select SOUND_LX200
 	help
-	  LX60 (XTAV60) is the name of the new Tensilica board. 
+	  Support for the family of LX60 (XT-AV60), LX110 (XT-AV110), and LX200 (XT-AV200) Avnet boards.
 	  This hardware is capable of running a full Linux distribution.
-	  The LX200 (XTAV200) is currenty using the same platform though
-	  the clock speeds are slightly different.
+	  The LX200 (XT-AV200) and LX110 (XT-AV110) are currenty using the 
+	  same platform though the clock speeds are slightly different.
 
 config XTENSA_PLATFORM_S56XX
 	bool "s56xx"
@@ -346,6 +349,38 @@ config XTENSA_PLATFORM_CUSTOM
 	You will be prompted for a platform name.
 
 endchoice
+
+config XTENSA_PLATFORM_XTAVNET_LX110_USB_SUPPORT
+	bool "Avnet LX110 (XT-AV110) USB Support (EXPERIMENTAL, In Very Early Development)"
+	default true
+	depends on XTENSA_PLATFORM_XTAVNET
+	select USB
+	select USB_SUPPORT
+	select USB_C67X00_HCD
+	select USB_DEBUG
+#	select USB_EHCI_HCD
+#	select USB_OHCI_HCD
+#	select USB_ARCH_HAS_HCD
+#	select USB_ARCH_HAS_OHCI
+#	select USB_ARCH_HAS_EHCI
+	help
+	   EXPERIMENTAL Support the on-board Cypress Semiconductor CY7C67300 Embedded Controller.
+	   See http://www.chipcatalog.com/Cypress/CY7C67300.htm data sheet for details.
+	   EZ-Host Programmable Embedded USB Host/Peripheral Controller.
+	   The CY7C67300 is only available on the Avnet LX110 Board.
+
+config XTENSA_PLATFORM_DEFAULT_MEM_SIZE_IN_MB
+	int "System RAM Size in Megabytes"
+	depends on XTENSA_PLATFORM_XTAVNET
+	default 64 
+	help
+	Specify the memory size of you Avnet Board in Megabytes.
+	Normal Defaults are:
+	     64  Megabytes for the LX60.
+	     48  Megabytes for the LX110.
+	     96  Megabytes for the LX200.
+	     512 Megabytes for the LX200 for V3 MMU extended memory testing.
+	
 config XTENSA_PLATFORM_CUSTOM_NAME
 	string "Custom Platform Name"
 	depends on XTENSA_PLATFORM_CUSTOM
@@ -355,7 +390,7 @@ config XTENSA_PLATFORM_NAME
 	string
 	default "iss" if XTENSA_PLATFORM_ISS
 	default "xt2000" if XTENSA_PLATFORM_XT2000
-	default "lx60" if XTENSA_PLATFORM_LX60
+	default "xtavnet" if XTENSA_PLATFORM_XTAVNET
 	default "s5000" if XTENSA_PLATFORM_S5000
 	default XTENSA_PLATFORM_CUSTOM_NAME if XTENSA_PLATFORM_CUSTOM
 
@@ -369,12 +404,15 @@ config XTENSA_CPU_CLOCK_UNITS
 
 config XTENSA_CPU_CLOCK
 	int "Clock rate in Khz to use if can't be determined with XTENSA_CALIBRATE_CCOUNT"
-	default "41667"
+	default "40000"
 	help
 	  Specify the CPU Clock Rate in KiloHz. This value is used to
 	  derive system clock parameters if XTENSA_CALIBRATE_CCOUNT
 	  isn't selected or the selected platform doesn't have a
 	  mechanism to determine the clock rate automatically.
+	  Suggested values:
+	     40000  for the LX60 and LX110
+	     41667  for the LX200	
 	
 config GENERIC_CALIBRATE_DELAY
 	bool "Auto calibration of the BogoMIPS value"
@@ -432,8 +470,8 @@ endmenu
 menu "Xtensa Bus options"
 
 config PCI
-	bool "PCI support" if !XTENSA_PLATFORM_LX60
-	depends on !XTENSA_PLATFORM_LX60
+	bool "PCI support" if !XTENSA_PLATFORM_XTAVNET
+	depends on !XTENSA_PLATFORM_XTAVNET
 	default y
 	help
 	  Find out whether you have a PCI motherboard. PCI is the name of a

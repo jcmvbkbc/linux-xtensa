@@ -21,9 +21,9 @@ subdir-y	:= lib
 
 # Subdirs for the boot loader(s)
 
-bootdir-$(CONFIG_XTENSA_PLATFORM_ISS)	 += boot-elf
-bootdir-$(CONFIG_XTENSA_PLATFORM_XT2000) += boot-redboot boot-elf boot-uboot
-bootdir-$(CONFIG_XTENSA_PLATFORM_LX60)   += boot-redboot boot-elf boot-uboot
+bootdir-$(CONFIG_XTENSA_PLATFORM_ISS)	  += boot-elf
+bootdir-$(CONFIG_XTENSA_PLATFORM_XT2000)  += boot-redboot boot-elf boot-uboot
+bootdir-$(CONFIG_XTENSA_PLATFORM_XTAVNET) += boot-redboot boot-elf boot-uboot
 
 
 zImage zImage.initrd Image Image.initrd: $(bootdir-y)
