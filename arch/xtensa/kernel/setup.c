@@ -103,7 +103,20 @@ extern void zones_init(void);
  * the kernel. The first tag must be a BP_TAG_FIRST tag for the list
  * to be recognised. The list is terminated with a zero-sized
  * BP_TAG_LAST tag.
+ *
+ * When booting via xt-ocd the bootparams are up at the reset vector
+ * and don't need to be mapped to a virtual address. When comming from
+ * U-Boot the addresses are physical and need to be mapped to virtual.
  */
+static int map_required = 0;
+
+#define PHYS_TO_VIRT(pa, va)	{					\
+	if (map_required) {						\
+		(va) = (typeof(va)) (((int) pa) | 0XD0000000);	\
+		printk("%s: va:%p = pa:%p | 0XD0000000\n", __func__,	\
+			    va,     pa);				\
+	}								\
+}
 
 typedef struct tagtable {
 	u32 tag;
@@ -118,7 +131,14 @@ typedef struct tagtable {
  */
 static int __init parse_tag_mem(const bp_tag_t *tag)
 {
-	meminfo_t *mi = (meminfo_t*)(tag->data);
+	meminfo_t *phys_mi = (meminfo_t *)(tag->data);
+	meminfo_t *mi;
+
+#if 0
+	PHYS_TO_VIRT(phys_mi, mi);
+#else
+	mi = phys_mi;
+#endif
 
 	if (mi->type != MEMORY_TYPE_CONVENTIONAL)
 		return -1;
@@ -144,8 +164,13 @@ __tagtable(BP_TAG_MEMORY, parse_tag_mem);
 
 static int __init_refok parse_tag_initrd(const bp_tag_t *tag)
 {
-	meminfo_t* mi;
-	mi = (meminfo_t *)(tag->data);
+	meminfo_t *phys_mi;
+	meminfo_t *mi;
+
+	phys_mi = (meminfo_t *)(tag->data);
+
+	PHYS_TO_VIRT(phys_mi, mi);
+	
 	initrd_start = (void*)(mi->start);
 	initrd_end = (void*)(mi->end);
 
@@ -158,12 +183,22 @@ __tagtable(BP_TAG_INITRD, parse_tag_initrd);
 
 static int __init_refok parse_tag_cmdline(const bp_tag_t *tag)
 {
-	strncpy(command_line, (char*)(tag->data), COMMAND_LINE_SIZE);
+	char *phys_command_line = (char*)(tag->data);
+	char *virt_command_line;
+
+#if 0
+	PHYS_TO_VIRT(phys_command_line, virt_command_line);
+#else
+	virt_command_line = phys_command_line;
+#endif
+
+	strncpy(command_line, virt_command_line, COMMAND_LINE_SIZE);
 	command_line[COMMAND_LINE_SIZE - 1] = '\0';
 	return 0;
 }
 
 __tagtable(BP_TAG_COMMAND_LINE, parse_tag_cmdline);
+
 
 
 /* TODO: Add __tagtable(BP_TAG_SERIAL_BAUDRATE, ) sent by u-boot */
@@ -172,10 +207,18 @@ __tagtable(BP_TAG_COMMAND_LINE, parse_tag_cmdline);
  * Currently only the primary processor has boot params.
  * You shouldn't get here from _startup() on secondary processors.
  */
-static int __init parse_bootparam(const bp_tag_t *tag)
+static int __init parse_bootparam(const bp_tag_t *phys_tag)
 {
+	bp_tag_t *tag;
 	extern tagtable_t __tagtable_begin, __tagtable_end;
 	tagtable_t *t;
+
+	printk("%s(phys_tag:%p): \n",  __func__, phys_tag);
+
+	if ( ((unsigned int) phys_tag) < ((unsigned int) 0XF0000000)) {
+		map_required = 1;
+		PHYS_TO_VIRT(phys_tag, tag);
+	}
 
 	/* Boot parameters must start with a BP_TAG_FIRST tag. */
 
@@ -201,7 +244,6 @@ static int __init parse_bootparam(const bp_tag_t *tag)
 
 		tag = (bp_tag_t *)((unsigned long)(tag + 1) + tag->size);
 	}
-
 	return 0;
 }
 

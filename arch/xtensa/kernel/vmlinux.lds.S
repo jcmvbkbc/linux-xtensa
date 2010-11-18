@@ -30,7 +30,7 @@ jiffies = jiffies_64;
 #endif
 
 #ifndef KERNELOFFSET
-#define KERNELOFFSET 0xd0002000
+#define KERNELOFFSET 0xd0003000
 #endif
 
 /* Note: In the following macros, it would be nice to specify only the
@@ -403,19 +403,19 @@ SECTIONS
    * kernel image.
    *
    * With the V3 MMU, as on the commonly used DC_233L, the kernel code is 
-   * loaded at 0X2000 and will mapped temporally to 0X40002000 and then 
-   * finally mapped to it's * linked location at 0XD0002000.
+   * loaded at 0X3000 and will mapped temporally to 0X40003000 and then 
+   * finally mapped to it's * linked location at 0XD0003000.
    *
    * The secondary reset vector typically is at 0xd0000500 for a V2 MMU
    * and 0xd0000500 likely at 0X00001500 on a V3 MMU which will be temporally
    * mapped to 0X40001500; perhaps we will have to make it 0X40002500.
    */
-  .head.text.unmapped 0X2000 (INFO):
+  .head.text.unmapped 0X3000 (INFO):
   {
 	*(.head.text.unmapped)
   }
 
-  .head.text.remapped 0X40002000 (INFO):
+  .head.text.remapped 0X40003000 (INFO):
   {
 	*(.head.text.remapped)
   }

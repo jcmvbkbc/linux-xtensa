@@ -9,13 +9,17 @@ GZIP_FLAGS = -v9fc
 OBJCOPYFLAGS = --strip-all -R .comment -R .note.gnu.build-id -O binary
 MKIMAGE = $(srctree)/scripts/mkuboot.sh
 
+#
+# Avoid RESET Vectors. Highest is curently in Cottonwood with
+#   CHAL_VECBASE_RESET_VADDR	0x00002000 
+#
 ifdef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
-KERNEL_LOAD  = 0x00002000
-KERNEL_ENTRY = 0x00002000
+KERNEL_LOAD  = 0x00003000
+KERNEL_ENTRY = 0x00003000
 else
 # Pre-V3 MMU or Initializing MMU inside the Reset Vector or Boot Loaded
-KERNEL_LOAD  = 0xd0002000
-KERNEL_ENTRY = 0xd0002000
+KERNEL_LOAD  = 0xd0003000
+KERNEL_ENTRY = 0xd0003000
 endif
 
 vmlinux.bin: vmlinux

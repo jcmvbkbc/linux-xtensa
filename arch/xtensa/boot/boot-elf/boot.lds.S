@@ -50,8 +50,8 @@ SECTIONS
 	}
 
 
-	/*      0xD0001000          0x00001000							                 */
-	.image KERNELOFFSET: AT (LOAD_MEMORY_ADDRESS)	/* KERNELOFFSET: - defined in core.h; default 0xD0001000 */
+	/*      0xD0003000          0x00003000							                 */
+	.image KERNELOFFSET: AT (LOAD_MEMORY_ADDRESS)	/* KERNELOFFSET: - defined in core.h; default 0xD0003000 */
 	{
 		_image_start = .;
 		*(image)

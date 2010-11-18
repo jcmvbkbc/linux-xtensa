@@ -56,9 +56,9 @@ _ResetVector:
 RomInitAddr:
 							  /* Cores with a V3 MMU have theses parms set */
 #if defined(CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX) && XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
-	.word 0x00002000
+	.word 0x00003000
 #else
-	.word 0xd0002000
+	.word 0xd0003000
 #endif
 RomBootParam:
 	.word _bootparam
