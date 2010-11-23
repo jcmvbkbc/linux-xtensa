@@ -231,7 +231,9 @@ void smp_send_reschedule(int cpu)
 void smp_send_stop(void)
 {
 	/* REMIND-FIXME: remove this infinite loop. */
-	printk("smp_send_stop()\n");
+	int prid = get_sr(PRID);
+
+	printk("%s: prid:%d\n", __func__, prid);
 	while(1);
 		// smp_call_function(stop_this_cpu, 0, 1, 0); ?? SH
 }

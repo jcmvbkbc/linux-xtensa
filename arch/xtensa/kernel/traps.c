@@ -163,6 +163,15 @@ COPROCESSOR(7),
 
 DEFINE_PER_CPU(unsigned long, exc_table[EXC_TABLE_SIZE/4]);
 
+/*
+ * This early dispatch table is used for early probing 
+ * of the memory and hardware features. Users are responsible
+ * for setting up their own exception handlers. Perhaps it's
+ * easier to debug early problems while developing the kernel
+ * to have a resonable set of default handlers.
+ */
+unsigned long early_exc_table[EXC_TABLE_SIZE/4];
+
 #if XTENSA_HAVE_COPROCESSORS
 DEFINE_PER_CPU(struct coprocessor_owner, coprocessor_owner);
 
@@ -337,8 +346,24 @@ do_debug(struct pt_regs *regs)
 }
 
 
-/* Set exception C handler - for temporary use when probing exceptions on cpu[0] */
+/* Set early exception C handler - for temporary use when probing exceptions on cpu[0] before per_cpu initialization */
+void *__init
+trap_set_early_handler(int cause, void *handler)
+{
+	int idx = EXC_TABLE_DEFAULT/4 + cause;
+	void *previous;
+	
+	previous =  (void *) early_exc_table[idx];
+	early_exc_table[idx] = (unsigned long) handler;
 
+	return previous;
+}
+
+#if 0
+/* 
+ * Set exception C handler - can be used for temporary use when probing exceptions 
+ * on cpu[0] AFTER the per_cpu trap tables have been set up.
+ */
 void *__init
 trap_set_handler(int cause, void *handler)
 {
@@ -351,6 +376,23 @@ trap_set_handler(int cause, void *handler)
 
 	return previous;
 }
+#endif
+
+/*
+ * Sets up the 'excsave1' register to point to the early dispatch table.
+ * After doing this and setting handlers above it's safe to take exceptions
+ * during early startup. Perhaps we should setup the default handlers also.
+ */
+void trap_enable_early_exc_table(void)
+{
+	unsigned long excsave1;
+
+       	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
+        excsave1 = (unsigned long) &early_exc_table[0];
+	exc_table_ptrs[0] = (dispatch_init_table_t *) excsave1;
+
+        asm volatile ("wsr %0, "__stringify(EXCSAVE_1)"\n" : : "a" (excsave1));
+}	
 
 
 /*
@@ -379,22 +421,13 @@ static void set_handler(int idx, void (*handler)(void))
 /*
  * Often called by a platform code earlier that std kernel calls.
  */
-int prior_trap_init_calls = 0;
-
 void __init trap_init(void)
 {
 	int i;
 	unsigned long excsave1;
 	int cpu =  smp_processor_id();
 
-#if 0
-	/* SAFE ? */
-	printk("trap_init(): cpu:%d; prior_trap_init_calls:%d\n", 
-			     cpu,    prior_trap_init_calls);
-#endif
-
-	if (prior_trap_init_calls++) 
-		return;
+	printk("%s:\n", __func__);
 
 #if XTENSA_HAVE_COPROCESSORS
 	/* 
@@ -448,9 +481,7 @@ void __init secondary_trap_init(void)
 
 	prid = get_sr(PRID);
 
-#if 0
-	printk("secondary_trap_init(): prid:%d\n", prid);
-#endif
+	printk("%s: prid:%d\n", __func__, prid);
 
 	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
 

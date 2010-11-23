@@ -69,7 +69,7 @@
 
 #include <asm/hardware.h>
 #include <asm/processor.h>
-#include <platform/system.h>
+#include <platform/hardware.h>
 
 #include <asm/mxregs.h>		/* REMIND: move to processor.h */
 

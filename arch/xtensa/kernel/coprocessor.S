@@ -311,7 +311,7 @@ ENTRY(fast_coprocessor)
 	/* Disable coprocessor for previous owner. (a2 = 1 << CP number) */
 
 0:	l32i	a5, a4, THREAD_CPENABLE
-	beqz	a5, 0b			# hang if insain
+	beqz	a5, 0b			# hang here if insain!
 	xor	a5, a5, a2		# (1 << cp-id) still in a2
 	s32i	a5, a4, THREAD_CPENABLE
 

@@ -24,6 +24,7 @@
 #include <asm/uaccess.h>
 #include <asm/platform.h>
 #include <asm/mxregs.h>
+#include <asm/vectors.h>
 
 #ifdef CONFIG_KGDB
 int kgdb_early_setup;
@@ -36,6 +37,11 @@ extern __init void smp_init_irq(void);
 DEFINE_PER_CPU(unsigned int, cached_irq_mask);
 
 atomic_t irq_err_count;
+
+void IRQ_likely_stack_overflow_breakpoint(void) 
+{
+	printk("%s: You likely should have a breakpoint here.\n", __func__);
+}
 
 /*
  * 'what should we do if we get a hw irq event on an illegal vector'.
@@ -51,7 +57,6 @@ void ack_bad_irq(unsigned int irq)
  * SMP cross-CPU interrupts have their own specific
  * handlers).
  */
-
 asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
@@ -72,9 +77,12 @@ asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
 		__asm__ __volatile__ ("mov %0, a1\n" : "=a" (sp));
 		sp &= THREAD_SIZE - 1;
 
-		if (unlikely(sp < (sizeof(struct thread_info) + 1024)))
+		if (unlikely(sp < (sizeof(struct thread_info) + 1024))) {
 			printk("Stack overflow in do_IRQ: %ld\n",
 			       sp - sizeof(struct thread_info));
+
+			IRQ_likely_stack_overflow_breakpoint();	
+		}
 	}
 #endif
 	desc->handle_irq(irq, desc);
@@ -227,6 +235,7 @@ static struct irq_chip xtensa_mx_irq_chip = {
 void __init init_IRQ(void)
 {
 	int index;
+	int miroute;
 
 #ifdef CONFIG_KGDB
         if (kgdb_early_setup)
@@ -291,10 +300,21 @@ void __init init_IRQ(void)
 	 * Route all external interrupts to the first processor, perhaps only.
 	 * 
 	 * REMIND:
-	 *   Why do we want to do this? Puts more CPU load on 1st processor.
+	 *   This puts more CPU load on 1st processor;
+	 *   Interrupt balancing would be better.
 	 */
-	for (index = 0; index < 4; index++)
+	printk("%s: Enableing Interrupt Distributer to Route interrupts 0 ... XCHAL_NUM_INTERRUPTS:%d to the 1st core\n",
+		__func__,                     XCHAL_NUM_INTERRUPTS);
+
+	for (index = 0; index < XCHAL_NUM_INTERRUPTS; index++)
 		set_er(1, MIROUT(index));
+
+	printk("%s: MIROUT: [ ", __func__);
+	for (index = 0; index < XCHAL_NUM_INTERRUPTS; index++) {
+		miroute = get_er(MIROUT(index));
+		printk("0x%x ", miroute);
+	}
+	printk("]\n");
 #endif
 
 #ifdef CONFIG_KGDB
@@ -310,9 +330,9 @@ void __init init_IRQ(void)
  */
 void __init secondary_irq_init(void)
 {
-	printk("secondary_irq_init: set cached_irq_mask and enable interrupts))\n");
+	printk("secondary_irq_init: set cached_irq_mask and enable interrupts 2...11))\n");
 	per_cpu(cached_irq_mask, smp_processor_id()) = 0x3c;
-	set_sr(0x3c, INTENABLE);
+	set_sr(0xFFC, INTENABLE);
 }
 
 int __init wakeup_secondary_cpu(unsigned int cpu, struct task_struct *ts)

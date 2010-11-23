@@ -42,7 +42,8 @@
 
 static void _wordcopy_fwd_aligned (long int dstp, long int srcp, size_t len)
 {
-  op_t a0, a1;
+  op_t a0 = 0;
+  op_t a1 = 0;
 
   switch (len % 8)
     {
@@ -226,7 +227,8 @@ static void _wordcopy_fwd_dest_aligned (long int dstp, long int srcp, size_t len
 
 static void _wordcopy_bwd_aligned (long int dstp, long int srcp, size_t len)
 {
-  op_t a0, a1;
+  op_t a0 = 0;
+  op_t a1 = 0;
 
   switch (len % 8)
     {
@@ -330,7 +332,10 @@ static void _wordcopy_bwd_aligned (long int dstp, long int srcp, size_t len)
 
 static void _wordcopy_bwd_dest_aligned (long int dstp, long int srcp, size_t len)
 {
-  op_t a0, a1, a2, a3;
+  op_t a0 = 0;
+  op_t a1 = 0;
+  op_t a2 = 0;
+  op_t a3 = 0;
   int sh_1, sh_2;
 
   /* Calculate how to shift a word read at the memory operation

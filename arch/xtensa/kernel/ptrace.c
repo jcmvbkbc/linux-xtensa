@@ -21,6 +21,8 @@
 #include <linux/smp.h>
 #include <linux/security.h>
 #include <linux/signal.h>
+#include <linux/hardirq.h>
+#include <linux/autoconf.h>
 
 #include <asm/pgtable.h>
 #include <asm/page.h>
@@ -373,8 +375,43 @@ void do_syscall_trace(void)
 	}
 }
 
+#if defined(CONFIG_DEBUG_KERNEL) && defined(CONFIG_PREEMPT)
+/*
+ * It use to be common with UNIX kernels to 
+ * check for premption being enabled when returning
+ * from a system call. We curretly only have
+ * two cases of premption being disabled here;
+ * both likely during early init.
+ *
+ * The kernel doesn't currenty detect a spinlock
+ * being left locked on returning to user space.
+ * Detecting it here would make it's correction easier.
+ * It's possible when PREEMPTION is enabled.
+ */ 
+int do_syscall_trace_enter_prempt = 0;
+int do_syscall_trace_enter_not_prempt = 0;
+
+void do_syscall_trace_enter_not_prempt_bp(void) {}
+void do_syscall_trace_enter_prempt_bp(void) {}
+#endif
+
 void do_syscall_trace_enter(struct pt_regs *regs)
 {
+#if defined(CONFIG_DEBUG_KERNEL) && defined(CONFIG_PREEMPT)
+	struct task_struct *tsk = current;
+	int prempt = preemptible();
+
+	if (prempt) {
+		do_syscall_trace_enter_prempt_bp();
+		do_syscall_trace_enter_prempt++;
+	} else {
+		do_syscall_trace_enter_not_prempt_bp();
+		if (do_syscall_trace_enter_not_prempt++ >= 2) {
+			printk(KERN_WARNING "%s: do_syscall_trace_enter_not_prempt:%d > 2\n", __func__,
+			                         do_syscall_trace_enter_not_prempt);
+		}
+	}
+#endif
 	if (test_thread_flag(TIF_SYSCALL_TRACE)
 			&& (current->ptrace & PT_PTRACED))
 		do_syscall_trace();

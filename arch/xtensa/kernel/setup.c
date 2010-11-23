@@ -218,6 +218,8 @@ static int __init parse_bootparam(const bp_tag_t *phys_tag)
 	if ( ((unsigned int) phys_tag) < ((unsigned int) 0XF0000000)) {
 		map_required = 1;
 		PHYS_TO_VIRT(phys_tag, tag);
+	} else {
+		tag = ( bp_tag_t *) phys_tag;
 	}
 
 	/* Boot parameters must start with a BP_TAG_FIRST tag. */
@@ -252,26 +254,6 @@ static int __init parse_bootparam(const bp_tag_t *phys_tag)
  */
 void __init_refok init_arch(bp_tag_t *bp_start)
 {
-	extern void __init trap_init(void);
-#ifdef CONFIG_SMP
-	extern void secondary_trap_init(void);
-	int prid;
-#endif
-
-	/*
-	 * Likely best to set up $excsave1 pointing to the
-	 * exception table as soon as we reach C code.
-	 */
-#ifdef CONFIG_SMP
-	/* With SMP we assume the Processor ID (PRID) register is supported */
-	prid = get_sr(PRID);
-	if (prid == 0) 
-		trap_init();
-	else
-		secondary_trap_init();
-#else
-	trap_init();
-#endif
 
 #if 0
 #ifdef CONFIG_BLK_DEV_INITRD
@@ -305,9 +287,7 @@ void __init_refok init_arch(bp_tag_t *bp_start)
 				     + PLATFORM_DEFAULT_MEM_SIZE;
 	}
 
-
 	/* Initialize MMU. */
-
 	init_mmu();
 }
 
@@ -397,14 +377,18 @@ do_probed_exception(struct pt_regs *regs, unsigned long exccause)
 void __init
 check_s32c1i (void)
 {
-	extern void* trap_set_handler(int cause, void *handler);
+	extern void *trap_set_early_handler(int cause, void *handler);
+	extern void trap_enable_early_exc_table(void);
+
 	int n, cause1, cause2;
 	void *handbus, *handdata, *handaddr;	/* temporarily saved handlers */
 
 	rcw_probe_pc = 0;
-	handbus  = trap_set_handler(EXCCAUSE_LOAD_STORE_ERROR, do_probed_exception);
-	handdata = trap_set_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, do_probed_exception);
-	handaddr = trap_set_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, do_probed_exception);
+	handbus  = trap_set_early_handler(EXCCAUSE_LOAD_STORE_ERROR, do_probed_exception);
+	handdata = trap_set_early_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, do_probed_exception);
+	handaddr = trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, do_probed_exception);
+
+	trap_enable_early_exc_table();	/* set excsave1 to point to early_exc_table */
 
 	/* First try an S32C1I that does not store: */
 	rcw_exc = 0;
@@ -436,9 +420,9 @@ check_s32c1i (void)
 	if (cause1 != cause2)
 		panic("inconsistent S32C1I exceptions");
 
-	trap_set_handler(EXCCAUSE_LOAD_STORE_ERROR, handbus);
-	trap_set_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, handdata);
-	trap_set_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, handaddr);
+	trap_set_early_handler(EXCCAUSE_LOAD_STORE_ERROR, handbus);
+	trap_set_early_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, handdata);
+	trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, handaddr);
 }
 
 #else /* XCHAL_HAVE_S32C1I */

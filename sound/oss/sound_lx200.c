@@ -34,17 +34,21 @@
 #include <asm/hardware.h>
 #include <asm/platform.h>
 #include <platform/hardware.h>
+#include <asm/vectors.h>         		/* Necessary to see if variant workaround is needed */
 
 #include <linux/module.h>       		/* Specifically, a module */
 #include <linux/kernel.h>       		/* We're doing kernel work */
 #include <linux/proc_fs.h>      		/* Necessary because we use the proc fs */
+#include <linux/autoconf.h>     		/* Necessary because we use CONFIG #defines */ 
 #include <asm/uaccess.h>        		/* for copy_from_user */
+
+#include <asm/mxregs.h>
 
 
 /*
  * The LX200 and LX110 assign interrupts a bit differently.
  * The LX200 generates different interrupts for FIFO over runs 
- * and when the FIFO falls below the low water mark (FIFO LEVEL).
+ * and when the FIFO falls below the low water mark (FIFO onstantsEVEL).
  * The LX110 combinds them onto the same IRQ.
  *
  * The FIFO LEVEL interrupt is assert whenever the
@@ -76,7 +80,8 @@ enum i2s_irq {
 	OUTPUT_FIFO_UNDERRUN = 1,
 	OUTPUT_FIFO_LEVEL = 2,
 	INPUT_FIFO_UNDERRUN = 3,
-	INPUT_FIFO_LEVEL = 4
+	INPUT_FIFO_LEVEL = 4,
+	TIMER_DETECTED_OUTPUT_FIFO_LEVEL = 5
 };	
 
 						/* SPI (Serial Three Wire) Registers */
@@ -248,7 +253,7 @@ int entries_above_low_water_mark = -1;	/* total_audio_fifo_entries - low_water_m
 int bytes_above_low_water_mark = -1;	/* entries_above_low_water_mark  * 2 */
 int buffer_size = -1;			/* bytes_above_low_water_mark */
 
-#define NUM_BUFFERS			60
+#define NUM_BUFFERS			30
 #define AUDIO_RATE_DEFAULT       	44100
 #define BIT_RESOLUTION			16
 
@@ -272,6 +277,7 @@ static DECLARE_WAIT_QUEUE_HEAD(free_audio_bufs);/* Writers waiting for free audi
 static spinlock_t lx200_lock;
 
 static int in_use; 			/* Used for exclusive access to the device. */
+static int hifi_workaround_enabled = 1;	/* Enables workaround for interrupt distributer configured correctly */
 static int interrupt_expected;
 static int device_major;
 static int audio_channels = 2;		/* Linux considers Left and Right as seperate channels ... 
@@ -279,6 +285,7 @@ static int audio_channels = 2;		/* Linux considers Left and Right as seperate ch
 					   which we (unfortunaley) are calling channels */
 
 #ifdef CONFIG_DEBUG_KERNEL
+#define dprintk printk
 /*
  * Congestion Monitoring:
  *   Provides a console log displaying congestion problems
@@ -376,6 +383,7 @@ void static cm_putc(char c) {
 	}
 }
 #else
+#define dprintk()
 #define CM_PUTC(args)
 #define CM_FLUSH()
 #endif
@@ -396,17 +404,31 @@ void slx200_set_board_specific_constants(void)
 		num_fifoentries = (volatile int *) (XSHAL_IOBLOCK_BYPASS_VADDR+0x0D07001C);
 		i2s_TxIntMask =   (volatile int *) (XSHAL_IOBLOCK_BYPASS_VADDR+0x0D070020);
 
+#if defined(CONFIG_ARCH_HAS_SMP)
+		/* Interrupt Distributer shifts IRQ's by three */
+		i2s_output_fifo_underrun_irq = XCHAL_EXTINT5_NUM;
+		i2s_output_fifo_level_irq = XCHAL_EXTINT6_NUM;
+		i2s_input_fifo_underrun_irq = XCHAL_EXTINT7_NUM;
+		i2s_input_fifo_level_irq = XCHAL_EXTINT8_NUM;
+#else
 		i2s_output_fifo_underrun_irq = XCHAL_EXTINT2_NUM;
 		i2s_output_fifo_level_irq = XCHAL_EXTINT3_NUM;
 		i2s_input_fifo_underrun_irq = XCHAL_EXTINT4_NUM;
 		i2s_input_fifo_level_irq = XCHAL_EXTINT5_NUM;
-
+#endif
 		total_audio_fifo_entries 	= LX200_TOTAL_AUDIO_FIFO_ENTRIES;
 		low_water_mark 			= (total_audio_fifo_entries/2);
+		INT_FIFOLEVEL                   = low_water_mark;					/* Set Low Water to 50% of FIFO */
 		entries_above_low_water_mark    = (total_audio_fifo_entries - low_water_mark);
 	        bytes_above_low_water_mark      = (entries_above_low_water_mark * 2);
 		buffer_size                     = bytes_above_low_water_mark;
 
+		printk("%s: XCHAL_CODE_ID: '%s'\n", __func__, XCHAL_CORE_ID);
+		if (strcmp(XCHAL_CORE_ID, "test_mmuhifi_c3") == 0) {
+			printk("%s: Enableing workaround for the test_mmuuhifi Variant\n", __func__);
+			hifi_workaround_enabled = 1;
+		}
+		
 		
 		slx200_initialized++;
 		break;
@@ -443,10 +465,18 @@ void slx200_set_board_specific_constants(void)
 		spi_busy =          (volatile char *)(XSHAL_IOBLOCK_BYPASS_VADDR+0x0D0A0004);
 		spi_data =          (volatile int *) (XSHAL_IOBLOCK_BYPASS_VADDR+0x0D0A0008);
 
+#if defined(CONFIG_ARCH_HAS_SMP)
+		/* Interrupt Distributer shifts IRQ's by three */
+		i2s_output_fifo_underrun_irq = XCHAL_EXTINT5_NUM;
+		i2s_output_fifo_level_irq = XCHAL_EXTINT5_NUM;
+		i2s_input_fifo_underrun_irq = XCHAL_EXTINT6_NUM;
+		i2s_input_fifo_level_irq = XCHAL_EXTINT6_NUM;
+#else
 		i2s_output_fifo_underrun_irq = XCHAL_EXTINT2_NUM;
 		i2s_output_fifo_level_irq = XCHAL_EXTINT2_NUM;
 		i2s_input_fifo_underrun_irq = XCHAL_EXTINT3_NUM;
 		i2s_input_fifo_level_irq = XCHAL_EXTINT3_NUM;
+#endif
 
 		total_audio_fifo_entries = LX110_TOTAL_AUDIO_FIFO_ENTRIES;
 		low_water_mark 			= (total_audio_fifo_entries/2);
@@ -462,16 +492,6 @@ void slx200_set_board_specific_constants(void)
 		break;
 
 	}
-
-	/*
- 	 * SMP Interrupt Distributer shifts IRQ's by three.
- 	 */
-#if defined(ARCH_HAS_SMP)
-	i2s_output_fifo_underrun_irq += 3;
-	i2s_output_fifo_level_irq += 3;
-	i2s_input_fifo_underrun_irq +=3;
-	i2s_input_fifo_level_irq += 3;
-#endif
 }
 
 /* To Store the default sample rate */
@@ -878,6 +898,8 @@ static void i2s_tx_stop(void)
 }
 
 
+#if 0
+/* Not currently used */
 static void init_i2s_fifo(void)
 {
 	int i;
@@ -905,6 +927,7 @@ static void init_i2s_fifo(void)
 #endif
 	}
 }
+#endif
 
 
 static void slx200_fifo_logic(void)
@@ -931,6 +954,28 @@ static int slx200_audio_mute(int mute)
 	return 0;
 }
 
+int show_extern_irq_enabled = 0;
+
+void slx200_audio_show_extern_irq(const char *func, const char *context)
+{
+	if (show_extern_irq_enabled) {
+		int i;
+		int interrupt = get_sr(INTERRUPT);
+		int intenable = get_sr(INTENABLE);
+		int mieng = get_er(MIENG);
+		int miasg = get_er(MIASG);
+		int mirout;
+	
+		printk("%s%s: interrupt: 0x%x, intenable: 0x%x\n", func, context, interrupt, intenable);
+		printk("%s%s: MIENG: 0x%x, MSASG: 0x%x\n", func, context, mieng, miasg);
+		printk("%s%s: MIROUT: [ ", func, context);
+		for(i=0; i < XCHAL_NUM_INTERRUPTS; i++) {
+			mirout = get_er(MIROUT(i));
+			printk("0x%x ", mirout);
+		}
+		printk("]\n");
+	}
+}
 
 /* 
  * Write the array of 16 bit audio data to the audio FIFO. 
@@ -1142,11 +1187,48 @@ slx200_audio_ioctl(struct inode *inode, struct file *file, uint cmd, ulong arg)
 	return ret;
 }
 
+static struct timer_list audio_timer;
+static irqreturn_t i2s_output_interrupt(int, void *);
+
+void slx200_audio_timer(unsigned long data)
+{
+	struct timer_list *tmr = &audio_timer;
+	unsigned long flags;
+
+	spin_lock_irqsave(&lx200_lock, flags);
+
+	if (in_use ) {
+		int delay;
+
+		if (NUM_FIFOENTRIES <= INT_FIFOLEVEL) {
+			if (!list_empty(&full_audio_buffs)) {
+				CM_PUTC('T');
+				delay = 2;
+			} else {
+				CM_PUTC('?');
+				delay = 1;
+			}
+			i2s_output_interrupt(i2s_output_fifo_level_irq, (void *)TIMER_DETECTED_OUTPUT_FIFO_LEVEL);
+		} else {
+			CM_PUTC('t');
+			delay = 4;
+		}	
+		tmr->expires = jiffies + delay;
+		tmr->data = (unsigned long) 0;
+		tmr->function = slx200_audio_timer;
+		add_timer(tmr);
+	} else {
+		CM_PUTC('Z');
+	}
+
+	spin_unlock_irqrestore(&lx200_lock, flags);
+}
+
 /*
  * cat audio_file.pcm > /dev/dsp will send down 4k blocks,
  * but mplayer will send down 50k blocks. 
  */
-int slx200_audio_write_printf_enabled = 0;
+int slx200_audio_write_printk_enabled = 0;
 static ssize_t slx200_audio_write(struct file *file, const char __user *initial_user_buf,
 			       size_t initial_count, loff_t * ppos)
 {
@@ -1158,6 +1240,8 @@ static ssize_t slx200_audio_write(struct file *file, const char __user *initial_
 	unsigned long flags;
 	struct audio_buff *buf;
 	int err = 0;
+
+	CM_PUTC('W');
 
 
 	if (bytes_left < 0 && bytes_left > buffer_size) {
@@ -1179,7 +1263,7 @@ static ssize_t slx200_audio_write(struct file *file, const char __user *initial_
 		 * Wait for an audio buff to become available.
 		 */ 
 		while (list_empty(&free_audio_buffs)) {
-			if (slx200_audio_write_printf_enabled) 
+			if (slx200_audio_write_printk_enabled) 
 				printk("%s: interruptible_sleep_on_timeout() ", __func__);
 			else
 				CM_PUTC('+');
@@ -1262,8 +1346,8 @@ static ssize_t slx200_audio_write(struct file *file, const char __user *initial_
 		buf->len = copy;
 		user_buf += copy;
 	
-		spin_lock_irqsave(&lx200_lock, flags); 
-
+		spin_lock_irqsave(&lx200_lock, flags);
+		slx200_audio_show_extern_irq(__func__, ".Begin");
 #ifdef CONFIG_DEBUG_KERNEL
 		/*
 		 * These might come in handy while debugging on the LX200.
@@ -1295,6 +1379,7 @@ static ssize_t slx200_audio_write(struct file *file, const char __user *initial_
 			 */
 			I2S_TX_INT_MASK |= 0X0;
 			slx200_fifo_write(buf->data, buf->len);
+			CM_PUTC('F');
 			written += buf->len;
 			buf->len = 0;					/* Leaveing buf on free list */
 			i2s_tx_below_level = 0;                         /* Let LEVEL interrupt tell us if we are below low water mark */	
@@ -1307,11 +1392,12 @@ static ssize_t slx200_audio_write(struct file *file, const char __user *initial_
 	
 			list_del_init(&buf->list);
 			list_add_tail(&buf->list, &full_audio_buffs);
+			CM_PUTC('B');
 		}
 		copied += copy;
 		bytes_left -= copy;
+		slx200_audio_show_extern_irq(__func__, ".End");
 		spin_unlock_irqrestore(&lx200_lock, flags);
-		CM_PUTC('*');						/* Really Kinda Needs to be done with interrupts enabled */
 	}
 
 out:
@@ -1350,13 +1436,21 @@ static irqreturn_t i2s_output_interrupt(int irq, void *dev_id)
 	int tx_int_stat = I2S_TX_INT_STAT;
 	enum i2s_irq irq_type = (enum i2s_irq) dev_id;
 	int bytes_written = 0;
+	int grab_lock = 1;
 
-
-	if ((irq_type == OUTPUT_FIFO_LEVEL) && (platform_board == AVNET_LX200)) {
+	if ((irq_type == TIMER_DETECTED_OUTPUT_FIFO_LEVEL) && (platform_board == AVNET_LX200)) {
+		/* Marc was on drugs */
+		tx_int_stat |= 0x2;
+		grab_lock = 0;
+	} else if ((irq_type == OUTPUT_FIFO_LEVEL) && (platform_board == AVNET_LX200)) {
 		/* Steve was on drugs */
 		tx_int_stat |= 0x2;
 	}
-	spin_lock_irqsave(&lx200_lock, flags);
+
+	if (grab_lock)
+		spin_lock_irqsave(&lx200_lock, flags);
+
+	slx200_audio_show_extern_irq(__func__, ".Entry");
 
 	if (platform_board ==  AVNET_LX200) 
 		fifo_entries = NUM_FIFOENTRIES;
@@ -1430,7 +1524,10 @@ static irqreturn_t i2s_output_interrupt(int irq, void *dev_id)
 		I2S_TX_INT_MASK &= ~0x1;	/* Disable UnderRun and Level  Interrupts */
 		CM_PUTC('#');
 	}
-	spin_unlock_irqrestore(&lx200_lock, flags);
+	slx200_audio_show_extern_irq(__func__, ".Exit");
+
+	if (grab_lock)
+		spin_unlock_irqrestore(&lx200_lock, flags);
 
 	return IRQ_HANDLED;
 }
@@ -1555,9 +1652,31 @@ void static release_audio_buffs(void) {
 	spin_unlock_irqrestore(&lx200_lock, flags);
 }
 
+static int slx200_audio_free_irqs(void)
+{
+	switch (platform_board) {
+	case AVNET_LX200:
+		free_irq(i2s_output_fifo_level_irq, (void *) OUTPUT_FIFO_LEVEL);
+		free_irq(i2s_input_fifo_level_irq, (void *) INPUT_FIFO_LEVEL);
+		/* FALLTHROUGH */
+	case AVNET_LX110:
+		free_irq(i2s_output_fifo_underrun_irq, (void *) OUTPUT_FIFO_UNDERRUN);
+		free_irq(i2s_input_fifo_underrun_irq, (void *) INPUT_FIFO_UNDERRUN);
+		break;
+	
+	default:
+		BUG();
+	}
+	return 0;
+}
+
 static int slx200_audio_open(struct inode *inode, struct file *file)
 {
 	int retval = 0;
+	int retval1 = 0;
+	int retval2 = 0;
+	int retval3 = 0;
+	int retval4 = 0;
 	struct audio_buff *buf;
 
 
@@ -1567,19 +1686,58 @@ static int slx200_audio_open(struct inode *inode, struct file *file)
 	if (in_use)
 		return -EBUSY;
 
+	slx200_audio_show_extern_irq(__func__, ".before_request_irq_call");
+	
 	switch (platform_board) {
 	case AVNET_LX200:
-		retval = request_irq(i2s_output_fifo_level_irq, i2s_output_interrupt, AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) OUTPUT_FIFO_LEVEL);
-		retval = request_irq(i2s_input_fifo_level_irq,  i2s_input_interrupt,  AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) INPUT_FIFO_LEVEL);
+		retval1 = request_irq(i2s_output_fifo_level_irq, i2s_output_interrupt, AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) OUTPUT_FIFO_LEVEL);
+		if (retval1 != 0) {
+			printk("%s: retval1 = %d = request_irq(i2s_output_fifo_level_irq:%d, ...);\n", __func__,
+				    retval1,                   i2s_output_fifo_level_irq);
+
+			retval = retval1;
+		} else {
+			dprintk("%s: Enabled i2s_output_fifo_level_irq:%d\n", __func__, i2s_output_fifo_level_irq);
+		} 
+
+		retval2 = request_irq(i2s_input_fifo_level_irq,  i2s_input_interrupt,  AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) INPUT_FIFO_LEVEL);
+		if (retval2 != 0) {
+			printk("%s: retval2 = %d = request_irq(i2s_input_fifo_level_irq:%d, ...);\n", __func__,
+				    retval2,                   i2s_input_fifo_level_irq);
+
+			retval = retval2;
+		} else {
+			dprintk("%s: Enabled i2s_input_fifo_level_irq:%d\n", __func__, i2s_input_fifo_level_irq);
+		}
 		/* FALLTHROUGH */
+
 	case AVNET_LX110:
-		retval = request_irq(i2s_output_fifo_underrun_irq, i2s_output_interrupt, AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) OUTPUT_FIFO_UNDERRUN);
-		retval = request_irq(i2s_input_fifo_underrun_irq,  i2s_input_interrupt,  AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) INPUT_FIFO_LEVEL);
+		retval3 = request_irq(i2s_output_fifo_underrun_irq, i2s_output_interrupt, AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) OUTPUT_FIFO_UNDERRUN);
+		if (retval3 != 0) {
+			printk("%s: retval3 = %d = request_irq(i2s_output_fifo_underrun_irq:%d, ...);\n", __func__,
+				    retval3,                   i2s_output_fifo_underrun_irq);
+
+			retval = retval3;
+		} else {
+			dprintk("%s: Enabled i2s_output_fifo_underrun_irq:%d\n", __func__, i2s_output_fifo_underrun_irq);
+		}
+
+		retval4 = request_irq(i2s_input_fifo_underrun_irq,  i2s_input_interrupt,  AUDIO_REQUEST_IRQ_FLAG, "slx200", (void *) INPUT_FIFO_UNDERRUN);
+		if (retval4 != 0) {
+			printk("%s: retval4 = %d = request_irq(i2s_input_fifo_underrun_irq:%d, ...);\n", __func__,
+				    retval4,                   i2s_input_fifo_underrun_irq);
+
+			retval = retval4;
+		} else {
+			dprintk("%s: Enabled i2s_input_fifo_underrun_irq:%d\n", __func__, i2s_input_fifo_underrun_irq);
+		}
 		break;
 	default:
 		BUG();
 	}
-	if (retval == 0) {
+	if ((retval1 == 0) && (retval1 == 0) && (retval1 == 0) && (retval1 == 0)) {
+		slx200_audio_show_extern_irq(__func__, ".after_request_irq_call");
+
 		/*
 		 * Try to attach buffers to the Audio Buffs now.
 		 * If we fail to allocate, it's ok, we will try
@@ -1594,8 +1752,14 @@ static int slx200_audio_open(struct inode *inode, struct file *file)
 			}
 		}
 		in_use = 1;
+		if(hifi_workaround_enabled) {
+			init_timer(&audio_timer);
+			slx200_audio_timer((unsigned long) 0);		/* Keeps time alive while in_use */
+		}
 		i2s_tx_below_level = 1;
 		i2s_tx_active = 0;
+	} else {
+		slx200_audio_free_irqs();	
 	}
 	return retval;
 }
@@ -1609,22 +1773,13 @@ static int slx200_audio_release(struct inode *inode, struct file *file)
 	I2S_TX_INT_MASK = 0x0;
 
 	CM_FLUSH();
-
+	
 	spin_lock_irqsave(&lx200_lock, flags);
 
-	switch (platform_board) {
-	case AVNET_LX200:
-		free_irq(i2s_output_fifo_level_irq, (void *) OUTPUT_FIFO_LEVEL);
-		free_irq(i2s_input_fifo_level_irq, (void *) INPUT_FIFO_LEVEL);
-		/* FALLTHROUGH */
-	case AVNET_LX110:
-		free_irq(i2s_output_fifo_underrun_irq, (void *) OUTPUT_FIFO_UNDERRUN);
-		free_irq(i2s_input_fifo_underrun_irq, (void *) INPUT_FIFO_LEVEL);
-		break;
-	
-	default:
-		BUG();
-	}
+	del_timer_sync(&audio_timer);
+
+	slx200_audio_free_irqs();
+
 	move_full_audio_buffs_to_free_list();
 	in_use = 0;
 	i2s_tx_below_level = 1;
@@ -1765,6 +1920,8 @@ static int __init slx200_init(void)
 {
 	int i;
 	int channels = 2;
+	int saved_num_fifoentries;
+	int saved_int_fifolevel;
 	int rc;
 
 	/* Initialize the lock. */
@@ -1834,6 +1991,18 @@ static int __init slx200_init(void)
 
 	slx200_audio_test();
 
+	switch(platform_board) {
+	case AVNET_LX200:
+		saved_num_fifoentries = NUM_FIFOENTRIES;
+		saved_int_fifolevel = INT_FIFOLEVEL;
+		printk("%s: saved_num_fifoentries:%d, saved_int_fifolevel:%d\n", __func__,
+			    saved_num_fifoentries,    saved_int_fifolevel);
+		break;
+
+	case AVNET_LX110:
+	default:
+		break;
+	}
 	return 0;
 }
 

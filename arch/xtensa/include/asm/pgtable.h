@@ -162,6 +162,10 @@
 #define _PAGE_CA_WT		(2<<2)	/* write-through */
 #define _PAGE_CA_MASK		(3<<2)	/* Bits 3..2 */
 #define _PAGE_CA_INVALID	(3<<2)
+/* Define a few commonly used Aliases */
+#define _PAGE_NO_CACHE		_PAGE_CA_MASK 
+#define _PAGE_WRITETHRU		_PAGE_CA_WT
+
 
 #define _PAGE_KERNEL		(0<<4)	/* user access (ring = 1) */
 #define _PAGE_USER		(1<<4)	/* user access (ring = 1) */
