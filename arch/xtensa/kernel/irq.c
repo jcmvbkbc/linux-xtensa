@@ -235,7 +235,6 @@ static struct irq_chip xtensa_mx_irq_chip = {
 void __init init_IRQ(void)
 {
 	int index;
-	int miroute;
 
 #ifdef CONFIG_KGDB
         if (kgdb_early_setup)
@@ -311,11 +310,13 @@ void __init init_IRQ(void)
 
 	printk("%s: MIROUT: [ ", __func__);
 	for (index = 0; index < XCHAL_NUM_INTERRUPTS; index++) {
+		int miroute;
+
 		miroute = get_er(MIROUT(index));
 		printk("0x%x ", miroute);
 	}
 	printk("]\n");
-#endif
+#endif /* CONFIG_ARCH_HAS_SMP */
 
 #ifdef CONFIG_KGDB
         if (!kgdb_early_setup)

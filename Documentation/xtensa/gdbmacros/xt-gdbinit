@@ -52,7 +52,7 @@ set var $debug_clear_lazy_smp_coprocessor_flushing_enabled = 0
 
 # NOTE: A Breakpoint at init_arch causes 2nd CPU to get stuck;
 #       which is a handy way to come up with just 1 CPU
-set var $debug_init_arch = 0
+set var $debug_init_arch = 1
 
 # $debug_reset needed for placing breakpoints with V3 MMU
 set var $debug_reset = 1		
@@ -69,6 +69,9 @@ set var $debug_unmap_region = 0
 set var $debug_open_eth = 0
 set var $debug_exceptions = 0
 set var $mx = 0
+set var $debug_iss_simulation = 1
+set var $debug_hw_breakpoints_supported = 0
+
 if $mx
 	set var $debug_secondary = 1
 	set var $debug_ipi_messages = 1
@@ -118,8 +121,8 @@ if $mx
 #	target remote gums:20001 0xd0000012
 #	target remote gums:20002 0xd0000012
 #	target remote gums:20000 &spill_location_0
-	target remote localhost:20000 &spill_location_0
-#	target remote localhost:20001 &spill_location_1
+	target remote localhost:40000 &spill_location_0
+#	target remote localhost:40001 &spill_location_1
 #	target remote localhost:20002 &spill_location_2
 #	target remote gums:20001 &spill_location_1
 #	target remote gums:20002 &spill_location_2
@@ -130,39 +133,45 @@ if $mx
 else
 	add-symbol-file vmlinux 0
 	file arch/xtensa/boot/Image.elf
-	target remote localhost:20000  &spill_location_0
-#	target remote tuscana2:20000  &spill_location_0
+	if ($debug_iss_simulation != 0 )
+	  target sim --turbo
+	else 
+	  target remote localhost:20000  &spill_location_0
+#	  target remote tuscana2:20000  &spill_location_0
+        end
 end
 
 reset
 
-if $monitor_trace_supported
-  echo "Monitor trace off\n"
-  monitor trace off
-end
-
-if $monitor_verify_supported
-  echo "monitor verify all off\n"
-  monitor verify all off
-  monitor verify verbose off
-end
-
-echo "load: Started\n"
-load
-echo "load: Completed\n"
-
-if $monitor_trace_supported
-  if $monitor_trace_enabled
-    echo "Monitor trace on\n"
-    monitor trace on
-    monitor trace level 35
+if $debug_iss_simulation == 0
+  if $monitor_trace_supported
+    echo "Monitor trace off\n"
+    monitor trace off
   end
-end
-
-if $monitor_verify_supported
-  if $monitor_verify_enabled
-    echo "Monitor verify all on\n"
-    monitor verify all on
+  
+  if $monitor_verify_supported
+    echo "monitor verify all off\n"
+    monitor verify all off
+    monitor verify verbose off
+  end
+  
+  echo "load: Started\n"
+  # load
+  echo "load: Completed\n"
+  
+  if $monitor_trace_supported
+    if $monitor_trace_enabled
+      echo "Monitor trace on\n"
+      monitor trace on
+      monitor trace level 35
+    end
+  end
+  
+  if $monitor_verify_supported
+    if $monitor_verify_enabled
+      echo "Monitor verify all on\n"
+      monitor verify all on
+    end
   end
 end
 
@@ -617,7 +626,12 @@ end
 # the normal kernel brekpoints and to
 # play with configurable global variables.
 #
-hbreak set_breakpoints
+if $debug_hw_breakpoints_supported
+  hbreak set_breakpoints
+else
+  break set_breakpoints
+end
+
 set var $_startup = $bpnum
 commands $_startup
     set var $doing_commands = 1
@@ -683,6 +697,11 @@ define memfree
 
 	print contig_page_data.node_zones[2].name
 	print contig_page_data.node_zones[2].present_pages
-	end
+end
+
+if $debug_iss_simulation
+   echo "Starting Simulation\n"
+   run
+end
 
 echo ".xt-gdbinit: Done\n"

@@ -112,11 +112,13 @@ static int map_required = 0;
 
 #define PHYS_TO_VIRT(pa, va)	{					\
 	if (map_required) {						\
-		(va) = (typeof(va)) (((int) pa) | 0XD0000000);	\
+		(va) = (typeof(va)) (((int) pa) | 0XD0000000);		\
 		printk("%s: va:%p = pa:%p | 0XD0000000\n", __func__,	\
 			    va,     pa);				\
+	} else {							\
+		(va) = (pa);						\
 	}								\
-}
+}									\
 
 typedef struct tagtable {
 	u32 tag;
@@ -169,7 +171,11 @@ static int __init_refok parse_tag_initrd(const bp_tag_t *tag)
 
 	phys_mi = (meminfo_t *)(tag->data);
 
+#if 0
 	PHYS_TO_VIRT(phys_mi, mi);
+#else
+	 mi = phys_mi;
+#endif
 	
 	initrd_start = (void*)(mi->start);
 	initrd_end = (void*)(mi->end);
@@ -209,7 +215,7 @@ __tagtable(BP_TAG_COMMAND_LINE, parse_tag_cmdline);
  */
 static int __init parse_bootparam(const bp_tag_t *phys_tag)
 {
-	bp_tag_t *tag;
+	const bp_tag_t *tag;
 	extern tagtable_t __tagtable_begin, __tagtable_end;
 	tagtable_t *t;
 

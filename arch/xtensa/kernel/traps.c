@@ -425,8 +425,9 @@ void __init trap_init(void)
 {
 	int i;
 	unsigned long excsave1;
+#if XTENSA_HAVE_COPROCESSORS
 	int cpu =  smp_processor_id();
-
+#endif
 	printk("%s:\n", __func__);
 
 #if XTENSA_HAVE_COPROCESSORS

@@ -40,9 +40,9 @@
 struct simdisk {
   char filename[FILENAMELEN + 1];
   spinlock_t lock;
-  struct request_queue * queue;
-  struct gendisk * gd;
-  struct proc_dir_entry * procfile;
+  struct request_queue *queue;
+  struct gendisk *gd;
+  struct proc_dir_entry *procfile;
   int users;
   int size;
   int fd;
@@ -133,30 +133,43 @@ static int simdisk_make_request(struct request_queue * q, struct bio * bio)
 
 ////////////////////////////////////////////////////////////////
 
-static int simdisk_open(struct inode * inode, struct file * filp)
+static int simdisk_open(struct block_device *bdev, fmode_t mode)
 {
-  struct simdisk * dev = inode->i_bdev->bd_disk->private_data;
+  struct gendisk *disk = bdev->bd_disk;
+  struct simdisk *dev = disk->private_data;	/* Created in simdisk_setup() during __init */
+  struct inode *inode = bdev->bd_inode;
+#if 0
+  struct file *filp = NULL;
+
   filp->private_data = dev;
+#endif
+
   spin_lock(&dev->lock);
   if (!dev->users)
     check_disk_change(inode->i_bdev);
   dev->users++;
   spin_unlock(&dev->lock);
+
   return 0;
 }
 
-static int simdisk_release(struct inode * inode, struct file * filp)
+static int simdisk_release(struct gendisk *disk, fmode_t mode)
 {
-  struct simdisk * dev = inode->i_bdev->bd_disk->private_data;
+  struct simdisk *dev = disk->private_data;
+
   spin_lock(&dev->lock);
   dev->users--;
   spin_unlock(&dev->lock);
+
   return 0;
 }
 
-static int simdisk_ioctl(struct inode * inode, struct file * filp,
+static int simdisk_ioctl(struct block_device *bdev,  fmode_t mode,
                          unsigned int cmd, unsigned long parm)
 {
+  UNUSED struct inode *inode = bdev->bd_inode;
+  UNUSED struct file *filp;
+
   return -ENOSYS;
 }
 
@@ -171,19 +184,22 @@ static struct simdisk * sddev = 0;
 
 static int simdisk_attach(struct simdisk * dev, char * filename)
 {
+  printk("%s(dev:%p, filename:'%s')\n", __func__, dev, filename);
+
   if (dev->fd != -1)
     return -EBUSY;
 
   snprintf(dev->filename, FILENAMELEN, "%s", filename);
   if ((dev->fd = simcall(SYS_open, (unsigned long) dev->filename, O_RDWR, 0,0,0)) == -1) {
-    printk ("Can't open %s: %d\n", dev->filename, errno);
+    printk ("%s: Can't open filename'%s'; errno:%d\n", __func__, dev->filename, errno);
     return -ENODEV;
   }
 
   dev->size = simcall(SYS_lseek, dev->fd, 0, SEEK_END,   0, 0);
   simcall(SYS_lseek, dev->fd, 0, SEEK_SET,   0, 0);
   set_capacity(dev->gd, dev->size / 512);
-  printk ("SIMDISK: %s=%s\n", dev->gd->disk_name, dev->filename);
+  printk ("%s: SIMDISK: disk_name:'%s', filename:'%s'\n", __func__, 
+	       dev->gd->disk_name, dev->filename);
 
   return 0;
 }
@@ -277,10 +293,10 @@ static int __init simdisk_init(void)
   struct proc_dir_entry * simdisk_procdir;
 
   if (register_blkdev(simdisk_major, "simdisk") < 0) {
-    printk("SIMDISK: register_blkdev: %d\n", simdisk_major);
+    printk("%s: SIMDISK: register_blkdev: %d\n", __func__, simdisk_major);
     return -EIO;
   }
-  printk("SIMDISK: major: %d\n", simdisk_major);
+  printk("%s: SIMDISK: major: %d\n", __func__, simdisk_major);
 
   if ((sddev = kmalloc(CONFIG_BLK_DEV_SIMDISK_COUNT * sizeof (struct simdisk), GFP_KERNEL)) == 0)
     goto out_unregister;
