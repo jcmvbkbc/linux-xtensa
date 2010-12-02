@@ -134,16 +134,21 @@ else
 	add-symbol-file vmlinux 0
 	file arch/xtensa/boot/Image.elf
 	if ($debug_iss_simulation != 0 )
-	  target sim --turbo
+	  # Simulator can used up to 128MB [134,217,728 Bytes]
+	  # Use 'xt-run --help' to see args forwared by 'target sim' gdb command.
+	  echo "target sim --turbo --memlimit=128\n"
+	        target sim --turbo --memlimit=128
 	else 
-	  target remote localhost:20000  &spill_location_0
-#	  target remote tuscana2:20000  &spill_location_0
+
+	  echo "target remote localhost:20000  &spill_location_0"
+	        target remote localhost:20000  &spill_location_0
+#	        target remote  tuscana2:20000  &spill_location_0
         end
 end
 
-reset
-
 if $debug_iss_simulation == 0
+  reset
+
   if $monitor_trace_supported
     echo "Monitor trace off\n"
     monitor trace off
