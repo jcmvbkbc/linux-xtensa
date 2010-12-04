@@ -1048,7 +1048,11 @@ static int alg_test_crc32c(const struct alg_test_desc *desc,
 	do {
 		struct {
 			struct shash_desc shash;
+#if 1
+			char ctx[1000];
+#else
 			char ctx[crypto_shash_descsize(tfm)];
+#endif
 		} sdesc;
 
 		sdesc.shash.tfm = tfm;

@@ -40,7 +40,7 @@ extern void __chk_io_ptr(const volatile void __iomem *);
 #include <linux/compiler-gcc.h>
 #endif
 
-#ifdef ARCH_XTENSA
+#if 0	/* XTENSA HACK */
 #define notrace __attribute__((no_instrument_function))
 #else
 #define notrace

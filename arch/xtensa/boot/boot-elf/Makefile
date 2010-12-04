@@ -25,6 +25,8 @@ endif
 export OBJCOPY_ARGS
 export CPPFLAGS_boot.lds += -P -C
 export KBUILD_CFLAGS += -g3
+
+# Can't use -dwarf3 yet with xcc
 export KBUILD_AFLAGS += -mtext-section-literals -g3
 
 boot-y		:= bootstrap.o

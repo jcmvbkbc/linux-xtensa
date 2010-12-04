@@ -30,6 +30,23 @@
 #include <asm/page.h>
 #include <asm/setup.h>
 
+#if 1
+/*
+ * Functions that gcc optimizes away but has extern statements for.
+ */
+void __get_user_bad(void) 			{ panic(__func__); }
+void __put_user_bad(void) 			{ panic(__func__); }
+void _NSIG_WORDS_is_unsupported_size(void) 	{ panic(__func__); }
+void __bad_unaligned_access_size(void) 		{ panic(__func__); }
+
+int verify_compat_iovec(void)			{ panic(__func__); }
+int cmsghdr_from_user_compat_to_kern(void)	{ panic(__func__); }
+int get_compat_msghdr(void)			{ panic(__func__); }
+int put_cmsg_compat(void)			{ panic(__func__); }
+int scm_detach_fds_compat(void)			{ panic(__func__); }
+int cookie_v4_init_sequence(void)		{ panic(__func__); }
+#endif
+
 /* References to section boundaries */
 
 extern char _ftext, _etext, _fdata, _edata, _rodata_end;
