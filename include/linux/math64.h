@@ -89,10 +89,11 @@ __iter_div_u64_rem(u64 dividend, u32 divisor, u64 *remainder)
 	u32 ret = 0;
 
 	while (dividend >= divisor) {
+#ifdef ARCH_XTENSA
 		/* The following asm() prevents the compiler from
 		   optimising this loop into a modulo operation.  */
 		asm("" : "+rm"(dividend));
-
+#endif
 		dividend -= divisor;
 		ret++;
 	}

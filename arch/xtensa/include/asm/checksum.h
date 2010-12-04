@@ -120,7 +120,11 @@ static __inline__ __sum16 ip_fast_csum(const char *iph, unsigned int ihl)
 	 * clobbered registers.
 	 */
 		: "=r" (sum), "=r" (iph), "=r" (ihl), "=&r" (tmp), "=&r" (endaddr)
+#if 1
+		: "1" (iph), "2" (ihl)
+#else
 		: "1" (iph), "2" (ihl), "m" (*iph)
+#endif
 		: "memory" );
 
 	return	csum_fold(sum);

@@ -266,6 +266,18 @@ config INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 	  Selecting this will cause U-Boot to set the KERNEL Load and Entry
 	  address at 0x0000.2000 instead of the mapped std of 0xD000.2000.
 
+config USE_XTENSA_XCC_COMPILER
+	bool "Use XCC, an advanced, optimizing compiler; based on SGI Open64"
+	default false
+	help
+	  To take advantage of the FLIX instructions found in HiFi-2 and 570T
+	  its curently necessary to use Tensilicas XCC Compiler. This is an
+	  advanced, optimizing compiler derived from the SGI Open64 compiler.
+	  
+	  Compile time is much greater, so while debugging you likley dont
+	  want to enable this. However for production kernel or while debugging
+	  FLIX code its lilely best to use XCC.
+
 config GENERIC_TIME
 	bool "Use Generic Time Code"
 	default false if XTENSA_PLATFORM_XTAVNET

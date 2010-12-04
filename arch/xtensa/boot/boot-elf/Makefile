@@ -25,7 +25,7 @@ endif
 export OBJCOPY_ARGS
 export CPPFLAGS_boot.lds += -P -C
 export KBUILD_CFLAGS += -g3
-export KBUILD_AFLAGS += -mtext-section-literals -dwarf3 
+export KBUILD_AFLAGS += -mtext-section-literals -g3
 
 boot-y		:= bootstrap.o
 

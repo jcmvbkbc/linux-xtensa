@@ -342,7 +342,11 @@ static inline void atomic_clear_mask(unsigned int mask, atomic_t *v)
 "	s32c1i	%0, %3, 0		\n"
 "	bne	%0, %1, 1b		\n"
 	: "=&a" (result), "=&a" (tmp)
+#ifdef ARCH_XTENSA
 	: "Ia" (~mask), "a" (v)
+#else
+	: "a" (v)
+#endif
 	: "memory"
 	);
 #else

@@ -40,7 +40,11 @@ extern void __chk_io_ptr(const volatile void __iomem *);
 #include <linux/compiler-gcc.h>
 #endif
 
+#ifdef ARCH_XTENSA
 #define notrace __attribute__((no_instrument_function))
+#else
+#define notrace
+#endif
 
 /* Intel compiler defines __GNUC__. So we will overwrite implementations
  * coming from above header files here
