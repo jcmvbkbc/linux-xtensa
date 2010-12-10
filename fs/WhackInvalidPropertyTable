@@ -1,0 +1,5 @@
+#
+# This is a script to remove the property table which is bogus.
+# Being Fix by Sterling in bug 21985.
+#
+xt-objcopy --remove-section=.xt.prop built-in.o 

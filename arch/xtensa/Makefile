@@ -39,15 +39,20 @@ KBUILD_CPPFLAGS += $(patsubst %,-I$(srctree)/%include,$(VARIANT_DIR) $(PLATFORM_
 endif
 
 
-# Test for cross compiling. Allow xtensa-*-* and xtensa_<variant>-*-*
-
-ifneq ($(SUBARCH),$(ARCH))
+ifdef CONFIG_USE_XTENSA_XCC_COMPILER
+ CROSS_COMPILE := xt-
+ CC := $(CROSS_COMPILE)xcc
+else
+# Test for GCC cross compiling. Allow xtensa-*-* and xtensa_<variant>-*-*
+ ifneq ($(SUBARCH),$(ARCH))
   ifeq ($(CROSS_COMPILE),)
     CROSS_COMPILE := $(call cc-cross-prefix, \
     		       xtensa-linux-uclibc-  xtensa_$(VARIANT)-linux-uclibc- \
     		       xtensa-linux-gnu-     xtensa_$(VARIANT)-linux-gnu-)
   endif
+ endif
 endif
+
 
 # Only build variant and/or platform if it includes a Makefile
 

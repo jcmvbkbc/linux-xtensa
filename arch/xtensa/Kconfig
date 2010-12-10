@@ -340,9 +340,9 @@ config XTENSA_PLATFORM_S6105
 config XTENSA_PLATFORM_XTAVNET
 	bool "Avnet Board"
 	select OPENCORES_ETHERNET
-	select SOUND
-	select SOUND_PRIME
-	select SOUND_LX200
+#	select SOUND
+#	select SOUND_PRIME
+#	select SOUND_LX200
 	help
 	  Support for the family of LX60 (XT-AV60), LX110 (XT-AV110), and LX200 (XT-AV200) Avnet boards.
 	  This hardware is capable of running a full Linux distribution.
@@ -484,6 +484,7 @@ menu "Xtensa Bus options"
 config PCI
 	bool "PCI support" if !XTENSA_PLATFORM_XTAVNET
 	depends on !XTENSA_PLATFORM_XTAVNET
+	depends on !XTENSA_PLATFORM_ISS
 	default y
 	help
 	  Find out whether you have a PCI motherboard. PCI is the name of a
