@@ -346,7 +346,7 @@ static inline void atomic_clear_mask(unsigned int mask, atomic_t *v)
 #if 0	/* XTENSA HACK */
 	: "Ia" (~mask), "a" (v)
 #else
-	: "a" (v)
+	:  "a" (~mask),"a" (v)
 #endif
 
 	: "memory"
