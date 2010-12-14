@@ -383,7 +383,7 @@ void static cm_putc(char c) {
 	}
 }
 #else
-#define dprintk()
+#define dprintk(...)
 #define CM_PUTC(args)
 #define CM_FLUSH()
 #endif
@@ -958,6 +958,7 @@ int show_extern_irq_enabled = 0;
 
 void slx200_audio_show_extern_irq(const char *func, const char *context)
 {
+#ifdef CONFIG_ARCH_HAS_SMP
 	if (show_extern_irq_enabled) {
 		int i;
 		int interrupt = get_sr(INTERRUPT);
@@ -975,6 +976,7 @@ void slx200_audio_show_extern_irq(const char *func, const char *context)
 		}
 		printk("]\n");
 	}
+#endif
 }
 
 /* 
@@ -1232,7 +1234,9 @@ int slx200_audio_write_printk_enabled = 0;
 static ssize_t slx200_audio_write(struct file *file, const char __user *initial_user_buf,
 			       size_t initial_count, loff_t * ppos)
 {
+#ifdef CONFIG_DEBUG_KERNEL
 	int fifo_entries, fifo_level, free_fifo_in_bytes;
+#endif
 	char __user *user_buf = (char *) initial_user_buf;
 	size_t bytes_left = initial_count;
 	size_t copied = 0;
