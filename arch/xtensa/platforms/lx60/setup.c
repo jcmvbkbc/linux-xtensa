@@ -162,7 +162,8 @@ probe_exception_handler(struct pt_regs *regs, unsigned long exccause)
 void platform_init(bp_tag_t *bootparams)
 {
 	extern void trap_init(void);
-	extern void *trap_set_early_handler(int cause, void *handler);
+	extern void *trap_set_early_C_handler(int cause, void *handler);
+	extern void *trap_initialize_early_exc_table(void);
 	extern void trap_enable_early_exc_table(void);
 	unsigned char *ptr;
 	unsigned char saved_byte;
@@ -195,11 +196,15 @@ void platform_init(bp_tag_t *bootparams)
 	 * $excsave1 was set up pointing to the Trap Table
 	 * just a bit earlier in arch_init(); so it's now
 	 * save to take an excpetion.
-	 */
-	saved_bus_exception_hander_addr  = trap_set_early_handler(EXCCAUSE_LOAD_STORE_ERROR, probe_exception_handler);		/* 03 */
-	saved_data_exception_hander_addr = trap_set_early_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, probe_exception_handler);	/* 13 */
-	saved_addr_exception_hander_addr = trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, probe_exception_handler);	/* 15 */
-	trap_enable_early_exc_table();
+	 *
+	 * Using Early Exception Handler Table till per_cpu code knows how many
+	 * CPU's are being brought on line and we can initialized the final tables.
+	 */ 
+	trap_initialize_early_exc_table();	/* Set default exception handlers; including C (Default) handeler */
+	saved_bus_exception_hander_addr  = trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ERROR, probe_exception_handler);	/* 03 */
+	saved_data_exception_hander_addr = trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, probe_exception_handler);	/* 13 */
+	saved_addr_exception_hander_addr = trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, probe_exception_handler);	/* 15 */
+	trap_enable_early_exc_table();		/* Enable Exception Table usage by setting excsave1 register */
 
 	for (board = 0; board < 3; board++) {
 		bus_errors = 0;
@@ -225,9 +230,9 @@ void platform_init(bp_tag_t *bootparams)
 
 		break;						/* Memory seems to exist for this board */
 	}
-	trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, saved_bus_exception_hander_addr);	
-	trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, saved_data_exception_hander_addr);
-	trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, saved_addr_exception_hander_addr);
+	trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, saved_bus_exception_hander_addr);	
+	trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, saved_data_exception_hander_addr);
+	trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, saved_addr_exception_hander_addr);
 
 	if (ptr) {
 		platform_mem_size = bi->himem + 1;
