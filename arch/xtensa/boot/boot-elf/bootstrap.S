@@ -95,6 +95,8 @@ set_breakpoints:
 	movi	a3, 0
 	movi	a4, 0
 
+	         				# This is a good time to use the gdb command ...
+	         				# symbol-file vmlinux
 	jx      a0				# Typically calls _startup; a2 = &BootParams
 
 	.align 4

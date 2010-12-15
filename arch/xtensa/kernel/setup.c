@@ -383,16 +383,23 @@ do_probed_exception(struct pt_regs *regs, unsigned long exccause)
 void __init
 check_s32c1i (void)
 {
-	extern void *trap_set_early_handler(int cause, void *handler);
+	extern void *trap_set_early_C_handler(int cause, void *handler);
+	extern void trap_initialize_early_exc_table(void);
 	extern void trap_enable_early_exc_table(void);
 
 	int n, cause1, cause2;
 	void *handbus, *handdata, *handaddr;	/* temporarily saved handlers */
 
+	/*
+	 * Using Early Exception Handler Table till per_cpu code knows how many
+	 * CPU's are being brought on line and we can initialized the final tables
+	 */ 
+	trap_initialize_early_exc_table();	/* Set default handlers, including C (Default) handler */
+
 	rcw_probe_pc = 0;
-	handbus  = trap_set_early_handler(EXCCAUSE_LOAD_STORE_ERROR, do_probed_exception);
-	handdata = trap_set_early_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, do_probed_exception);
-	handaddr = trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, do_probed_exception);
+	handbus  = trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ERROR, do_probed_exception);
+	handdata = trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, do_probed_exception);
+	handaddr = trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, do_probed_exception);
 
 	trap_enable_early_exc_table();	/* set excsave1 to point to early_exc_table */
 
@@ -426,9 +433,9 @@ check_s32c1i (void)
 	if (cause1 != cause2)
 		panic("inconsistent S32C1I exceptions");
 
-	trap_set_early_handler(EXCCAUSE_LOAD_STORE_ERROR, handbus);
-	trap_set_early_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, handdata);
-	trap_set_early_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, handaddr);
+	trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ERROR, handbus);
+	trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_DATA_ERROR, handdata);
+	trap_set_early_C_handler(EXCCAUSE_LOAD_STORE_ADDR_ERROR, handaddr);
 }
 
 #else /* XCHAL_HAVE_S32C1I */

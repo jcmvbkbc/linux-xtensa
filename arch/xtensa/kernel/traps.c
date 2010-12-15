@@ -345,10 +345,16 @@ do_debug(struct pt_regs *regs)
 	force_sig(SIGTRAP, current);
 }
 
+static void __init
+set_early_handler(int idx, void (*handler)(void))
+{
+	early_exc_table[idx] = (unsigned long) handler;
+}
+
 
 /* Set early exception C handler - for temporary use when probing exceptions on cpu[0] before per_cpu initialization */
 void *__init
-trap_set_early_handler(int cause, void *handler)
+trap_set_early_C_handler(int cause, void *handler)
 {
 	int idx = EXC_TABLE_DEFAULT/4 + cause;
 	void *previous;
@@ -365,7 +371,7 @@ trap_set_early_handler(int cause, void *handler)
  * on cpu[0] AFTER the per_cpu trap tables have been set up.
  */
 void *__init
-trap_set_handler(int cause, void *handler)
+trap_set_C_handler(int cause, void *handler)
 {
 	int idx = EXC_TABLE_DEFAULT/4 + cause;
 	unsigned int cpu = 0;
@@ -383,7 +389,7 @@ trap_set_handler(int cause, void *handler)
  * After doing this and setting handlers above it's safe to take exceptions
  * during early startup. Perhaps we should setup the default handlers also.
  */
-void trap_enable_early_exc_table(void)
+void __init trap_enable_early_exc_table(void)
 {
 	unsigned long excsave1;
 
@@ -392,6 +398,20 @@ void trap_enable_early_exc_table(void)
 	exc_table_ptrs[0] = (dispatch_init_table_t *) excsave1;
 
         asm volatile ("wsr %0, "__stringify(EXCSAVE_1)"\n" : : "a" (excsave1));
+}
+
+/*
+ * Initialize Early Exception Table
+ */
+void __init trap_initialize_early_exc_table(void)
+{
+	int i;
+
+	for (i = 0; i < 64; i++) {
+		set_early_handler(EXC_TABLE_FAST_USER/4   + i, user_exception);
+		set_early_handler(EXC_TABLE_FAST_KERNEL/4 + i, kernel_exception);
+		set_early_handler(EXC_TABLE_DEFAULT/4 + i, (void(*)(void))do_unhandled);
+	}
 }	
 
 

@@ -20,7 +20,7 @@
  * Public License.  See the file "COPYING" in the main directory of
  * this archive for more details.
  *
- * Copyright (C) 2008 - 2009 Tensilica, Inc.
+ * Copyright (C) 2008 - 2010 Tensilica, Inc.
  *
  *   Marc Gauthier <marc@tensilica.com>
  *   Pete Delaney <piet@tensilica.com>
@@ -216,6 +216,10 @@
 	witlb	a3, a7			// ...
 	isync				// ...
 
+	//  The TLB entry in way 5 should now be visible with dtshow gdb macro.
+	//  	Showing way 5
+	//  	vaddr=0x40000000 asid=0x01  paddr=0x00000000  ca=3  DTLB way 5 (128 MB wired)
+	//
 	//  Step 2b:  jump to self, using new mapping above
 	//            we jump back to the begining at 0: above
 
