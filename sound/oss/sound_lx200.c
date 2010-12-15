@@ -384,7 +384,7 @@ void static cm_putc(char c) {
 }
 #else
 #define dprintk(...)
-#define CM_PUTC(args)
+#define CM_PUTC(...)
 #define CM_FLUSH()
 #endif
 
