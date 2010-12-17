@@ -343,10 +343,10 @@ static inline void atomic_clear_mask(unsigned int mask, atomic_t *v)
 "	bne	%0, %1, 1b		\n"
 	: "=&a" (result), "=&a" (tmp)
 
-#if 0	/* XTENSA HACK */
-	: "Ia" (~mask), "a" (v)
-#else
+#ifdef __XCC__
 	:  "a" (~mask),"a" (v)
+#else
+	: "Ia" (~mask), "a" (v)
 #endif
 
 	: "memory"

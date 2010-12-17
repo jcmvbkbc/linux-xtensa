@@ -259,7 +259,7 @@ void platform_init(bp_tag_t *bootparams)
 	printk("%s: sysmem.bank[0].{start = 0x%lx, end = 0x%lx}\n", __func__, 
 		    sysmem.bank[0].start, sysmem.bank[0].end);
 	
-done:	printk("%s(bootparams:%p): cpu:%d, platform_board:%d:'%s, platform_mem_size:0X%x:%d\n", __func__, 
+	printk("%s(bootparams:%p): cpu:%d, platform_board:%d:'%s, platform_mem_size:0X%x:%d\n", __func__, 
 		   bootparams,     cpu,    platform_board,        
 				           platform_board_name,   platform_mem_size, platform_mem_size);
 }

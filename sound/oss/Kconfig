@@ -570,8 +570,7 @@ config SOUND_SH_DAC_AUDIO_CHANNEL
 
 config SOUND_LX200
        tristate "LX200 Sound Driver"
-       depends on SOUND_PRIME
-       depends on XTENSA_PLATFORM_XTAVNET
+       depends on SOUND_PRIME && (XTENSA_PLATFORM_XTAVNET && !USE_XTENSA_XCC_COMPILER)
        ---help---
          LX200 Audio driver - Works on LX200 and LX110 boards. 
          Boards without DSP support currently need to be tweaked

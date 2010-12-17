@@ -239,6 +239,8 @@ config LAZY_SMP_COPROCESSOR_REGISTER_FLUSHING
 	  Performance difference doesnt appear to be significant for 
 	  configurations with only a few TIE registers; HiFI-2 for example.
 
+	  If in doubt, say N.
+
 config INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 	bool "Initialize Xtensa V3 MMU inside the Linux kernel code"
 	default true
@@ -266,17 +268,24 @@ config INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 	  Selecting this will cause U-Boot to set the KERNEL Load and Entry
 	  address at 0x0000.2000 instead of the mapped std of 0xD000.2000.
 
+	  If in doubt, say Y.
+
 config USE_XTENSA_XCC_COMPILER
 	bool "Use XCC, an advanced, optimizing compiler; based on SGI Open64"
+	depends on EXPERIMENTAL
 	default false
 	help
+	  WARNING: WORK-IN-PROGRESS, doesn't work yet! DONT USE
+
 	  To take advantage of the FLIX instructions found in HiFi-2 and 570T
-	  its curently necessary to use Tensilicas XCC Compiler. This is an
+	  its curently necessary to use the Tensilica XCC Compiler. This is an
 	  advanced, optimizing compiler derived from the SGI Open64 compiler.
 	  
 	  Compile time is much greater, so while debugging you likley dont
 	  want to enable this. However for production kernel or while debugging
 	  FLIX code its lilely best to use XCC.
+
+	  If in doubt, say N.
 
 config GENERIC_TIME
 	bool "Use Generic Time Code"
@@ -287,6 +296,8 @@ config GENERIC_TIME
 	  a problem with nanosleep(). We have tried to to run with Generic
 	  Time but stability doesn't seem to be reproducable. Not using it
 	  for now with LX60.
+
+	  If in doubt, say N.
 
 
 config XTENSA_CALIBRATE_CCOUNT
@@ -340,14 +351,17 @@ config XTENSA_PLATFORM_S6105
 config XTENSA_PLATFORM_XTAVNET
 	bool "Avnet Board"
 	select OPENCORES_ETHERNET
-#	select SOUND
-#	select SOUND_PRIME
-#	select SOUND_LX200
+	select SOUND if (!USE_XTENSA_XCC_COMPILER)
+	select SOUND_PRIME if (!USE_XTENSA_XCC_COMPILER)
+	select SOUND_LX200 if (!USE_XTENSA_XCC_COMPILER)
 	help
 	  Support for the family of LX60 (XT-AV60), LX110 (XT-AV110), and LX200 (XT-AV200) Avnet boards.
 	  This hardware is capable of running a full Linux distribution.
 	  The LX200 (XT-AV200) and LX110 (XT-AV110) are currenty using the 
 	  same platform though the clock speeds are slightly different.
+
+	  The Opencores Ethernet driver may have a problem with it losing 
+	  most packets if the XPG frequency isn't 50Mhz.
 
 config XTENSA_PLATFORM_S56XX
 	bool "s56xx"
@@ -365,7 +379,7 @@ endchoice
 config XTENSA_PLATFORM_XTAVNET_LX110_USB_SUPPORT
 	bool "Avnet LX110 (XT-AV110) USB Support (EXPERIMENTAL, In Very Early Development)"
 	default true
-	depends on XTENSA_PLATFORM_XTAVNET
+	depends on XTENSA_PLATFORM_XTAVNET && !XTENSA_PLATFORM_ISS && EXPERIMNETAL
 	select USB
 	select USB_SUPPORT
 	select USB_C67X00_HCD
@@ -541,6 +555,7 @@ endmenu
 
 source "net/Kconfig"
 
+# Includes sound/oss/sound_lx200.c
 source "drivers/Kconfig"
 
 source "fs/Kconfig"

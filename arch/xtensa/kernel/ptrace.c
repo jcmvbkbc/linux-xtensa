@@ -398,7 +398,7 @@ void do_syscall_trace_enter_prempt_bp(void) {}
 void do_syscall_trace_enter(struct pt_regs *regs)
 {
 #if defined(CONFIG_DEBUG_KERNEL) && defined(CONFIG_PREEMPT)
-	struct task_struct *tsk = current;
+	UNUSED struct task_struct *tsk = current;
 	int prempt = preemptible();
 
 	if (prempt) {

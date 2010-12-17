@@ -90,9 +90,11 @@ __iter_div_u64_rem(u64 dividend, u32 divisor, u64 *remainder)
 
 	while (dividend >= divisor) {
 
-#if 0	/* XTENSA HACK */
 		/* The following asm() prevents the compiler from
 		   optimising this loop into a modulo operation.  */
+#ifdef __XCC__
+		asm("isync");
+#else
 		asm("" : "+rm"(dividend));
 #endif
 		dividend -= divisor;
