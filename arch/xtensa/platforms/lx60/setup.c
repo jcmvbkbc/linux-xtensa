@@ -165,8 +165,9 @@ void platform_init(bp_tag_t *bootparams)
 	extern void *trap_set_early_C_handler(int cause, void *handler);
 	extern void *trap_initialize_early_exc_table(void);
 	extern void trap_enable_early_exc_table(void);
-	unsigned char *ptr;
-	unsigned char saved_byte;
+	volatile unsigned char *ptr;
+	volatile unsigned char saved_byte;
+	volatile unsigned char saved_byte_total;
 	struct board_info_s *bi;
 	void *saved_bus_exception_hander_addr;
 	void *saved_data_exception_hander_addr;
@@ -211,6 +212,7 @@ void platform_init(bp_tag_t *bootparams)
 		bi = &board_info[board];
 		ptr = (char *) (bi->himem | 0xD8000000);	/* Uncached memory access */
 		saved_byte = *ptr;
+		saved_byte_total += saved_byte;
 		if (bus_errors)					/* Set if we got an exception */
 			continue;
 		*ptr = (char) 0xbabecafe;

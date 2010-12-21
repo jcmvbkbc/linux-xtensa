@@ -715,14 +715,11 @@ _kernel_exception:
 	 * exception handler and call the exception handler.
 	 */
 
-	//movi	a4, exc_table
-	l32i	a7, a1, PT_EXCCAUSE	# pass EXCCAUSE
-	rsr	a4, EXCSAVE_1
-	mov	a6, a1			# pass stack frame
-	addx4	a4, a7, a4
-	l32i	a4, a4, EXC_TABLE_DEFAULT # load handler
-
-	mov	a6, a4			# avoide doing a spill till we restore a2 ... a5
+	l32i	a2, a1, PT_EXCCAUSE	# pass EXCCAUSE
+	rsr	a3, EXCSAVE_1
+	addx4	a4, a2, a3
+	l32i	a6, a4, EXC_TABLE_DEFAULT # load handler into a6; avoid doing ...
+					  # ... a spill till we restore a2 ... a5.
 
 #if 1 || defined(CONFIG_DEBUG_KERNEL)
 	/* 
@@ -741,13 +738,15 @@ _kernel_exception:
         l32i    a4,  a1, PT_AREG8
         l32i    a5,  a1, PT_AREG9
 
-	mov	a12, a6			# Ok to spill a2 ... a5
+	mov	a12, a6			# a12 = a6; Ok to spill a2 ... a5
         l32i    a6,  a1, PT_AREG10
         l32i    a7,  a1, PT_AREG11
         l32i    a8,  a1, PT_AREG12
         l32i    a9,  a1, PT_AREG13
         l32i    a10, a1, PT_AREG14
         l32i    a11, a1, PT_AREG15
+#else
+	 mov     a12, a6                 # a12 = a6; Ok to spill a2 ... a5
 #endif 
 
 	l32i    a15, a1, PT_EXCCAUSE     # pass EXCCAUSE
