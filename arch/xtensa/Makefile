@@ -28,9 +28,8 @@ KBUILD_CFLAGS += -mlongcalls $(DEBUG_CFLAGS) -pipe
 KBUILD_AFLAGS += -mlongcalls $(DEBUG_CFLAGS)
 
 ifdef CONFIG_USE_XTENSA_XCC_COMPILER
-# LDFLAGS += --no-relax
-LDFLAGS_MODULE  += --no-relax
-LDFLAGS_vmlinux += --no-relax
+LDFLAGS += --no-relax
+# LDFLAGS_vmlinux += --relax
 endif
 
 # KBUILD_DEFCONFIG := iss_defconfig
