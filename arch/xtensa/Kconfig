@@ -271,19 +271,24 @@ config INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 	  If in doubt, say Y.
 
 config USE_XTENSA_XCC_COMPILER
-	bool "Use XCC, an advanced, optimizing compiler; based on SGI Open64"
+	bool "Use XCC, Tensilica's Optimized, Vectorizing Xtensa compiler"
 	depends on EXPERIMENTAL
 	default false
 	help
-	  WARNING: WORK-IN-PROGRESS, doesn't work yet! DONT USE
+	  WARNING: This option hasn't had much stress testing yet and 
+		   hasn't been tested with modules at all yet. 
 
 	  To take advantage of the FLIX instructions found in HiFi-2 and 570T
-	  its curently necessary to use the Tensilica XCC Compiler. This is an
+	  its currently necessary to use the Tensilica XCC Compiler. This is an
 	  advanced, optimizing compiler derived from the SGI Open64 compiler.
 	  
-	  Compile time is much greater, so while debugging you likley dont
-	  want to enable this. However for production kernel or while debugging
-	  FLIX code its lilely best to use XCC.
+	  Compile time is much greater, so while debugging you likely dont
+	  want to enable this. However, eventually for production kernel,
+	  or while debugging kernel FLIX code it may be better to use XCC.
+
+	  See:
+	     http://www.tensilica.com/products/hw-sw-dev-tools/for-software-developers/xcc-compiiler.htm
+	     http://www.tensilica.com/uploads/pdf/xcc_prod_brief_V_final_.pdf
 
 	  If in doubt, say N.
 
