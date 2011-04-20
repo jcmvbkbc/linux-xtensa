@@ -46,6 +46,9 @@ int __attribute__ ((weak)) get_compat_msghdr(void)			{ panic(__func__); }
 int __attribute__ ((weak)) put_cmsg_compat(void)			{ panic(__func__); }
 int __attribute__ ((weak)) scm_detach_fds_compat(void)			{ panic(__func__); }
 int __attribute__ ((weak)) cookie_v4_init_sequence(void)		{ panic(__func__); }
+
+int __attribute__ ((weak)) cookie_v6_init_sequence(void)                { panic(__func__); }
+int __attribute__ ((weak)) ext2_xip_file_operations(void)               { panic(__func__); }
 #endif
 
 /* References to section boundaries */

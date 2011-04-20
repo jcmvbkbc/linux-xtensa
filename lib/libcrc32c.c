@@ -41,11 +41,24 @@ static struct crypto_shash *tfm;
 
 u32 crc32c(u32 crc, const void *address, unsigned int length)
 {
+#ifdef CONFIG_USE_XTENSA_XCC_COMPILER
+	int descsize = crypto_shash_descsize(tfm);
+	struct {
+                struct shash_desc shash;
+                char *ctx;
+        } desc;
+	int err;
+	u32 rv;
+
+	desc.ctx =  (char *) kmalloc(descsize, GFP_KERNEL);	
+
+#else
 	struct {
 		struct shash_desc shash;
 		char ctx[crypto_shash_descsize(tfm)];
 	} desc;
 	int err;
+#endif
 
 	desc.shash.tfm = tfm;
 	desc.shash.flags = 0;
@@ -54,7 +67,13 @@ u32 crc32c(u32 crc, const void *address, unsigned int length)
 	err = crypto_shash_update(&desc.shash, address, length);
 	BUG_ON(err);
 
+#ifdef CONFIG_USE_XTENSA_XCC_COMPILER
+	rv = *(u32 *)desc.ctx;
+	kfree(desc.ctx);
+	return(rv);
+#else
 	return *(u32 *)desc.ctx;
+#endif
 }
 
 EXPORT_SYMBOL(crc32c);

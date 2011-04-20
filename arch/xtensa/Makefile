@@ -58,6 +58,16 @@ else
  endif
 endif
 
+CC_PATH := $(shell /usr/bin/which $(CC))
+LD_PATH := $(shell /usr/bin/which $(LD))
+ifdef CONFIG_USE_XTENSA_XCC_COMPILER
+  CC_VERSION := $(shell $(CC) --version | grep version)
+  LD_VERSION := $(shell $(LD) --version | grep Xtensa)
+else
+  CC_VERSION := $(shell $(CC) --version  2>&1 | grep  -o "(GCC) *.*." -o )
+  LD_VERSION := $(shell $(LD) -version 2>&1 | grep Binutils)
+endif
+
 
 # Only build variant and/or platform if it includes a Makefile
 
@@ -92,6 +102,8 @@ ifneq ($(strip $(VARIANT)),)
 		echo '*** Please put an appropriate Xtensa toolchain on your PATH'; \
 		echo '';\
 		echo 'CROSS_COMPILE:                    $(CROSS_COMPILE) '; \
+		echo 'CC:                               $(CC) '; \
+		echo 'LD`:                              $(LD) '; \
 		echo 'PLATFORM:                         $(PLATFORM) '; \
 		echo 'VARIANT:                          $(VARIANT) '; \
 		echo 'KBUILD_CFLAGS:                    $(KBUILD_CFLAGS) '; \
@@ -100,20 +112,87 @@ ifneq ($(strip $(VARIANT)),)
 		echo ''; \
 		false; \
 	fi
-	@if test "$(KBUILD_VERBOSE)" != 0 ; then  \
-		echo 'CROSS_COMPILE:                    $(CROSS_COMPILE) '; \
-		echo 'CONFIG_XTENSA_PLATFORM_NAME:      $(CONFIG_XTENSA_PLATFORM_NAME) '; \
-		echo 'PLATFORM:                         $(PLATFORM) '; \
-		echo 'CONFIG_XTENSA_VARIANT_NAME:       $(CONFIG_XTENSA_VARIANT_NAME) '; \
-		echo 'VARIANT_HASCODE:                  $(VARIANT_HASCODE) '; \
-		echo 'VARIANT:                          $(VARIANT) '; \
-		echo 'CONFIG_CC_DEBUGGING_CFLAGS:       $(CONFIG_CC_DEBUGGING_CFLAGS) '; \
-		echo 'DEBUG_CFLAGS:                     $(DEBUG_CFLAGS) '; \
-		echo 'KBUILD_CFLAGS:                    $(KBUILD_CFLAGS) '; \
-		echo 'VARIANT_DIR:                      $(VARIANT_DIR) '; \
-		echo 'PLATFORM_DIR:                     $(PLATFORM_DIR) '; \
-		echo ''; \
-		true; \
+	@if test "$(KBUILD_VERBOSE)" -ge "1" ; then 						\
+		echo "" ; 									\
+                echo '-----------------------------------------------------------------------------------------------------------------------------------------------' ; \
+                echo 'KBUILD_VERBOSE:                   $(KBUILD_VERBOSE) '; 			\
+                echo 'CROSS_COMPILE:                    $(CROSS_COMPILE) '; 			\
+                echo 'CC:                               $(CC) '; 				\
+                echo 'CC_VERSION:                       $(CC_VERSION) '; 			\
+                echo 'CC_PATH:                          $(CC_PATH) '; 				\
+                echo 'LD:                               $(LD) '; 			  	\
+                echo 'LD_VERSION:                       $(LD_VERSION) '; 		  	\
+                echo 'LD_PATH:                          $(LD_PATH) '; 			  	\
+                echo 'CONFIG_XTENSA_PLATFORM_NAME:      $(CONFIG_XTENSA_PLATFORM_NAME) '; 	\
+                echo 'PLATFORM:                         $(PLATFORM) '; 				\
+                echo 'CONFIG_XTENSA_VARIANT_NAME:       $(CONFIG_XTENSA_VARIANT_NAME) '; 	\
+                echo 'VARIANT_HASCODE:                  $(VARIANT_HASCODE) '; 			\
+                echo 'VARIANT:                          $(VARIANT) '; 				\
+                echo 'CONFIG_CC_DEBUGGING_CFLAGS:       $(CONFIG_CC_DEBUGGING_CFLAGS) '; 	\
+                echo 'DEBUG_CFLAGS:                     $(DEBUG_CFLAGS) '; 			\
+                echo 'KBUILD_CFLAGS:                    $(KBUILD_CFLAGS) '; 			\
+                echo 'KBUILD_AFLAGS:                    $(KBUILD_AFLAGS) '; 			\
+                echo 'KBUILD_CPPFLAGS:                  $(KBUILD_CPPFLAGS) '; 			\
+                echo 'CFLAGS:                           $(CFLAGS) '; 				\
+                echo 'LDFLAGS:                          $(LDFLAGS) '; 				\
+                echo 'LIBGCC:                           $(LIBGCC) '; 				\
+                echo 'UTS_MACHINE:                      $(UTS_MACHINE) '; 			\
+                echo 'VARIANT_DIR:                      $(VARIANT_DIR) '; 			\
+                echo 'PLATFORM_DIR:                     $(PLATFORM_DIR) '; 			\
+		echo '' ; 									\
+		true; 										\
+	fi
+	@if test "$(KBUILD_VERBOSE)" -ge "1" ; then                                             \
+		echo 'KBUILD_OUTPUT:                    $(KBUILD_OUTPUT)' ;			\
+		echo 'KBUILD_SRC:                       $(KBUILD_SRC)' ;			\
+		echo 'CURDIR:                           $(CURDIR)';				\
+		echo 'SUBARCH:                          $(SUBARCH)';				\
+		echo 'HOSTCXXFLAGS:                     $(HOSTCXXFLAGS)';			\
+		echo 'CHECKFLAGS:                       $(CHECKFLAGS)';				\
+		echo 'NOSTDINC_FLAGS:                   $(NOSTDINC_FLAGS)';			\
+		echo 'MODFLAGS:                         $(MODFLAGS)';				\
+		echo 'CFLAGS_MODULE:                    $(CFLAGS_MODULE)';			\
+		echo 'AFLAGS_MODULE:                    $(AFLAGS_MODULE)';			\
+		echo 'LDFLAGS_MODULE:                   $(LDFLAGS_MODULE)';			\
+		echo 'CFLAGS_KERNEL:                    $(CFLAGS_KERNEL)';			\
+		echo 'AFLAGS_KERNEL:                    $(AFLAGS_KERNEL)';			\
+		echo 'EXTRA_LDFLAGS:                    $(EXTRA_LDFLAGS)';			\
+		echo 'KERNELRELEASE:                    $(KERNELRELEASE)';			\
+		echo 'KERNELVERSION:                    $(KERNELVERSION)';			\
+		echo 'VERSION:                          $(VERSION)';				\
+		echo 'PATCHLEVEL:                       $(PATCHLEVEL)';				\
+		echo 'SUBLEVEL:                         $(SUBLEVEL)';				\
+		echo 'EXTRAVERSION:                     $(EXTRAVERSION)';			\
+		echo 'CONFIG_LOCALVERSION:              $(CONFIG_LOCALVERSION)';		\
+		echo 'CONFIG_LOCALVERSION_AUTO:         $(CONFIG_LOCALVERSION_AUTO)';		\
+		echo 'LOCALVERSION:                     $(LOCALVERSION)';			\
+		echo 'MODVERDIR:                        $(MODVERDIR)';				\
+		echo 'RCS_FIND_IGNORE:                  $(RCS_FIND_IGNORE)';			\
+		echo 'PHONY:                            $(PHONY)';				\
+		echo 'MAKECMDGOALS:                     $(MAKECMDGOALS)';			\
+		echo 'KBUILD_EXTMOD:                    $(KBUILD_EXTMOD)';			\
+		echo 'KBUILD_KCONFIG:                   $(KBUILD_KCONFIG)';			\
+		echo 'KBUILD_DEFCONFIG:                 $(KBUILD_DEFCONFIG)';			\
+		echo 'CONFIG_KALLSYMS:                  $(CONFIG_KALLSYMS)';			\
+		echo 'CONFIG_KALLSYMS_EXTRA_PASS:       $(CONFIG_KALLSYMS_EXTRA_PASS)';		\
+		echo 'CONFIG_HEADERS_CHECK:             $(CONFIG_HEADERS_CHECK)';		\
+		echo 'CONFIG_BUILD_DOCSRC:              $(CONFIG_BUILD_DOCSRC)';		\
+		echo 'CONFIG_FRAME_POINTER:             $(CONFIG_FRAME_POINTER)';		\
+		echo 'CONFIG_DEBUG_INFO:                $(CONFIG_DEBUG_INFO)';			\
+		echo 'CONFIG_FUNCTION_TRACER:           $(CONFIG_FUNCTION_TRACER)';		\
+		echo 'CONFIG_DEBUG_SECTION_MISMATCH:    $(CONFIG_DEBUG_SECTION_MISMATCH)';	\
+		echo 'KCPPFLAGS:                        $(KCPPFLAGS)';				\
+		echo 'KAFLAGS:                          $(KAFLAGS)';				\
+		echo 'KCFLAGS:                          $(KCFLAGS)';				\
+		echo 'LDFLAGS_BUILD_ID:                 $(LDFLAGS_BUILD_ID)';			\
+		echo 'LDFLAGS_vmlinux:                  $(LDFLAGS_vmlinux)';			\
+		echo 'KBUILD_IMAGE:                     $(KBUILD_IMAGE)';			\
+		echo 'INSTALL_PATH:                     $(INSTALL_PATH)';			\
+		echo 'MODLIB:                           $(INSTALL_PATH)';			\
+		echo 'INSTALL_MOD_STRIP:                $(INSTALL_MOD_STRIP)';			\
+                echo '-----------------------------------------------------------------------------------------------------------------------------------------------' ; \
+                echo ''; 									\
+		true; 										\
 	fi
 else
 	@echo '*** Xtensa core variant name cannot be empty (check config)' ; \

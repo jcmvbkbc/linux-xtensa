@@ -843,7 +843,7 @@ static void i2s_tx_init(unsigned char resolution, unsigned int sample_freq, unsi
     intlevel << TXCONFIG_FIFO_LEVEL_INT |
     resolution << TXCONFIG_RES |
     ratio << TXCONFIG_RATIO
-#if 1
+#if 0
     | 1 << TXCONFIG_TINTEN	/* Enables Audio Interupts */
     | 1 << TXCONFIG_TXEN
 #endif

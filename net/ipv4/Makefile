@@ -2,6 +2,16 @@
 # Makefile for the Linux TCP/IP (INET) layer.
 #
 
+ifdef CONFIG_USE_XTENSA_XCC_COMPILER
+#
+# /tcp_input.c:
+#	Signal: Segmentation fault in Global Optimization -- Local RVI phase.
+#	Error: Signal Segmentation fault in phase Global Optimization -- Local RVI -- processing aborted
+#
+EXTRA_CFLAGS += -O2
+endif
+
+
 obj-y     := route.o inetpeer.o protocol.o \
 	     ip_input.o ip_fragment.o ip_forward.o ip_options.o \
 	     ip_output.o ip_sockglue.o inet_hashtables.o \

@@ -78,6 +78,76 @@ struct net *ip6addrlbl_net(const struct ip6addrlbl_entry *lbl)
 
 #define IPV6_ADDR_LABEL_DEFAULT	0xffffffffUL
 
+#ifdef CONFIG_USE_XTENSA_XCC_COMPILER
+
+/*
+ * XCC seems to have a problem where the ipaddress is being put into
+ * the prefix instead of the address of the ipaddress. Ex:
+ *
+ *	(gdb) print ip6addrlbl_init_table
+ *		$3 =   {{
+ *		    prefix = 0xd0d4b994, 	// Correct, the address of in6addr_any
+ *		    prefixlen = 0x0,
+ *		    label = 0x1
+ *		  },
+ *		  {
+ *		    prefix = 0xfc, 		//  Wrong, should be & (struct in6_addr) {{{ 0xfc }}}
+ *		    prefixlen = 0x0,
+ *		    label = 0x0
+ *		  },
+ *                ...
+ *		  }}
+ *
+ * REMIND: These should have meaningfull names.
+ */
+const struct in6_addr in6addr_0xfc 	          = (struct in6_addr) {{{ 0xfc }}};
+const struct in6_addr in6addr_0x20_0x20           = (struct in6_addr) {{{ 0x20, 0x02 }}};
+const struct in6_addr in6addr_0x20_0x01           = (struct in6_addr) {{{ 0x20, 0x01 }}};
+const struct in6_addr in6addr_0x20_0x01_0x00_0x10 = (struct in6_addr) {{{ 0x20, 0x01, 0x00, 0x10 }}};
+const struct in6_addr in6addr_10_0x01_110_0x10    = (struct in6_addr) {{{ [10] = 0xff, [11] = 0xff }}};
+
+static const __net_initdata struct ip6addrlbl_init_table
+{
+	const struct in6_addr *prefix;
+	int prefixlen;
+	u32 label;
+} ip6addrlbl_init_table[] = {
+	{	/* ::/0 */
+		.prefix = &in6addr_any,
+		.label = 1,
+	},{	/* fc00::/7 */
+		.prefix = &in6addr_0xfc,
+		.prefixlen = 7,
+		.label = 5,
+	},{	/* 2002::/16 */
+		.prefix = &in6addr_0x20_0x20,
+		.prefixlen = 16,
+		.label = 2,
+	},{	/* 2001::/32 */
+		.prefix = &in6addr_0x20_0x01,
+		.prefixlen = 32,
+		.label = 6,
+	},{	/* 2001:10::/28 */
+		.prefix = &in6addr_0x20_0x01_0x00_0x10,
+		.prefixlen = 28,
+		.label = 7,
+	},{	/* ::ffff:0:0 */
+		.prefix = &in6addr_10_0x01_110_0x10,
+		.prefixlen = 96,
+		.label = 4,
+	},{	/* ::/96 */
+		.prefix = &in6addr_any,
+		.prefixlen = 96,
+		.label = 3,
+	},{	/* ::1/128 */
+		.prefix = &in6addr_loopback,
+		.prefixlen = 128,
+		.label = 0,
+	}
+};
+
+#else
+
 static const __net_initdata struct ip6addrlbl_init_table
 {
 	const struct in6_addr *prefix;
@@ -117,6 +187,7 @@ static const __net_initdata struct ip6addrlbl_init_table
 		.label = 0,
 	}
 };
+#endif
 
 /* Object management */
 static inline void ip6addrlbl_free(struct ip6addrlbl_entry *p)
