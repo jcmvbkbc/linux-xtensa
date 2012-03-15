@@ -89,6 +89,13 @@ config XTENSA_VARIANT_DC233C
 	help
 	  This variant refers to Tensilica's Diamond 233L Standard core Rev.C (LE).
 
+config XTENSA_VARIANT_TEST_MMUHIFI_C3
+	bool "test_mmuhifi_c3 - Experimental 3 Core SMP HiFi-2 with a V2 MMU; Extension of a Diamond DC_D_330HiFi"
+	select MMU
+	select MAY_HAVE_SMP
+	help
+	  This variant refers to Tensilica's Diamond 330HiFi 3 core SMP cluster.
+
 config XTENSA_VARIANT_S6000
 	bool "s6000 - Stretch software configurable processor"
 	select VARIANT_IRQ_SWITCH
