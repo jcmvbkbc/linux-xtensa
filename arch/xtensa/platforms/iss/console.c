@@ -43,14 +43,22 @@ static DEFINE_SPINLOCK(timer_lock);
 
 int errno;
 
-static int __simc (int a, int b, int c, int d, int e, int f) __attribute__((__noinline__));
 static int __simc (int a, int b, int c, int d, int e, int f)
 {
 	int ret;
-	__asm__ __volatile__ ("simcall\n"
+        register int a1 asm("a2") = a;
+        register int b1 asm("a3") = b;
+        register int c1 asm("a4") = c;
+        register int d1 asm("a5") = d;
+        register int e1 asm("a6") = e;
+        register int f1 asm("a7") = f;
+	__asm__ __volatile__ (
+                        "simcall\n"
 			"mov %0, a2\n"
-			"mov %1, a3\n" : "=a" (ret), "=a" (errno)
-			: : "a2", "a3");
+			"mov %1, a3\n"
+                        : "=a" (ret), "=a" (errno), "+r"(a1), "+r"(b1)
+			: "r"(c1), "r"(d1), "r"(e1), "r"(f1)
+                        : );
 	return ret;
 }
 
