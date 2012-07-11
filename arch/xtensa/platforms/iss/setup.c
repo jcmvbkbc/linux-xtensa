@@ -41,12 +41,14 @@ void __init platform_init(bp_tag_t* bootparam)
 void platform_halt(void)
 {
 	printk (" ** Called platform_halt(), looping forever! **\n");
+	__asm__ __volatile__("movi a2, 1\nsimcall\n");
 	while (1);
 }
 
 void platform_power_off(void)
 {
 	printk (" ** Called platform_power_off(), looping forever! **\n");
+	__asm__ __volatile__("movi a2, 1\nsimcall\n");
 	while (1);
 }
 void platform_restart(void)
