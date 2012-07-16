@@ -46,6 +46,8 @@ else
 KBUILD_CPPFLAGS += $(patsubst %,-I$(srctree)/%include,$(vardirs) $(plfdirs))
 endif
 
+LDFLAGS += --no-relax
+
 KBUILD_DEFCONFIG := iss_defconfig
 
 # ramdisk/initrd support
