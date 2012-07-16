@@ -16,6 +16,7 @@
 #include <asm/page.h>
 #include <linux/bug.h>
 #include <linux/kernel.h>
+#include <asm-generic/iomap.h>
 
 #include <linux/types.h>
 
@@ -111,6 +112,15 @@ static inline void iounmap(void *addr)
 #define writeb(b, addr) (void)((*(volatile unsigned char *)(addr)) = (b))
 #define writew(b, addr) (void)((*(volatile unsigned short *)(addr)) = (b))
 #define writel(b, addr) (void)((*(volatile unsigned int *)(addr)) = (b))
+
+#define ioport_map(port, nr) ((void __iomem *)(port))
+
+#define ioread8 read
+#define ioread16 readw
+#define ioread32 readl
+#define iowrite8 writeb
+#define iowrite16 writew
+#define iowrite32 writel
 
 static inline __u8 __raw_readb(const volatile void __iomem *addr)
 {
