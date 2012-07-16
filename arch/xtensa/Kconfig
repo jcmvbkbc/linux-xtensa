@@ -60,6 +60,7 @@ choice
 config XTENSA_VARIANT_FSF
 	bool "fsf - default (not generic) configuration"
 	select MMU
+	select ARCH_WANT_OPTIONAL_GPIOLIB
 
 config XTENSA_VARIANT_DC232B
 	bool "dc232b - Diamond 232L Standard Core Rev.B (LE)"
