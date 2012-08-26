@@ -50,12 +50,6 @@ LDFLAGS += --no-relax
 
 KBUILD_DEFCONFIG := iss_defconfig
 
-# ramdisk/initrd support
-# You need a compressed ramdisk image, named ramdisk.gz in
-# arch/xtensa/boot/ramdisk
-
-core-$(CONFIG_EMBEDDED_RAMDISK)	+= arch/xtensa/boot/ramdisk/
-
 # Test for cross compiling
 
 ifneq ($(VARIANT),)
@@ -89,7 +83,7 @@ all: zImage
 
 bzImage : zImage
 
-zImage zImage.initrd: vmlinux
+zImage: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $@
 
 define archhelp
