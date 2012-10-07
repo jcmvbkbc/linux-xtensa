@@ -13,6 +13,10 @@ config XTENSA
 	select GENERIC_CPU_DEVICES
 	select GENERIC_PCI_IOMAP
 	select ARCH_WANT_OPTIONAL_GPIOLIB
+	select OF
+	select OF_EARLY_FLATTREE
+	select HAVE_MEMBLOCK
+	select IRQ_DOMAIN
 	help
 	  Xtensa processors are 32-bit RISC machines designed by Tensilica
 	  primarily for embedded systems.  These processors are both

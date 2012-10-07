@@ -21,6 +21,9 @@
 #include <linux/screen_info.h>
 #include <linux/bootmem.h>
 #include <linux/kernel.h>
+#include <linux/memblock.h>
+#include <linux/of_fdt.h>
+#include <linux/of_platform.h>
 
 #if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE)
 # include <linux/console.h>
@@ -142,6 +145,14 @@ static int __init parse_tag_initrd(const bp_tag_t* tag)
 
 __tagtable(BP_TAG_INITRD, parse_tag_initrd);
 
+void __init early_init_dt_setup_initrd_arch(unsigned long start,
+		unsigned long end)
+{
+	initrd_start = (unsigned long)__va(start);
+	initrd_end = (unsigned long)__va(end);
+	initrd_below_start_ok = 1;
+}
+
 #endif /* CONFIG_BLK_DEV_INITRD */
 
 static int __init parse_tag_cmdline(const bp_tag_t* tag)
@@ -185,6 +196,60 @@ static int __init parse_bootparam(const bp_tag_t* tag)
 	return 0;
 }
 
+void __init early_init_dt_add_memory_arch(u64 base, u64 size)
+{
+	size &= PAGE_MASK;
+	memblock_add(base, size);
+}
+
+void * __init early_init_dt_alloc_memory_arch(u64 size, u64 align)
+{
+	return __va(memblock_alloc(size, align));
+}
+
+extern u32 __dtb_start[];
+
+void __init early_init_devtree(void *params)
+{
+	void *alloc;
+
+	/* Setup flat device-tree pointer */
+	initial_boot_params = params;
+
+	/* Reserve the dtb region */
+	memblock_reserve(virt_to_phys(initial_boot_params),
+			be32_to_cpu(initial_boot_params->totalsize));
+
+	/* Retrieve various informations from the /chosen node of the
+	 * device-tree, including the platform type, initrd location and
+	 * size, TCE reserve, and more ...
+	 */
+	of_scan_flat_dt(early_init_dt_scan_chosen, command_line);
+
+	/* Scan memory nodes and rebuild MEMBLOCKs */
+	of_scan_flat_dt(early_init_dt_scan_root, NULL);
+	of_scan_flat_dt(early_init_dt_scan_memory, NULL);
+
+	/* Save command line for /proc/cmdline and then parse parameters */
+	strlcpy(boot_command_line, command_line, COMMAND_LINE_SIZE);
+
+	memblock_allow_resize();
+
+	/* We must copy the flattend device tree from init memory to regular
+	 * memory because the device tree references the strings in it
+	 * directly.
+	 */
+
+	alloc = __va(memblock_alloc(
+				be32_to_cpu(initial_boot_params->totalsize),
+			       	PAGE_SIZE));
+
+	memcpy(alloc, initial_boot_params,
+		       	be32_to_cpu(initial_boot_params->totalsize));
+
+	initial_boot_params = alloc;
+}
+
 /*
  * Initialize architecture. (Early stage)
  */
@@ -216,7 +281,18 @@ void __init init_arch(bp_tag_t *bp_start)
 	/* Initialize MMU. */
 
 	init_mmu();
+
+	early_init_devtree(__dtb_start);
 }
+
+static int __init xtensa_device_probe(void)
+{
+	of_platform_populate(NULL, NULL, NULL, NULL);
+
+	return 0;
+}
+
+device_initcall(xtensa_device_probe);
 
 /*
  * Initialize system. Setup memory and reserve regions.
@@ -243,6 +319,8 @@ void __init setup_arch(char **cmdline_p)
 	memcpy(boot_command_line, command_line, COMMAND_LINE_SIZE);
 	boot_command_line[COMMAND_LINE_SIZE-1] = '\0';
 	*cmdline_p = command_line;
+
+	unflatten_device_tree();
 
 	/* Reserve some memory regions */
 

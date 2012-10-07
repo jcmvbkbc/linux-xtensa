@@ -25,6 +25,14 @@ bootdir-$(CONFIG_XTENSA_PLATFORM_ISS)	 += boot-elf
 bootdir-$(CONFIG_XTENSA_PLATFORM_XT2000) += boot-redboot boot-elf boot-uboot
 bootdir-$(CONFIG_XTENSA_PLATFORM_LX60)   += boot-redboot boot-elf boot-uboot
 
+BUILTIN_DTB := $(patsubst "%",%,dc232b_lx60).dtb.o
+obj-y += $(BUILTIN_DTB)
+
+# Rule to build device tree blobs
+$(obj)/%.dtb: $(src)/dts/%.dts FORCE
+	$(call if_changed_dep,dtc)
+
+clean-files := *.dtb.S
 
 zImage Image: $(bootdir-y)
 
