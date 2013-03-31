@@ -444,6 +444,8 @@ common_exception_return:
 1:	l32i	a3, a1, PT_PS
 	_bbci.l	a3, PS_UM_BIT, 4f
 
+	rsil	a2, 0
+
 	/* Specific to a user exception exit:
 	 * We need to check some flags for signal handling and rescheduling,
 	 * and have to restore WB and WS, extra states, and all registers
