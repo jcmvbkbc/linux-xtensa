@@ -21,6 +21,8 @@
 #include <linux/screen_info.h>
 #include <linux/bootmem.h>
 #include <linux/kernel.h>
+#include <linux/percpu.h>
+#include <linux/cpu.h>
 
 #ifdef CONFIG_OF
 #include <linux/of_fdt.h>
@@ -466,6 +468,7 @@ void __init check_s32c1i(void)
 
 #endif /* CONFIG_S32C1I_SELFTEST */
 
+extern void smp_init_cpus(void);
 
 void __init setup_arch(char **cmdline_p)
 {
@@ -533,6 +536,10 @@ void __init setup_arch(char **cmdline_p)
 
 	platform_setup(cmdline_p);
 
+#ifdef CONFIG_SMP
+	smp_init_cpus();
+#endif
+
 	paging_init();
 	zones_init();
 
@@ -548,6 +555,22 @@ void __init setup_arch(char **cmdline_p)
 	platform_pcibios_init();
 #endif
 }
+
+static DEFINE_PER_CPU(struct cpu, cpu_data);
+
+static int __init topology_init(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct cpu *cpu = &per_cpu(cpu_data, i);
+		cpu->hotpluggable = 1;
+		register_cpu(cpu, i);
+	}
+
+	return 0;
+}
+subsys_initcall(topology_init);
 
 void machine_restart(char * cmd)
 {

@@ -173,6 +173,16 @@ ENTRY(_startup)
 
 	isync
 
+#ifdef CONFIG_SMP
+	/* 
+	 * Notice that we assume with SMP that cores have PRID
+	 * supported by the cores.
+	 */
+	rsr	a2, PRID
+	bnez	a2, .Lboot_secondary
+
+#endif  /* CONFIG_SMP */
+
 	/* Unpack data sections
 	 *
 	 * The linker script used to build the Linux kernel image
@@ -225,10 +235,17 @@ ENTRY(_startup)
 	___invalidate_icache_all a2 a3
 	isync
 
+#ifdef CONFIG_ARCH_HAS_SMP
+	movi	a2, CCON		# MX External Register to Configure Cache
+	movi	a3, 1
+	wer	a3, a2
+#endif
+
+.Lboot_secondary:
 	/* Setup stack and enable window exceptions (keep irqs disabled) */
 
-	movi	a1, init_thread_union
-	addi	a1, a1, KERNEL_STACK_SIZE
+	movi	a1, start_info
+	l32i	a1, a1, 0
 
 	movi	a2, (1 << PS_WOE_BIT) | LOCKLEVEL
 					# WOE=1, INTLEVEL=LOCKLEVEL, UM=0
@@ -250,13 +267,24 @@ ENTRY(_startup)
 	movi	a4, init_arch
 	callx4	a4
 
-	movi	a4, start_kernel
+	movi	a4, start_info
+	l32i	a4, a4, 4
 	callx4	a4
 
 should_never_return:
 	j	should_never_return
 
 ENDPROC(_startup)
+
+/*
+ * DATA section
+ */
+
+        .section ".data.init.refok"
+        .align  4
+ENTRY(start_info)
+        .long   init_thread_union + KERNEL_STACK_SIZE
+        .long   start_kernel
 
 /*
  * BSS section

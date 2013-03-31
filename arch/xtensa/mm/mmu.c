@@ -37,7 +37,7 @@ void __init init_mmu(void)
 	set_itlbcfg_register(0);
 	set_dtlbcfg_register(0);
 #endif
-	flush_tlb_all();
+	local_flush_tlb_all();
 
 	/* Set rasid register to a known value. */
 

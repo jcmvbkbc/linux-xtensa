@@ -21,10 +21,11 @@
 #include <linux/irqdomain.h>
 #include <linux/of.h>
 
+#include <asm/mxregs.h>
 #include <asm/uaccess.h>
 #include <asm/platform.h>
 
-static unsigned int cached_irq_mask;
+DEFINE_PER_CPU(unsigned int, cached_irq_mask);
 
 atomic_t irq_err_count;
 
@@ -76,14 +77,18 @@ int arch_show_interrupts(struct seq_file *p, int prec)
 
 static void xtensa_irq_mask(struct irq_data *d)
 {
-	cached_irq_mask &= ~(1 << d->hwirq);
-	set_sr (cached_irq_mask, intenable);
+	int cpu = smp_processor_id();
+
+	per_cpu(cached_irq_mask, cpu) &= ~(1 << d->hwirq);
+	set_sr(per_cpu(cached_irq_mask, cpu), intenable);
 }
 
 static void xtensa_irq_unmask(struct irq_data *d)
 {
-	cached_irq_mask |= 1 << d->hwirq;
-	set_sr (cached_irq_mask, intenable);
+	int cpu = smp_processor_id();
+
+	per_cpu(cached_irq_mask, cpu) |= 1 << d->hwirq;
+	set_sr(per_cpu(cached_irq_mask, cpu), intenable);
 }
 
 static void xtensa_irq_enable(struct irq_data *d)
@@ -124,6 +129,14 @@ static int xtensa_irq_map(struct irq_domain *d, unsigned int irq,
 {
 	u32 mask = 1 << hw;
 
+#ifdef CONFIG_HAVE_SMP
+	if (hw < 2) {
+		irq_set_chip_and_handler_name(irq, &xtensa_irq_chip,
+				handle_percpu_irq, "ipi");
+		irq_set_status_flags(irq, IRQ_LEVEL);
+		return 0;
+	}
+#endif
 	if (mask & XCHAL_INTTYPE_MASK_SOFTWARE) {
 		irq_set_chip_and_handler_name(irq, &xtensa_irq_chip,
 				handle_simple_irq, "level");
@@ -137,8 +150,13 @@ static int xtensa_irq_map(struct irq_domain *d, unsigned int irq,
 				handle_level_irq, "level");
 		irq_set_status_flags(irq, IRQ_LEVEL);
 	} else if (mask & XCHAL_INTTYPE_MASK_TIMER) {
+#ifdef CONFIG_HAVE_SMP
 		irq_set_chip_and_handler_name(irq, &xtensa_irq_chip,
-				handle_edge_irq, "edge");
+				handle_percpu_irq, "timer");
+#else
+		irq_set_chip_and_handler_name(irq, &xtensa_irq_chip,
+				handle_edge_irq, "timer");
+#endif
 		irq_clear_status_flags(irq, IRQ_LEVEL);
 	} else {/* XCHAL_INTTYPE_MASK_WRITE_ERROR */
 		/* XCHAL_INTTYPE_MASK_NMI */
@@ -156,6 +174,9 @@ static unsigned map_ext_irq(unsigned ext_irq)
 		XCHAL_INTTYPE_MASK_EXTERN_LEVEL;
 	unsigned i;
 
+#ifdef CONFIG_HAVE_SMP
+	ext_irq += 3;
+#endif
 	for (i = 0; mask; ++i, mask >>= 1) {
 		if ((mask & 1) && ext_irq-- == 0)
 			return i;
@@ -197,7 +218,6 @@ void __init init_IRQ(void)
 {
 	struct device_node *intc = NULL;
 
-	cached_irq_mask = 0;
 	set_sr(~0, intclear);
 
 #ifdef CONFIG_OF
@@ -215,3 +235,65 @@ void __init init_IRQ(void)
 
 	variant_init_irq();
 }
+
+#ifdef CONFIG_SMP
+
+void __init secondary_irq_init(void)
+{
+	pr_debug("secondary_irq_init: set cached_irq_mask and enable interrupts 2...11))\n");
+	per_cpu(cached_irq_mask, smp_processor_id()) = 0x3c;
+	set_sr(0xFFC, INTENABLE);
+}
+
+int __init wakeup_secondary_cpu(unsigned int cpu, struct task_struct *ts)
+{
+	unsigned long run_stall_mask = get_er(MPSCORE);
+
+	set_er(run_stall_mask & ~ (1 << cpu), MPSCORE);
+
+	pr_debug("%s: cpu:%d, run_stall_mask:%lx ---> %lx\n", __func__, 
+			cpu,    run_stall_mask, get_er(MPSCORE));
+	return 0;
+}
+
+void send_ipi_message(cpumask_t callmask, int msg_id)
+{
+	int index;
+	unsigned long mask = 0;
+
+	for_each_cpu_mask(index, callmask)
+		if (index != smp_processor_id())
+			mask |= 1 << index;
+
+	set_er(mask, MIPISET(msg_id));
+}
+
+int recv_ipi_messages(void)
+{
+	int messages;
+
+	messages = get_er(MIPICAUSE(smp_processor_id()));
+#if 0
+	set_er(messages, MIPICAUSE(smp_processor_id()));
+#else
+	{
+		int i;
+
+		for (i = 0 ; i < 3; i++)
+			if (messages & (1 << i))
+				set_er(1 << i, MIPICAUSE(smp_processor_id()));
+	}
+#endif
+
+	return messages;
+}
+
+void secondary_irq_enable(int intrnum)
+{
+	int cpu = smp_processor_id();
+
+	xtensa_irq_unmask(intrnum);
+	pr_debug("%s(intrnum:%d): cpu:%d, INTENABLE:%x\n", __func__, intrnum, cpu, get_sr(INTENABLE));
+}
+
+#endif

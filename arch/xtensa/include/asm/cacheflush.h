@@ -1,11 +1,11 @@
 /*
- * include/asm-xtensa/cacheflush.h
+ * arch/xtensa/include/asm/cacheflush.h
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * (C) 2001 - 2007 Tensilica Inc.
+ * (C) 2001 - 2009 Tensilica Inc.
  */
 
 #ifndef _XTENSA_CACHEFLUSH_H
@@ -51,7 +51,6 @@ extern void __invalidate_icache_page(unsigned long);
 extern void __invalidate_icache_range(unsigned long, unsigned long);
 extern void __invalidate_dcache_range(unsigned long, unsigned long);
 
-
 #if XCHAL_DCACHE_IS_WRITEBACK
 extern void __flush_invalidate_dcache_all(void);
 extern void __flush_dcache_page(unsigned long);
@@ -87,9 +86,15 @@ static inline void __invalidate_icache_page_alias(unsigned long virt,
  * (see also Documentation/cachetlb.txt)
  */
 
-#if (DCACHE_WAY_SIZE > PAGE_SIZE)
+#if (DCACHE_WAY_SIZE > PAGE_SIZE) || defined(CONFIG_SMP)
 
-#define flush_cache_all()						\
+#ifdef CONFIG_SMP
+extern void flush_cache_all(void);
+#else
+#define flush_cache_all local_flush_cache_all
+#endif
+
+#define local_flush_cache_all()						\
 	do {								\
 		__flush_invalidate_dcache_all();			\
 		__invalidate_icache_all();				\
@@ -103,12 +108,21 @@ static inline void __invalidate_icache_page_alias(unsigned long virt,
 
 #define ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE 1
 extern void flush_dcache_page(struct page*);
+#ifdef CONFIG_SMP
 extern void flush_cache_range(struct vm_area_struct*, ulong, ulong);
 extern void flush_cache_page(struct vm_area_struct*,
 			     unsigned long, unsigned long);
+#else
+#define flush_cache_range local_flush_cache_range
+#define flush_cache_page  local_flush_cache_page
+#endif
+
+extern void local_flush_cache_range(struct vm_area_struct*, ulong, ulong);
+extern void local_flush_cache_page(struct vm_area_struct*, unsigned long, unsigned long);
 
 #else
 
+#define local_flush_cache_all()				do { } while (0)
 #define flush_cache_all()				do { } while (0)
 #define flush_cache_mm(mm)				do { } while (0)
 #define flush_cache_dup_mm(mm)				do { } while (0)
@@ -119,13 +133,15 @@ extern void flush_cache_page(struct vm_area_struct*,
 #define ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE 0
 #define flush_dcache_page(page)				do { } while (0)
 
-#define flush_cache_page(vma,addr,pfn)			do { } while (0)
-#define flush_cache_range(vma,start,end)		do { } while (0)
+#define local_flush_cache_page(vma, addr, pfn)		do { } while (0)
+#define local_flush_cache_range(vma, start, end)	do { } while (0)
+#define flush_cache_page(vma, addr, pfn)		do { } while (0)
+#define flush_cache_range(vma, start, end)		do { } while (0)
 
 #endif
 
 /* Ensure consistency between data and instruction cache. */
-#define flush_icache_range(start,end) 					\
+#define local_flush_icache_range(start, end)				\
 	do {								\
 		__flush_dcache_range(start, (end) - (start));		\
 		__invalidate_icache_range(start,(end) - (start));	\

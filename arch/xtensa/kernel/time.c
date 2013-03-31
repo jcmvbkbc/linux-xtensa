@@ -69,6 +69,16 @@ void __init time_init(void)
 	set_linux_timer(get_ccount() + CCOUNT_PER_JIFFY);
 }
 
+#ifdef CONFIG_SMP
+extern void secondary_irq_enable(int);
+void __init secondary_time_init(void)
+{
+	pr_debug("%s\n", __func__);
+	set_linux_timer(get_ccount() + CCOUNT_PER_JIFFY);
+	//secondary_irq_enable(LINUX_TIMER_INT);
+}
+#endif
+
 /*
  * The timer interrupt is called HZ times per second.
  */

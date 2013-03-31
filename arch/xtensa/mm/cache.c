@@ -118,7 +118,7 @@ void flush_dcache_page(struct page *page)
  * For now, flush the whole cache. FIXME??
  */
 
-void flush_cache_range(struct vm_area_struct* vma,
+void local_flush_cache_range(struct vm_area_struct* vma,
 		       unsigned long start, unsigned long end)
 {
 	__flush_invalidate_dcache_all();
@@ -132,7 +132,7 @@ void flush_cache_range(struct vm_area_struct* vma,
  * alias versions of the cache flush functions.
  */
 
-void flush_cache_page(struct vm_area_struct* vma, unsigned long address,
+void local_flush_cache_page(struct vm_area_struct* vma, unsigned long address,
 		      unsigned long pfn)
 {
 	/* Note that we have to use the 'alias' address to avoid multi-hit */

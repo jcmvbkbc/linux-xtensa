@@ -11,10 +11,7 @@
 #ifndef _XTENSA_SMP_H
 #define _XTENSA_SMP_H
 
-extern struct xtensa_cpuinfo boot_cpu_data;
-
-#define cpu_data (&boot_cpu_data)
-#define current_cpu_data boot_cpu_data
+#define raw_smp_processor_id() (current_thread_info()->cpu)
 
 struct xtensa_cpuinfo {
 	unsigned long	*pgd_cache;
@@ -23,5 +20,14 @@ struct xtensa_cpuinfo {
 };
 
 #define cpu_logical_map(cpu)	(cpu)
+
+enum ipi_msg_type {
+	IPI_RESCHEDULE = 0,
+	IPI_CALL_FUNC,
+	IPI_NMI_DIE
+};
+
+extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
+extern void arch_send_call_function_single_ipi(int cpu);
 
 #endif	/* _XTENSA_SMP_H */
