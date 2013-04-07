@@ -102,7 +102,7 @@ static inline void invalidate_itlb_entry_no_isync (unsigned entry)
 	__asm__ __volatile__ ("iitlb  %0\n" : : "a" (entry) );
 }
 
-static inline void invalidate_dtlb_entry_no_isync (unsigned entry)
+static inline void invalidate_dtlb_entry_no_dsync (unsigned entry)
 {
 	/* Caller must follow up with 'isync'. */
 	__asm__ __volatile__ ("idtlb  %0\n" : : "a" (entry) );

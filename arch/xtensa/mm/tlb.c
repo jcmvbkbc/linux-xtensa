@@ -41,10 +41,10 @@ static inline void __flush_dtlb_all (void)
 	for (w = 0; w < DTLB_ARF_WAYS; w++) {
 		for (i = 0; i < (1 << XCHAL_DTLB_ARF_ENTRIES_LOG2); i++) {
 			int e = w + (i << PAGE_SHIFT);
-			invalidate_dtlb_entry_no_isync(e);
+			invalidate_dtlb_entry_no_dsync(e);
 		}
 	}
-	asm volatile ("isync\n");
+	asm volatile ("dsync\n");
 }
 
 
