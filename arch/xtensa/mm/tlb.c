@@ -66,7 +66,7 @@ void local_flush_tlb_mm (struct mm_struct *mm)
 
 	if (mm == current->active_mm) {
 		unsigned long flags;
-		local_save_flags(flags);
+		local_irq_save(flags);
 		mm->context.asid[cpu] = NO_CONTEXT;
 		activate_context(mm, cpu);
 		local_irq_restore(flags);
@@ -95,7 +95,7 @@ void local_flush_tlb_range(struct vm_area_struct *vma,
 	if (mm->context.asid[cpu] == NO_CONTEXT)
 		return;
 
-	local_save_flags(flags);
+	local_irq_save(flags);
 
 	if (end-start + (PAGE_SIZE-1) <= _TLB_ENTRIES << PAGE_SHIFT) {
 		int oldpid = get_rasid_register();
@@ -131,7 +131,7 @@ void local_flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
 	if(mm->context.asid[cpu] == NO_CONTEXT)
 		return;
 
-	local_save_flags(flags);
+	local_irq_save(flags);
 
 	oldpid = get_rasid_register();
 
