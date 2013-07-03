@@ -91,9 +91,9 @@
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original value in depc
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave1:	a3
+ *   excsave1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -109,9 +109,8 @@
 
 ENTRY(user_exception)
 
-	/* Save a2, a3, and depc, restore excsave_1 and set SP. */
+	/* Save a1, a2, a3, and set SP. */
 
-	xsr	a3, excsave1
 	rsr	a0, depc
 	s32i	a1, a2, PT_AREG1
 	s32i	a0, a2, PT_AREG2
@@ -237,9 +236,9 @@ ENDPROC(user_exception)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -255,9 +254,8 @@ ENDPROC(user_exception)
 
 ENTRY(kernel_exception)
 
-	/* Save a0, a2, a3, DEPC and set SP. */
+	/* Save a1, a2, a3, and set SP. */
 
-	xsr	a3, excsave1		# restore a3, excsave_1
 	rsr	a0, depc		# get a2
 	s32i	a1, a2, PT_AREG1
 	s32i	a0, a2, PT_AREG2
@@ -408,7 +406,7 @@ common_exception:
 	 * exception handler and call the exception handler.
 	 */
 
-	movi	a4, exc_table
+	rsr	a4, excsave1
 	mov	a6, a1			# pass stack frame
 	mov	a7, a0			# pass EXCCAUSE
 	addx4	a4, a0, a4
@@ -839,9 +837,9 @@ ENDPROC(unrecoverable_exception)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -864,18 +862,16 @@ ENTRY(fast_alloca)
 
 	rsr	a0, depc		# get a2
 	s32i	a4, a2, PT_AREG4	# save a4 and
+	s32i	a3, a2, PT_AREG3
 	s32i	a0, a2, PT_AREG2	# a2 to stack
 
 	/* Exit critical section. */
 
 	movi	a0, 0
+	rsr	a3, excsave1
 	s32i	a0, a3, EXC_TABLE_FIXUP
 
-	/* Restore a3, excsave_1 */
-
-	xsr	a3, excsave1		# make sure excsave_1 is valid for dbl.
 	rsr	a4, epc1		# get exception address
-	s32i	a3, a2, PT_AREG3	# save a3 to stack
 
 #ifdef ALLOCA_EXCEPTION_IN_IRAM
 #error	iram not supported
@@ -1014,9 +1010,9 @@ ENDPROC(fast_alloca)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  */
 
 ENTRY(fast_syscall_kernel)
@@ -1063,7 +1059,6 @@ ENTRY(fast_syscall_unrecoverable)
 
 	l32i    a0, a2, PT_AREG0        # restore a0
 	xsr     a2, depc                # restore a2, depc
-	rsr     a3, excsave1
 
 	wsr     a0, excsave1
 	movi    a0, unrecoverable_exception
@@ -1085,10 +1080,10 @@ ENDPROC(fast_syscall_unrecoverable)
  *   a0:	a2 (syscall-nr), original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in a0 and DEPC
- *   a3:	dispatch table, original in excsave_1
+ *   a3:	a3
  *   a4..a15:	unchanged
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1120,8 +1115,6 @@ ENDPROC(fast_syscall_unrecoverable)
 67:
 
 ENTRY(fast_syscall_xtensa)
-
-	xsr	a3, excsave1		# restore a3, excsave1
 
 	s32i	a7, a2, PT_AREG7	# we need an additional register
 	movi	a7, 4			# sizeof(unsigned int)
@@ -1185,9 +1178,9 @@ ENDPROC(fast_syscall_xtensa)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  * Note: We assume the stack pointer is EXC_TABLE_KSTK in the fixup handler.
  */
@@ -1196,15 +1189,16 @@ ENTRY(fast_syscall_spill_registers)
 
 	/* Register a FIXUP handler (pass current wb as a parameter) */
 
+	xsr	a3, excsave1
 	movi	a0, fast_syscall_spill_registers_fixup
 	s32i	a0, a3, EXC_TABLE_FIXUP
 	rsr	a0, windowbase
 	s32i	a0, a3, EXC_TABLE_PARAM
+	xsr	a3, excsave1		# restore a3 and excsave_1
 
-	/* Save a3 and SAR on stack. */
+	/* Save a3, a4 and SAR on stack. */
 
 	rsr	a0, sar
-	xsr	a3, excsave1		# restore a3 and excsave_1
 	s32i	a3, a2, PT_AREG3
 	s32i	a4, a2, PT_AREG4
 	s32i	a0, a2, PT_AREG5	# store SAR to PT_AREG5
@@ -1258,14 +1252,14 @@ fast_syscall_spill_registers_fixup:
 	 * in WS, so that the exception handlers save them to the task stack.
 	 */
 
-	rsr	a3, excsave1	# get spill-mask
+	xsr	a3, excsave1	# get spill-mask
 	slli	a2, a3, 1	# shift left by one
 
 	slli	a3, a2, 32-WSBITS
 	src	a2, a2, a3	# a1 = xxwww1yyxxxwww1yy......
 	wsr	a2, windowstart	# set corrected windowstart
 
-	movi	a3, exc_table
+	rsr	a3, excsave1
 	l32i	a2, a3, EXC_TABLE_DOUBLE_SAVE	# restore a2
 	l32i	a3, a3, EXC_TABLE_PARAM	# original WB (in user task)
 
@@ -1302,7 +1296,7 @@ fast_syscall_spill_registers_fixup:
 
 	/* Jump to the exception handler. */
 
-	movi	a3, exc_table
+	rsr	a3, excsave1
 	rsr	a0, exccause
 	addx4	a0, a0, a3              	# find entry in table
 	l32i	a0, a0, EXC_TABLE_FAST_USER     # load handler
@@ -1319,6 +1313,7 @@ fast_syscall_spill_registers_fixup_return:
 	xsr	a3, excsave1
 	movi	a2, fast_syscall_spill_registers_fixup
 	s32i	a2, a3, EXC_TABLE_FIXUP
+	s32i	a0, a3, EXC_TABLE_DOUBLE_SAVE
 	rsr	a2, windowbase
 	s32i	a2, a3, EXC_TABLE_PARAM
 	l32i	a2, a3, EXC_TABLE_KSTK
@@ -1329,11 +1324,6 @@ fast_syscall_spill_registers_fixup_return:
 	neg	a3, a3
 	wsr	a3, windowbase
 	rsync
-
-	/* Restore a3 and return. */
-
-	movi	a3, exc_table
-	xsr	a3, excsave1
 
 	rfde
 
@@ -1521,9 +1511,8 @@ ENTRY(_spill_registers)
 
 	movi	a0, 0
 
-	movi	a3, exc_table
+	rsr	a3, excsave1
 	l32i	a1, a3, EXC_TABLE_KSTK
-	wsr	a3, excsave1
 
 	movi	a4, (1 << PS_WOE_BIT) | LOCKLEVEL
 	wsr	a4, ps
@@ -1567,9 +1556,9 @@ ENDPROC(fast_second_level_miss_double_kernel)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1577,9 +1566,10 @@ ENDPROC(fast_second_level_miss_double_kernel)
 
 ENTRY(fast_second_level_miss)
 
-	/* Save a1. Note: we don't expect a double exception. */
+	/* Save a1 and a3. Note: we don't expect a double exception. */
 
 	s32i	a1, a2, PT_AREG1
+	s32i	a3, a2, PT_AREG3
 
 	/* We need to map the page of PTEs for the user task.  Find
 	 * the pointer to that page.  Also, it's possible for tsk->mm
@@ -1600,9 +1590,6 @@ ENTRY(fast_second_level_miss)
 	GET_CURRENT(a1,a2)
 	l32i	a0, a1, TASK_MM		# tsk->mm
 	beqz	a0, 9f
-
-
-	/* We deliberately destroy a3 that holds the exception table. */
 
 8:	rsr	a3, excvaddr		# fault address
 	_PGD_OFFSET(a0, a3, a1)
@@ -1654,7 +1641,7 @@ ENTRY(fast_second_level_miss)
 
 	/* Exit critical section. */
 
-4:	movi	a3, exc_table		# restore a3
+4:	rsr	a3, excsave1
 	movi	a0, 0
 	s32i	a0, a3, EXC_TABLE_FIXUP
 
@@ -1662,8 +1649,8 @@ ENTRY(fast_second_level_miss)
 
 	l32i	a0, a2, PT_AREG0
 	l32i	a1, a2, PT_AREG1
+	l32i	a3, a2, PT_AREG3
 	l32i	a2, a2, PT_DEPC
-	xsr	a3, excsave1
 
 	bgeui	a2, VALID_DOUBLE_EXCEPTION_ADDRESS, 1f
 
@@ -1750,11 +1737,8 @@ ENTRY(fast_second_level_miss)
 
 2:	/* Invalid PGD, default exception handling */
 
-	movi	a3, exc_table
 	rsr	a1, depc
-	xsr	a3, excsave1
 	s32i	a1, a2, PT_AREG2
-	s32i	a3, a2, PT_AREG3
 	mov	a1, a2
 
 	rsr	a2, ps
@@ -1774,9 +1758,9 @@ ENDPROC(fast_second_level_miss)
  *   a0:	trashed, original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in DEPC
- *   a3:	dispatch table
+ *   a3:	a3
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave_1:	dispatch table
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1784,17 +1768,17 @@ ENDPROC(fast_second_level_miss)
 
 ENTRY(fast_store_prohibited)
 
-	/* Save a1 and a4. */
+	/* Save a1 and a3. */
 
 	s32i	a1, a2, PT_AREG1
-	s32i	a4, a2, PT_AREG4
+	s32i	a3, a2, PT_AREG3
 
 	GET_CURRENT(a1,a2)
 	l32i	a0, a1, TASK_MM		# tsk->mm
 	beqz	a0, 9f
 
 8:	rsr	a1, excvaddr		# fault address
-	_PGD_OFFSET(a0, a1, a4)
+	_PGD_OFFSET(a0, a1, a3)
 	l32i	a0, a0, 0
 	beqz	a0, 2f
 
@@ -1803,39 +1787,37 @@ ENTRY(fast_store_prohibited)
 	 * and is not PAGE_NONE. See pgtable.h for possible PTE layouts.
 	 */
 
-	_PTE_OFFSET(a0, a1, a4)
-	l32i	a4, a0, 0		# read pteval
+	_PTE_OFFSET(a0, a1, a3)
+	l32i	a3, a0, 0		# read pteval
 	movi	a1, _PAGE_CA_INVALID
-	ball	a4, a1, 2f
-	bbci.l	a4, _PAGE_WRITABLE_BIT, 2f
+	ball	a3, a1, 2f
+	bbci.l	a3, _PAGE_WRITABLE_BIT, 2f
 
 	movi	a1, _PAGE_ACCESSED | _PAGE_DIRTY | _PAGE_HW_WRITE
-	or	a4, a4, a1
+	or	a3, a3, a1
 	rsr	a1, excvaddr
-	s32i	a4, a0, 0
+	s32i	a3, a0, 0
 
 	/* We need to flush the cache if we have page coloring. */
 #if (DCACHE_WAY_SIZE > PAGE_SIZE) && XCHAL_DCACHE_IS_WRITEBACK
 	dhwb	a0, 0
 #endif
 	pdtlb	a0, a1
-	wdtlb	a4, a0
+	wdtlb	a3, a0
 
 	/* Exit critical section. */
 
 	movi	a0, 0
+	rsr	a3, excsave1
 	s32i	a0, a3, EXC_TABLE_FIXUP
 
 	/* Restore the working registers, and return. */
 
-	l32i	a4, a2, PT_AREG4
+	l32i	a3, a2, PT_AREG3
 	l32i	a1, a2, PT_AREG1
 	l32i	a0, a2, PT_AREG0
 	l32i	a2, a2, PT_DEPC
 
-	/* Restore excsave1 and a3. */
-
-	xsr	a3, excsave1
 	bgeui	a2, VALID_DOUBLE_EXCEPTION_ADDRESS, 1f
 
 	rsr	a2, depc
@@ -1852,11 +1834,8 @@ ENTRY(fast_store_prohibited)
 
 2:	/* If there was a problem, handle fault in C */
 
-	rsr	a4, depc	# still holds a2
-	xsr	a3, excsave1
-	s32i	a4, a2, PT_AREG2
-	s32i	a3, a2, PT_AREG3
-	l32i	a4, a2, PT_AREG4
+	rsr	a3, depc	# still holds a2
+	s32i	a3, a2, PT_AREG2
 	mov	a1, a2
 
 	rsr	a2, ps
