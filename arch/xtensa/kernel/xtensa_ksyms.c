@@ -32,6 +32,9 @@
 #include <net/checksum.h>
 #endif /* CONFIG_NET */
 
+#ifdef CONFIG_FUNCTION_TRACER
+#include <asm/ftrace.h>
+#endif /* CONFIG_FUNCTION_TRACER */
 
 /*
  * String functions
