@@ -32,6 +32,17 @@ extern unsigned long return_address(unsigned level);
 #define MCOUNT_INSN_SIZE 3
 
 #ifndef __ASSEMBLY__
+#ifdef CONFIG_DYNAMIC_FTRACE
+static inline unsigned long ftrace_call_adjust(unsigned long addr)
+{
+	return addr;
+}
+
+struct dyn_arch_ftrace {
+};
+
+#endif /*  CONFIG_DYNAMIC_FTRACE */
+
 extern void _mcount(void);
 #define mcount _mcount
 #endif /* __ASSEMBLY__ */

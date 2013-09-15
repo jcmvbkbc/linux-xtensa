@@ -48,3 +48,18 @@ ENTRY(ftrace_stub)
 	entry	a1, 16
 	retw
 ENDPROC(ftrace_stub)
+
+#ifdef CONFIG_DYNAMIC_FTRACE
+
+ENTRY(ftrace_caller)
+
+	entry	a1, 16
+
+ftrace_call:
+	movi	a4, ftrace_call
+	callx4	a4
+	retw
+
+ENDPROC(ftrace_caller)
+
+#endif /* CONFIG_DYNAMIC_FTRACE */
