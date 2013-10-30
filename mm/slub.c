@@ -1547,7 +1547,7 @@ static inline void *acquire_slab(struct kmem_cache *s,
 }
 
 static void put_cpu_partial(struct kmem_cache *s, struct page *page, int drain);
-static inline bool pfmemalloc_match(struct page *page, gfp_t gfpflags);
+static bool pfmemalloc_match(struct page *page, gfp_t gfpflags);
 
 /*
  * Try to allocate a partial slab from a specific node.

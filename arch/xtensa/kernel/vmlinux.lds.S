@@ -122,7 +122,7 @@ SECTIONS
   __init_begin = .;
   INIT_TEXT_SECTION(PAGE_SIZE)
 
-  .init.data :
+  .init.data : SUBALIGN(4)
   {
     INIT_DATA
     . = ALIGN(0x4);
