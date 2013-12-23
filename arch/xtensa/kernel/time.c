@@ -142,6 +142,8 @@ void __init time_init(void)
 	ccount_timer.irq_enabled = 1;
 
 	setup_sched_clock(ccount_sched_clock_read, 32, ccount_freq);
+
+	clocksource_of_init();
 }
 
 /*
