@@ -1082,19 +1082,22 @@ ENTRY(fast_syscall_spill_registers)
 	rsr	a0, sar
 	s32i	a3, a2, PT_AREG3
 	s32i	a4, a2, PT_AREG4
-	s32i	a0, a2, PT_AREG5	# store SAR to PT_AREG5
+	s32i	a0, a2, PT_SAR
 
-	/* The spill routine might clobber a7, a11, and a15. */
+	/* The spill routine might clobber a5, a7, a9, a11, a13 and a15. */
 
+	s32i	a5, a2, PT_AREG5
 	s32i	a7, a2, PT_AREG7
+	s32i	a9, a2, PT_AREG9
 	s32i	a11, a2, PT_AREG11
+	s32i	a13, a2, PT_AREG13
 	s32i	a15, a2, PT_AREG15
 
 	call0	_spill_registers	# destroys a3, a4, and SAR
 
 	/* Advance PC, restore registers and SAR, and return from exception. */
 
-	l32i	a3, a2, PT_AREG5
+	l32i	a3, a2, PT_SAR
 	l32i	a4, a2, PT_AREG4
 	l32i	a0, a2, PT_AREG0
 	wsr	a3, sar
@@ -1102,8 +1105,11 @@ ENTRY(fast_syscall_spill_registers)
 
 	/* Restore clobbered registers. */
 
+	l32i	a5, a2, PT_AREG5
 	l32i	a7, a2, PT_AREG7
+	l32i	a9, a2, PT_AREG9
 	l32i	a11, a2, PT_AREG11
+	l32i	a13, a2, PT_AREG13
 	l32i	a15, a2, PT_AREG15
 
 	movi	a2, 0
@@ -1228,6 +1234,7 @@ ENDPROC(fast_syscall_spill_registers_fixup_return)
  *  - must be called with call0.
  *  - uses a3, a4 and SAR.
  *  - the last 'valid' register of each frame are clobbered.
+ *  - a5, a9 or a13 may be clobbered.
  *  - the caller must have registered a fixup handler
  *    (or be inside a critical section)
  *  - PS_EXCM must be set (PS_WOE cleared?)
@@ -1273,6 +1280,7 @@ ENTRY(_spill_registers)
 	rsr	a3, windowbase
 	add	a3, a3, a4
 	rsr	a4, depc		# restore a4
+	wsr	a1, depc		# copy a1 to depc
 	wsr	a3, windowbase
 	rsync
 
@@ -1294,6 +1302,7 @@ ENTRY(_spill_registers)
 
 	_bbci.l	a3, 3, .Lc12	# bit 3 shouldn't be zero! (Jump to Lc12 first)
 
+	rsr	a1, depc	# a1 = original a1
 	s32e	a4, a1, -16	# a1 is valid with an empty spill area
 	l32e	a4, a5, -12
 	s32e	a8, a4, -48
@@ -1808,16 +1817,16 @@ ENTRY(_switch_to)
 
 	entry	a1, 16
 
-	mov	a12, a2			# preserve 'prev' (a2)
-	mov	a13, a3			# and 'next' (a3)
+	mov	a10, a2			# preserve 'prev' (a2)
+	mov	a12, a3			# and 'next' (a3)
 
 	l32i	a4, a2, TASK_THREAD_INFO
-	l32i	a5, a3, TASK_THREAD_INFO
+	l32i	a6, a3, TASK_THREAD_INFO
 
-	save_xtregs_user a4 a6 a8 a9 a10 a11 THREAD_XTREGS_USER
+	save_xtregs_user a4 a5 a8 a9 a11 a13 THREAD_XTREGS_USER
 
-	s32i	a0, a12, THREAD_RA	# save return address
-	s32i	a1, a12, THREAD_SP	# save stack pointer
+	s32i	a0, a10, THREAD_RA	# save return address
+	s32i	a1, a10, THREAD_SP	# save stack pointer
 
 	/* Disable ints while we manipulate the stack pointer. */
 
@@ -1830,14 +1839,15 @@ ENTRY(_switch_to)
 	/* Switch CPENABLE */
 
 #if (XTENSA_HAVE_COPROCESSORS || XTENSA_HAVE_IO_PORTS)
-	l32i	a3, a5, THREAD_CPENABLE
+	l32i	a3, a6, THREAD_CPENABLE
 	xsr	a3, cpenable
 	s32i	a3, a4, THREAD_CPENABLE
 #endif
 
 	/* Flush register file. */
 
-	call0	_spill_registers	# destroys a3, a4, and SAR
+	/* It destroys a4, SAR and all odd-numbered registers except a1 */
+	call0	_spill_registers
 
 	/* Set kernel stack (and leave critical section)
 	 * Note: It's save to set it here. The stack will not be overwritten
@@ -1846,20 +1856,20 @@ ENTRY(_switch_to)
 	 */
 
 	rsr	a3, excsave1		# exc_table
-	movi	a6, 0
-	addi	a7, a5, PT_REGS_OFFSET
-	s32i	a6, a3, EXC_TABLE_FIXUP
+	movi	a5, 0
+	addi	a7, a6, PT_REGS_OFFSET
+	s32i	a5, a3, EXC_TABLE_FIXUP
 	s32i	a7, a3, EXC_TABLE_KSTK
 
 	/* restore context of the task 'next' */
 
-	l32i	a0, a13, THREAD_RA	# restore return address
-	l32i	a1, a13, THREAD_SP	# restore stack pointer
+	l32i	a0, a12, THREAD_RA	# restore return address
+	l32i	a1, a12, THREAD_SP	# restore stack pointer
 
-	load_xtregs_user a5 a6 a8 a9 a10 a11 THREAD_XTREGS_USER
+	load_xtregs_user a6 a5 a8 a9 a11 a13 THREAD_XTREGS_USER
 
 	wsr	a14, ps
-	mov	a2, a12			# return 'prev'
+	mov	a2, a10			# return 'prev'
 	rsync
 
 	retw
