@@ -1241,6 +1241,7 @@ ENTRY(_spill_registers)
 	 * Rotate ws right so that a4 = yyxxxwww1.
 	 */
 
+	wsr	a4, depc 		# save a4: we may need to spill it
 	rsr	a4, windowbase
 	rsr	a3, windowstart		# a3 = xxxwww1yy
 	ssr	a4			# holds WB
@@ -1271,6 +1272,7 @@ ENTRY(_spill_registers)
 
 	rsr	a3, windowbase
 	add	a3, a3, a4
+	rsr	a4, depc		# restore a4
 	wsr	a3, windowbase
 	rsync
 
