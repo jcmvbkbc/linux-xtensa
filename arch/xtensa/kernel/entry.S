@@ -1323,6 +1323,17 @@ ENTRY(_spill_registers)
 	j	.Lc12c
 
 .Lnospill:
+#ifdef CONFIG_DEBUG_SPILL
+.Lforce_clobber:
+	movi	a3, 0xdeadbeef
+	mov	a4, a3
+	mov	a5, a3
+	mov	a7, a3
+	mov	a9, a3
+	mov	a11, a3
+	mov	a13, a3
+	mov	a15, a3
+#endif
 	ret
 
 .Lloop: _bbsi.l	a3, 1, .Lc4
@@ -1350,6 +1361,9 @@ ENTRY(_spill_registers)
 	movi	a3, 1
 	sll	a3, a3
 	wsr	a3, windowstart
+#ifdef CONFIG_DEBUG_SPILL
+	j	.Lforce_clobber
+#endif
 	ret
 
 .Lc4:	s32e	a4, a9, -16
