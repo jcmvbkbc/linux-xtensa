@@ -13,6 +13,7 @@ obj-$(CONFIG_PCI) += pci.o
 obj-$(CONFIG_MODULES) += xtensa_ksyms.o module.o
 obj-$(CONFIG_FUNCTION_TRACER) += mcount.o
 obj-$(CONFIG_SMP) += smp.o mxhead.o
+obj-$(CONFIG_DEBUG_KERNEL) += xchal.o
 
 AFLAGS_head.o += -mtext-section-literals
 
