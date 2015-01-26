@@ -58,7 +58,7 @@
 .global	__strncpy_user
 .type	__strncpy_user,@function
 __strncpy_user:
-	entry	sp, 16		# minimal stack frame
+	entry	sp, 32		# minimal stack frame
 	# a2/ dst, a3/ src, a4/ len
 	mov	a11, a2		# leave dst in return value register
 	beqz	a4, .Lret	# if len is zero

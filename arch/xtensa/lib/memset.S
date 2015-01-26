@@ -42,7 +42,7 @@
 .global	memset
 .type	memset,@function
 memset:
-	entry	sp, 16		# minimal stack frame
+	entry	sp, 32		# minimal stack frame
 	# a2/ dst, a3/ c, a4/ length
 	extui	a3, a3, 0, 8	# mask to just 8 bits
 	slli	a7, a3, 8	# duplicate character in all bytes of word

@@ -53,7 +53,7 @@
 .global	__strnlen_user
 .type	__strnlen_user,@function
 __strnlen_user:
-	entry	sp, 16		# minimal stack frame
+	entry	sp, 32		# minimal stack frame
 	# a2/ s, a3/ len
 	addi	a4, a2, -4	# because we overincrement at the end;
 				# we compensate with load offsets of 4

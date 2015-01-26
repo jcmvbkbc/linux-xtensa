@@ -128,7 +128,7 @@
 	.type   memcpy,@function
 memcpy:
 
-	entry	sp, 16		# minimal stack frame
+	entry	sp, 32		# minimal stack frame
 	# a2/ dst, a3/ src, a4/ len
 	mov	a5, a2		# copy dst so that a2 is return value
 .Lcommon:
@@ -296,7 +296,7 @@ memcpy:
 	.global	bcopy
 	.type   bcopy,@function
 bcopy:
-	entry	sp, 16		# minimal stack frame
+	entry	sp, 32		# minimal stack frame
 	# a2=src, a3=dst, a4=len
 	mov	a5, a3
 	mov	a3, a2
@@ -396,7 +396,7 @@ bcopy:
 	.type   memmove,@function
 memmove:
 
-	entry	sp, 16		# minimal stack frame
+	entry	sp, 32		# minimal stack frame
 	# a2/ dst, a3/ src, a4/ len
 	mov	a5, a2		# copy dst so that a2 is return value
 .Lmovecommon:

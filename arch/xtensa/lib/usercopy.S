@@ -77,7 +77,7 @@
 	.global	__xtensa_copy_user
 	.type	__xtensa_copy_user,@function
 __xtensa_copy_user:
-	entry	sp, 16		# minimal stack frame
+	entry	sp, 32		# minimal stack frame
 	# a2/ dst, a3/ src, a4/ len
 	mov	a5, a2		# copy dst so that a2 is return value
 	mov	a11, a4		# preserve original len for error case
