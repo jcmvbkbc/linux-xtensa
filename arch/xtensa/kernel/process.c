@@ -198,8 +198,8 @@ int copy_thread(unsigned long clone_flags, unsigned long usp_thread_fn,
 #endif
 
 	/* Create a call4 dummy-frame: a0 = 0, a1 = childregs. */
-	*((int*)childregs - 3) = (unsigned long)childregs;
-	*((int*)childregs - 4) = 0;
+	SPILLED_REG(childregs, 1) = (unsigned long)childregs;
+	SPILLED_REG(childregs, 0) = 0;
 
 	p->thread.sp = (unsigned long)childregs;
 
@@ -260,8 +260,8 @@ int copy_thread(unsigned long clone_flags, unsigned long usp_thread_fn,
 		/* pass parameters to ret_from_kernel_thread:
 		 * a2 = thread_fn, a3 = thread_fn arg
 		 */
-		*((int *)childregs - 1) = thread_fn_arg;
-		*((int *)childregs - 2) = usp_thread_fn;
+		SPILLED_REG(childregs, 3) = thread_fn_arg;
+		SPILLED_REG(childregs, 2) = usp_thread_fn;
 
 		/* Childregs are only used when we're going to userspace
 		 * in which case start_thread will set them up.

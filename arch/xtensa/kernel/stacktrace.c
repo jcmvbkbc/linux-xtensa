@@ -31,8 +31,8 @@ void walk_stackframe(unsigned long *sp,
 
 		sp = (unsigned long *)a1;
 
-		a0 = *(sp - 4);
-		a1 = *(sp - 3);
+		a0 = SPILLED_REG(sp, 0);
+		a1 = SPILLED_REG(sp, 1);
 
 		if (a1 <= (unsigned long)sp)
 			break;
