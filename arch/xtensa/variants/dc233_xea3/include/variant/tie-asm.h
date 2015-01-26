@@ -118,22 +118,6 @@
 	// Custom caller-saved registers not used by default by the compiler:
 	.ifeq (XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
 	xchal_sa_align	\ptr, 0, 992, 4, 4
-	rsr.ISB	\at1		// ureg 200
-	s32i	\at1, \ptr, .Lxchal_ofs_+0
-	rur.ISBU	\at1		// ureg 200
-	s32i	\at1, \ptr, .Lxchal_ofs_+4
-	rsr.ITB	\at1		// ureg 201
-	s32i	\at1, \ptr, .Lxchal_ofs_+8
-	rur.ITBU	\at1		// ureg 201
-	s32i	\at1, \ptr, .Lxchal_ofs_+12
-	rsr.KSB	\at1		// ureg 202
-	s32i	\at1, \ptr, .Lxchal_ofs_+16
-	rur.KSBU	\at1		// ureg 202
-	s32i	\at1, \ptr, .Lxchal_ofs_+20
-	rsr.MS	\at1		// ureg 229
-	s32i	\at1, \ptr, .Lxchal_ofs_+24
-	rur.MSU	\at1		// ureg 229
-	s32i	\at1, \ptr, .Lxchal_ofs_+28
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 32
 	.elseif ((XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
 	xchal_sa_align	\ptr, 0, 992, 4, 4
@@ -206,22 +190,6 @@
 	// Custom caller-saved registers not used by default by the compiler:
 	.ifeq (XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
 	xchal_sa_align	\ptr, 0, 992, 4, 4
-	l32i	\at1, \ptr, .Lxchal_ofs_+0
-	wsr.ISB	\at1		// ureg 200
-	l32i	\at1, \ptr, .Lxchal_ofs_+4
-	wur.ISBU	\at1		// ureg 200
-	l32i	\at1, \ptr, .Lxchal_ofs_+8
-	wsr.ITB	\at1		// ureg 201
-	l32i	\at1, \ptr, .Lxchal_ofs_+12
-	wur.ITBU	\at1		// ureg 201
-	l32i	\at1, \ptr, .Lxchal_ofs_+16
-	wsr.KSB	\at1		// ureg 202
-	l32i	\at1, \ptr, .Lxchal_ofs_+20
-	wur.KSBU	\at1		// ureg 202
-	l32i	\at1, \ptr, .Lxchal_ofs_+24
-	wsr.MS	\at1		// ureg 229
-	l32i	\at1, \ptr, .Lxchal_ofs_+28
-	wur.MSU	\at1		// ureg 229
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 32
 	.elseif ((XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
 	xchal_sa_align	\ptr, 0, 992, 4, 4

@@ -117,15 +117,7 @@
  XCHAL_SA_REG(s,0,0,0,1,             m0, 4, 4, 4,0x0220,  sr,32 , 32,0,0,0) \
  XCHAL_SA_REG(s,0,0,0,1,             m1, 4, 4, 4,0x0221,  sr,33 , 32,0,0,0) \
  XCHAL_SA_REG(s,0,0,0,1,             m2, 4, 4, 4,0x0222,  sr,34 , 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,0,1,             m3, 4, 4, 4,0x0223,  sr,35 , 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,0,0,            isb, 4, 4, 4,0x02C8,  sr,200, 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,1,0,           isbu, 4, 4, 4,0x03C8,  ur,200, 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,0,0,            itb, 4, 4, 4,0x02C9,  sr,201, 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,1,0,           itbu, 4, 4, 4,0x03C9,  ur,201, 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,0,0,            ksb, 4, 4, 4,0x02CA,  sr,202, 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,1,0,           ksbu, 4, 4, 4,0x03CA,  ur,202, 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,0,0,             ms, 4, 4, 4,0x02E5,  sr,229, 32,0,0,0) \
- XCHAL_SA_REG(s,0,0,1,0,            msu, 4, 4, 4,0x03E5,  ur,229, 32,0,0,0)
+ XCHAL_SA_REG(s,0,0,0,1,             m3, 4, 4, 4,0x0223,  sr,35 , 32,0,0,0)
 
 #define XCHAL_CP0_SA_NUM	0
 #define XCHAL_CP0_SA_LIST(s)	/* empty */
