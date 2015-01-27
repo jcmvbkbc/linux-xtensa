@@ -309,10 +309,12 @@ extern char _WindowVectors_text_end;
 extern char _DebugInterruptVector_literal_start;
 extern char _DebugInterruptVector_text_end;
 extern char _KernelExceptionVector_literal_start;
+extern char _KernelExceptionVector_text_start;
 extern char _KernelExceptionVector_text_end;
 extern char _UserExceptionVector_literal_start;
 extern char _UserExceptionVector_text_end;
 extern char _DoubleExceptionVector_literal_start;
+extern char _DoubleExceptionVector_text_start;
 extern char _DoubleExceptionVector_text_end;
 #if XCHAL_EXCM_LEVEL >= 2
 extern char _Level2InterruptVector_text_start;
@@ -473,6 +475,7 @@ void __init setup_arch(char **cmdline_p)
 	mem_reserve(__pa(&_WindowVectors_text_start),
 		    __pa(&_WindowVectors_text_end), 0);
 
+#if XCHAL_XEA_VERSION <= 2
 	mem_reserve(__pa(&_DebugInterruptVector_literal_start),
 		    __pa(&_DebugInterruptVector_text_end), 0);
 
@@ -504,6 +507,15 @@ void __init setup_arch(char **cmdline_p)
 #if XCHAL_EXCM_LEVEL >= 6
 	mem_reserve(__pa(&_Level6InterruptVector_text_start),
 		    __pa(&_Level6InterruptVector_text_end), 0);
+#endif
+#elif XCHAL_XEA_VERSION == 3
+	mem_reserve(__pa(&_KernelExceptionVector_text_start),
+		    __pa(&_KernelExceptionVector_text_end), 0);
+
+	mem_reserve(__pa(&_DoubleExceptionVector_text_start),
+		    __pa(&_DoubleExceptionVector_text_end), 0);
+#else
+#error Unsupported XEA version
 #endif
 
 	parse_early_param();

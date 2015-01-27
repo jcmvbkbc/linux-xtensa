@@ -49,81 +49,6 @@ void ptrace_disable(struct task_struct *child)
 	/* Nothing to do.. */
 }
 
-int ptrace_getregs(struct task_struct *child, void __user *uregs)
-{
-	struct pt_regs *regs = task_pt_regs(child);
-	xtensa_gregset_t __user *gregset = uregs;
-	unsigned long wb = regs->windowbase;
-	int i;
-
-	if (!access_ok(VERIFY_WRITE, uregs, sizeof(xtensa_gregset_t)))
-		return -EIO;
-
-	__put_user(regs->pc, &gregset->pc);
-	__put_user(regs->ps & ~(1 << PS_EXCM_BIT), &gregset->ps);
-	__put_user(regs->lbeg, &gregset->lbeg);
-	__put_user(regs->lend, &gregset->lend);
-	__put_user(regs->lcount, &gregset->lcount);
-	__put_user(regs->windowstart, &gregset->windowstart);
-	__put_user(regs->windowbase, &gregset->windowbase);
-	__put_user(regs->threadptr, &gregset->threadptr);
-
-	for (i = 0; i < XCHAL_NUM_AREGS; i++)
-		__put_user(regs->areg[i],
-				gregset->a + ((wb * 4 + i) % XCHAL_NUM_AREGS));
-
-	return 0;
-}
-
-int ptrace_setregs(struct task_struct *child, void __user *uregs)
-{
-	struct pt_regs *regs = task_pt_regs(child);
-	xtensa_gregset_t *gregset = uregs;
-	const unsigned long ps_mask = PS_CALLINC_MASK | PS_OWB_MASK;
-	unsigned long ps;
-	unsigned long wb, ws;
-
-	if (!access_ok(VERIFY_WRITE, uregs, sizeof(xtensa_gregset_t)))
-		return -EIO;
-
-	__get_user(regs->pc, &gregset->pc);
-	__get_user(ps, &gregset->ps);
-	__get_user(regs->lbeg, &gregset->lbeg);
-	__get_user(regs->lend, &gregset->lend);
-	__get_user(regs->lcount, &gregset->lcount);
-	__get_user(ws, &gregset->windowstart);
-	__get_user(wb, &gregset->windowbase);
-	__get_user(regs->threadptr, &gregset->threadptr);
-
-	regs->ps = (regs->ps & ~ps_mask) | (ps & ps_mask) | (1 << PS_EXCM_BIT);
-
-	if (wb >= XCHAL_NUM_AREGS / 4)
-		return -EFAULT;
-
-	if (wb != regs->windowbase || ws != regs->windowstart) {
-		unsigned long rotws, wmask;
-
-		rotws = (((ws | (ws << WSBITS)) >> wb) &
-				((1 << WSBITS) - 1)) & ~1;
-		wmask = ((rotws ? WSBITS + 1 - ffs(rotws) : 0) << 4) |
-			(rotws & 0xF) | 1;
-		regs->windowbase = wb;
-		regs->windowstart = ws;
-		regs->wmask = wmask;
-	}
-
-	if (wb != 0 &&  __copy_from_user(regs->areg + XCHAL_NUM_AREGS - wb * 4,
-				gregset->a, wb * 16))
-		return -EFAULT;
-
-	if (__copy_from_user(regs->areg, gregset->a + wb * 4,
-				(WSBITS - wb) * 16))
-		return -EFAULT;
-
-	return 0;
-}
-
-
 static int ptrace_getxregs(struct task_struct *child, void __user *uregs)
 {
 	struct pt_regs *regs = task_pt_regs(child);
@@ -174,7 +99,8 @@ static int ptrace_setxregs(struct task_struct *child, void __user *uregs)
 	return ret ? -EFAULT : 0;
 }
 
-int ptrace_peekusr(struct task_struct *child, long regno, long __user *ret)
+int ptrace_peekusr_common(struct task_struct *child, long regno,
+			  long __user *ret)
 {
 	struct pt_regs *regs;
 	unsigned long tmp;
@@ -185,34 +111,17 @@ int ptrace_peekusr(struct task_struct *child, long regno, long __user *ret)
 	switch(regno) {
 
 		case REG_AR_BASE ... REG_AR_BASE + XCHAL_NUM_AREGS - 1:
-			tmp = regs->areg[regno - REG_AR_BASE];
+			tmp = pt_areg(regs, regno - REG_AR_BASE);
 			break;
 
 		case REG_A_BASE ... REG_A_BASE + 15:
-			tmp = regs->areg[regno - REG_A_BASE];
+			tmp = pt_areg(regs, regno - REG_A_BASE);
 			break;
 
 		case REG_PC:
 			tmp = regs->pc;
 			break;
 
-		case REG_PS:
-			/* Note:  PS.EXCM is not set while user task is running;
-			 * its being set in regs is for exception handling
-			 * convenience.  */
-			tmp = (regs->ps & ~(1 << PS_EXCM_BIT));
-			break;
-
-		case REG_WB:
-			break;		/* tmp = 0 */
-
-		case REG_WS:
-		{
-			unsigned long wb = regs->windowbase;
-			unsigned long ws = regs->windowstart;
-			tmp = ((ws>>wb) | (ws<<(WSBITS-wb))) & ((1<<WSBITS)-1);
-			break;
-		}
 		case REG_LBEG:
 			tmp = regs->lbeg;
 			break;
@@ -246,11 +155,11 @@ static int ptrace_pokeusr(struct task_struct *child, long regno, long val)
 
 	switch (regno) {
 		case REG_AR_BASE ... REG_AR_BASE + XCHAL_NUM_AREGS - 1:
-			regs->areg[regno - REG_AR_BASE] = val;
+			pt_areg(regs, regno - REG_AR_BASE) = val;
 			break;
 
 		case REG_A_BASE ... REG_A_BASE + 15:
-			regs->areg[regno - REG_A_BASE] = val;
+			pt_areg(regs, regno - REG_A_BASE) = val;
 			break;
 
 		case REG_PC:

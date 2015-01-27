@@ -68,6 +68,7 @@ struct thread_struct {
 	/* kernel's return address and stack pointer for context switching */
 	unsigned long ra; /* kernel's a0: return address and window call size */
 	unsigned long sp; /* kernel's a1: stack pointer */
+	unsigned long ps; /* kernel's ps: Stk, mainly */
 
 	mm_segment_t current_ds;    /* see uaccess.h for example uses */
 
@@ -89,6 +90,7 @@ struct thread_struct {
 {									\
 	.ra =		0,						\
 	.sp =		sizeof(init_stack) + (long) &init_stack,	\
+	.ps =		(PS_STACK_KERNEL << PS_STACK_SHIFT),		\
 	.current_ds =	{0},						\
 	.bad_vaddr =	0,						\
 	.bad_uaddr =	0,						\
@@ -110,11 +112,9 @@ do { \
 	memset(regs, 0, sizeof(*regs)); \
 	regs->pc = new_pc; \
 	regs->ps = USER_PS_VALUE; \
-	regs->areg[1] = new_sp; \
-	regs->areg[0] = 0; \
-	regs->wmask = 1; \
-	regs->depc = 0; \
-	regs->windowbase = 0; \
+	pt_areg(regs, 1) = new_sp; \
+	pt_areg(regs, 0) = 0; \
+	regs->windowbase = 0x80000000; \
 } while (0)
 
 #endif	/* __ASSEMBLY__ */

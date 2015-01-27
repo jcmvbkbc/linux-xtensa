@@ -92,6 +92,7 @@ struct pt_regs {
 #include <asm/regs.h>
 #include <variant/core.h>
 
+# define pt_areg(regs, i) ((regs)->areg[i])
 # define arch_has_single_step()	(1)
 # define task_pt_regs(tsk) ((struct pt_regs*) \
 	(task_stack_page(tsk) + KERNEL_STACK_SIZE - (XCHAL_NUM_AREGS-16)*4) - 1)

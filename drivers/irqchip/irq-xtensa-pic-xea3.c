@@ -61,6 +61,7 @@ static void xtensa_xea3_irq_disable(struct irq_data *d)
 
 static void xtensa_xea3_irq_ack(struct irq_data *d)
 {
+	set_er(0x200, 0x00122000 + 4 * d->hwirq);
 }
 
 static int xtensa_xea3_irq_retrigger(struct irq_data *d)
@@ -75,7 +76,7 @@ static struct irq_chip xtensa_xea3_irq_chip = {
 	.irq_disable	= xtensa_xea3_irq_disable,
 	.irq_mask	= xtensa_xea3_irq_mask,
 	.irq_unmask	= xtensa_xea3_irq_unmask,
-	.irq_ack	= xtensa_xea3_irq_ack,
+	//.irq_ack	= xtensa_xea3_irq_ack,
 	.irq_retrigger	= xtensa_xea3_irq_retrigger,
 };
 

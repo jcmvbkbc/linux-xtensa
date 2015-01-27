@@ -34,7 +34,7 @@ int ptrace_peekusr_common(struct task_struct *child, long regno,
 	})
 # endif
 
-#define user_stack_pointer(regs) ((regs)->areg[1])
+#define user_stack_pointer(regs) (pt_areg(regs, 1))
 
 #else	/* __ASSEMBLY__ */
 

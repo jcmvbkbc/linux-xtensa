@@ -57,7 +57,7 @@ struct task_struct;
 extern unsigned long get_wchan(struct task_struct *p);
 
 #define KSTK_EIP(tsk)		(task_pt_regs(tsk)->pc)
-#define KSTK_ESP(tsk)		(task_pt_regs(tsk)->areg[1])
+#define KSTK_ESP(tsk)		(pt_areg(task_pt_regs(tsk), 1))
 
 #define cpu_relax()  barrier()
 #define cpu_relax_lowlatency() cpu_relax()

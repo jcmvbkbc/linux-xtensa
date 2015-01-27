@@ -138,6 +138,7 @@
 #define PS_SS_SHIFT		20
 #define PS_SS_MASK		0x00300000
 #define PS_CAUSE_SHIFT		8
+#define PS_STACK_LEN		3
 #define PS_STACK_SHIFT		5
 #define PS_STACK_MASK		0x000000e0
 #define PS_RING_SHIFT		4
@@ -145,13 +146,13 @@
 #define PS_DI_SHIFT		3
 #define PS_DI_MASK		0x00000008
 
-#define PS_STACK_KERNEL		0
+#define PS_STACK_INTERRUPT	0
 #define PS_STACK_CROSS		1
-#define PS_STACK_INTERRUPT	2
-#define PS_STACK_IDLE		3
-#define PS_STACK_PAGE		4
+#define PS_STACK_IDLE		2
+#define PS_STACK_KERNEL		3
+#define PS_STACK_FIRST_INT	4
 #define PS_STACK_FIRST_KER	5
-#define PS_STACK_FIRST_INT	6
+#define PS_STACK_PAGE		7
 
 /*  DBREAKCn register fields.  */
 

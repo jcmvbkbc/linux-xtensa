@@ -43,6 +43,7 @@
 #include <linux/atomic.h>
 #include <asm/asm-offsets.h>
 #include <asm/regs.h>
+#include <asm/traps.h>
 
 extern void ret_from_fork(void);
 extern void ret_from_kernel_thread(void);
@@ -192,21 +193,38 @@ int copy_thread(unsigned long clone_flags, unsigned long usp_thread_fn,
 		unsigned long thread_fn_arg, struct task_struct *p)
 {
 	struct pt_regs *childregs = task_pt_regs(p);
+	void *base;
 
 #if (XTENSA_HAVE_COPROCESSORS || XTENSA_HAVE_IO_PORTS)
 	struct thread_info *ti;
 #endif
 
-	/* Create a call4 dummy-frame: a0 = 0, a1 = childregs. */
-	SPILLED_REG(childregs, 1) = (unsigned long)childregs;
-	SPILLED_REG(childregs, 0) = 0;
-
+#if XCHAL_XEA_VERSION <= 2
+	base = childregs;
 	p->thread.sp = (unsigned long)childregs;
+
+	/* Create a call4 dummy-frame: a0 = 0, a1 = childregs. */
+	SPILLED_REG(base, 1) = (unsigned long)base;
+	SPILLED_REG(base, 0) = 0;
+#elif XCHAL_XEA_VERSION == 3
+	p->thread.sp = ALIGN((unsigned long)childregs, THREAD_SIZE) -
+		4 * XCHAL_NUM_AREGS -
+		max(128u, ALIGN(sizeof(struct pt_regs), 16)) - 32;
+	base = (void *)p->thread.sp;
+
+	/* Create a call4 dummy-frame: a0 = 0, a1 = childregs. */
+	SPILLED_REG(base, 1) = p->thread.sp + 32;
+	SPILLED_REG(base, 0) = VECBASE_RESET_VADDR;
+	spill_registers();
+	barrier();
+#else
+#error Unsupported XEA version
+#endif
 
 	if (!(p->flags & PF_KTHREAD)) {
 		struct pt_regs *regs = current_pt_regs();
 		unsigned long usp = usp_thread_fn ?
-			usp_thread_fn : regs->areg[1];
+			usp_thread_fn : pt_areg(regs, 1);
 
 		p->thread.ra = MAKE_RA_FOR_CALL(
 				(unsigned long)ret_from_fork, 0x1);
@@ -216,8 +234,9 @@ int copy_thread(unsigned long clone_flags, unsigned long usp_thread_fn,
 		 * ARs beyond a0-a15 exist past the end of the struct.
 		 */
 		*childregs = *regs;
-		childregs->areg[1] = usp;
-		childregs->areg[2] = 0;
+#if XCHAL_XEA_VERSION <= 2
+		pt_areg(childregs, 1) = usp;
+		pt_areg(childregs, 2) = 0;
 
 		/* When sharing memory with the parent thread, the child
 		   usually starts on a pristine stack, so we have to reset
@@ -235,10 +254,10 @@ int copy_thread(unsigned long clone_flags, unsigned long usp_thread_fn,
 		if (clone_flags & CLONE_VM) {
 			/* check that caller window is live and same stack */
 			int len = childregs->wmask & ~0xf;
-			if (regs->areg[1] == usp && len != 0) {
-				int callinc = (regs->areg[0] >> 30) & 3;
+			if (pt_areg(regs, 1) == usp && len != 0) {
+				int callinc = (pt_areg(regs, 0) >> 30) & 3;
 				int caller_ars = XCHAL_NUM_AREGS - callinc * 4;
-				put_user(regs->areg[caller_ars+1],
+				put_user(pt_areg(regs, caller_ars+1),
 					 (unsigned __user*)(usp - 12));
 			}
 			childregs->wmask = 1;
@@ -246,13 +265,40 @@ int copy_thread(unsigned long clone_flags, unsigned long usp_thread_fn,
 			childregs->windowbase = 0;
 		} else {
 			int len = childregs->wmask & ~0xf;
-			memcpy(&childregs->areg[XCHAL_NUM_AREGS - len/4],
-			       &regs->areg[XCHAL_NUM_AREGS - len/4], len);
+			memcpy(&pt_areg(childregs, XCHAL_NUM_AREGS - len/4),
+			       &pt_areg(regs, XCHAL_NUM_AREGS - len/4), len);
 		}
+#elif XCHAL_XEA_VERSION == 3
+		if (clone_flags & CLONE_VM) {
+			unsigned i;
+
+			for (i = 0; i < 16; ++i)
+				pt_areg(childregs, i) = pt_areg(regs, i);
+
+			/* TODO do we really need this in XEA3? */
+#if 0
+			if (pt_areg(regs, 1) == usp && (regs->windowbase & 0x0f000000)) {
+				pr_err("vfork special case!\n");
+				put_user(pt_areg(regs, 17 % XCHAL_NUM_AREGS),
+					 (unsigned __user*)(usp - 28));
+			}
+#endif
+			childregs->windowbase = 0;
+		} else {
+			unsigned i;
+
+			for (i = 0; i < XCHAL_NUM_AREGS; ++i)
+				pt_areg(childregs, i) = pt_areg(regs, i);
+		}
+		pt_areg(childregs, 1) = usp;
+		pt_areg(childregs, 2) = 0;
+#else
+#error Unsupported XEA version
+#endif
 
 		/* The thread pointer is passed in the '4th argument' (= a5) */
 		if (clone_flags & CLONE_SETTLS)
-			childregs->threadptr = childregs->areg[5];
+			childregs->threadptr = pt_areg(childregs, 5);
 	} else {
 		p->thread.ra = MAKE_RA_FOR_CALL(
 				(unsigned long)ret_from_kernel_thread, 1);
@@ -260,8 +306,8 @@ int copy_thread(unsigned long clone_flags, unsigned long usp_thread_fn,
 		/* pass parameters to ret_from_kernel_thread:
 		 * a2 = thread_fn, a3 = thread_fn arg
 		 */
-		SPILLED_REG(childregs, 3) = thread_fn_arg;
-		SPILLED_REG(childregs, 2) = usp_thread_fn;
+		SPILLED_REG(base, 3) = thread_fn_arg;
+		SPILLED_REG(base, 2) = usp_thread_fn;
 
 		/* Childregs are only used when we're going to userspace
 		 * in which case start_thread will set them up.
@@ -303,8 +349,8 @@ unsigned long get_wchan(struct task_struct *p)
 
 		/* Stack layout: sp-4: ra, sp-3: sp' */
 
-		pc = MAKE_PC_FROM_RA(*(unsigned long*)sp - 4, sp);
-		sp = *(unsigned long *)sp - 3;
+		pc = MAKE_PC_FROM_RA(SPILLED_REG(sp, 0), sp);
+		sp = SPILLED_REG(sp, 1);
 	} while (count++ < 16);
 	return 0;
 }
@@ -320,6 +366,7 @@ unsigned long get_wchan(struct task_struct *p)
 
 void xtensa_elf_core_copy_regs (xtensa_gregset_t *elfregs, struct pt_regs *regs)
 {
+#if XCHAL_XEA_VERSION <= 2
 	unsigned long wb, ws, wm;
 	int live, last;
 
@@ -348,6 +395,11 @@ void xtensa_elf_core_copy_regs (xtensa_gregset_t *elfregs, struct pt_regs *regs)
 	last = XCHAL_NUM_AREGS - (wm >> 4) * 4;
 	memcpy(elfregs->a, regs->areg, live * 4);
 	memcpy(elfregs->a + last, regs->areg + last, (wm >> 4) * 16);
+#elif XCHAL_XEA_VERSION == 3
+#warning TODO
+#else
+#error Unsupported XEA version
+#endif
 }
 
 int dump_fpu(void)

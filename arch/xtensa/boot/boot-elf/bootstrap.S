@@ -52,6 +52,7 @@ _bootparam:
 
 	.align  4
 _SetupMMU:
+#if XCHAL_XEA_VERSION <= 2
 	movi	a0, 0
 	wsr	a0, windowbase
 	rsync
@@ -61,6 +62,16 @@ _SetupMMU:
 	movi	a0, 0x1F
 	wsr	a0, ps
 	rsync
+#elif XCHAL_XEA_VERSION == 3
+	movi	a0, 0
+	wsr	a0, windowbase
+	rsync
+	movi	a0, PS_DI_MASK | (PS_STACK_KERNEL << PS_STACK_SHIFT)
+	wsr	a0, ps
+	rsync
+#else
+#error Unsupported XEA version
+#endif
 
 	Offset = _SetupMMU - _ResetVector
 

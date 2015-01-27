@@ -169,10 +169,10 @@ extern void xtensa_elf_core_copy_regs (xtensa_gregset_t *, struct pt_regs *);
  */
 
 #define ELF_PLAT_INIT(_r, load_addr) \
-	do { _r->areg[0]=0; /*_r->areg[1]=0;*/ _r->areg[2]=0;  _r->areg[3]=0;  \
-	     _r->areg[4]=0;  _r->areg[5]=0;    _r->areg[6]=0;  _r->areg[7]=0;  \
-	     _r->areg[8]=0;  _r->areg[9]=0;    _r->areg[10]=0; _r->areg[11]=0; \
-	     _r->areg[12]=0; _r->areg[13]=0;   _r->areg[14]=0; _r->areg[15]=0; \
+	do { pt_areg(_r, 0)=0; /*pt_areg(_r, 1)=0;*/ pt_areg(_r, 2)=0;  pt_areg(_r, 3)=0;  \
+	     pt_areg(_r, 4)=0;  pt_areg(_r, 5)=0;    pt_areg(_r, 6)=0;  pt_areg(_r, 7)=0;  \
+	     pt_areg(_r, 8)=0;  pt_areg(_r, 9)=0;    pt_areg(_r, 10)=0; pt_areg(_r, 11)=0; \
+	     pt_areg(_r, 12)=0; pt_areg(_r, 13)=0;   pt_areg(_r, 14)=0; pt_areg(_r, 15)=0; \
 	} while (0)
 
 typedef struct {

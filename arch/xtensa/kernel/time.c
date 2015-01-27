@@ -160,7 +160,9 @@ irqreturn_t timer_interrupt(int irq, void *dev_id)
 {
 	struct clock_event_device *evt = &this_cpu_ptr(&ccount_timer)->evt;
 
+#if XCHAL_XEA_VERSION <= 2
 	set_linux_timer(get_linux_timer());
+#endif
 	evt->event_handler(evt);
 
 	/* Allow platform to do something useful (Wdog). */

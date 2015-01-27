@@ -23,6 +23,7 @@ void secondary_trap_init(void);
 
 static inline void spill_registers(void)
 {
+#if XCHAL_XEA_VERSION <= 2
 #if XCHAL_NUM_AREGS > 16
 	__asm__ __volatile__ (
 		"	call12	1f\n"
@@ -53,6 +54,14 @@ static inline void spill_registers(void)
 	__asm__ __volatile__ (
 		"	mov	a12, a12\n"
 		: : : "memory");
+#endif
+#elif XCHAL_XEA_VERSION == 3
+	__asm__ __volatile__ (
+		"	ssai	0\n"
+		"	spillw\n"
+		: : : "memory");
+#else
+#error Unsupported XEA version
 #endif
 }
 

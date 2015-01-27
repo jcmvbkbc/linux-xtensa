@@ -26,7 +26,8 @@ void walk_stackframe(unsigned long *sp,
 
 	spill_registers();
 
-	while (a1 < sp_end) {
+#warning TODO
+	while (a1 /*< sp_end*/) {
 		struct stackframe frame;
 
 		sp = (unsigned long *)a1;

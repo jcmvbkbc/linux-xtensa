@@ -27,6 +27,7 @@
 
 int main(void)
 {
+#if XCHAL_XEA_VERSION <= 2
 	/* struct pt_regs */
 	DEFINE(PT_PC, offsetof (struct pt_regs, pc));
 	DEFINE(PT_PS, offsetof (struct pt_regs, ps));
@@ -67,6 +68,42 @@ int main(void)
 	DEFINE(PT_USER_SIZE, offsetof(struct pt_regs, areg[XCHAL_NUM_AREGS]));
 	DEFINE(PT_XTREGS_OPT, offsetof(struct pt_regs, xtregs_opt));
 	DEFINE(XTREGS_OPT_SIZE, sizeof(xtregs_opt_t));
+#elif XCHAL_XEA_VERSION == 3
+	DEFINE(PT_PC, offsetof (struct pt_regs, pc));
+	DEFINE(PT_PS, offsetof (struct pt_regs, ps));
+	DEFINE(PT_EXCCAUSE, offsetof (struct pt_regs, exccause));
+	DEFINE(PT_EXCVADDR, offsetof (struct pt_regs, excvaddr));
+	DEFINE(PT_LBEG, offsetof (struct pt_regs, lbeg));
+	DEFINE(PT_LEND, offsetof (struct pt_regs, lend));
+	DEFINE(PT_LCOUNT, offsetof (struct pt_regs, lcount));
+	DEFINE(PT_SYSCALL, offsetof (struct pt_regs, syscall));
+	DEFINE(PT_SCOMPARE1, offsetof(struct pt_regs, scompare1));
+	//DEFINE(PT_THREADPTR, offsetof(struct pt_regs, threadptr));
+	//DEFINE(PT_AREG, offsetof (struct pt_regs, areg[0]));
+	//DEFINE(PT_AREG0, offsetof (struct pt_regs, areg_low[0]));
+	//DEFINE(PT_AREG1, offsetof (struct pt_regs, areg_low[1]));
+	//DEFINE(PT_AREG2, offsetof (struct pt_regs, areg_low[2]));
+	//DEFINE(PT_AREG3, offsetof (struct pt_regs, areg_low[3]));
+	//DEFINE(PT_AREG4, offsetof (struct pt_regs, areg_low[4]));
+	//DEFINE(PT_AREG5, offsetof (struct pt_regs, areg_low[5]));
+	//DEFINE(PT_AREG6, offsetof (struct pt_regs, areg_low[6]));
+	//DEFINE(PT_AREG7, offsetof (struct pt_regs, areg_low[7]));
+	DEFINE(PT_AREG8, offsetof (struct pt_regs, areg_hi[0]));
+	DEFINE(PT_AREG9, offsetof (struct pt_regs, areg_hi[1]));
+	DEFINE(PT_AREG10, offsetof (struct pt_regs, areg_hi[2]));
+	DEFINE(PT_AREG11, offsetof (struct pt_regs, areg_hi[3]));
+	DEFINE(PT_AREG12, offsetof (struct pt_regs, areg_hi[4]));
+	DEFINE(PT_AREG13, offsetof (struct pt_regs, areg_hi[5]));
+	DEFINE(PT_AREG14, offsetof (struct pt_regs, areg_hi[6]));
+	DEFINE(PT_AREG15, offsetof (struct pt_regs, areg_hi[7]));
+	DEFINE(PT_WINDOWBASE, offsetof (struct pt_regs, windowbase));
+	DEFINE(PT_SIZE, sizeof(struct pt_regs));
+	//DEFINE(PT_XTREGS_OPT, offsetof(struct pt_regs, xtregs_opt));
+	//DEFINE(XTREGS_OPT_SIZE, sizeof(xtregs_opt_t));
+	DEFINE(THREAD_PS, offsetof (struct task_struct, thread.ps));
+#else
+#error Unsupported XEA version
+#endif
 
 	/* struct task_struct */
 	DEFINE(TASK_PTRACE, offsetof (struct task_struct, ptrace));

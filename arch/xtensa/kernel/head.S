@@ -64,6 +64,7 @@ ENTRY(_start)
 
 	.align	4
 _SetupOCD:
+#if XCHAL_XEA_VERSION <= 2
 	/*
 	 * Initialize WB, WS, and clear PS.EXCM (to allow loop instructions).
 	 * Set Interrupt Level just below XCHAL_DEBUGLEVEL to allow
@@ -79,6 +80,16 @@ _SetupOCD:
 	movi	a1, LOCKLEVEL
 	wsr	a1, ps
 	rsync
+#elif XCHAL_XEA_VERSION == 3
+	movi	a0, 0
+	wsr	a0, windowbase
+	rsync
+	movi	a0, PS_DI_MASK | (PS_STACK_KERNEL << PS_STACK_SHIFT)
+	wsr	a0, ps
+	rsync
+#else
+#error Unsupported XEA version
+#endif
 
 	.global _SetupMMU
 _SetupMMU:
@@ -147,11 +158,13 @@ ENTRY(_startup)
 	.set	_index, _index + 1
 	.endr
 
+#if XCHAL_XEA_VERSION <= 2
 	/* Interrupt initialization. */
 
 	movi	a2, XCHAL_INTTYPE_MASK_SOFTWARE | XCHAL_INTTYPE_MASK_EXTERN_EDGE
 	wsr	a0, intenable
 	wsr	a2, intclear
+#endif
 
 	/* Disable coprocessors. */
 
@@ -187,6 +200,7 @@ ENTRY(_startup)
 	movi	a1, start_info
 	l32i	a1, a1, 0
 
+#if XCHAL_XEA_VERSION <= 2
 	movi	a2, (1 << PS_WOE_BIT) | LOCKLEVEL
 					# WOE=1, INTLEVEL=LOCKLEVEL, UM=0
 	wsr	a2, ps			# (enable reg-windows; progmode stack)
@@ -196,6 +210,14 @@ ENTRY(_startup)
 
 	movi	a2, debug_exception
 	wsr	a2, SREG_EXCSAVE + XCHAL_DEBUGLEVEL
+#elif XCHAL_XEA_VERSION == 3
+	wsr	a1, ksb
+	movi	a2, 0x80000000
+	wsr	a2, windowbase
+	rsync
+#else
+#error Unsupported XEA version
+#endif
 
 #ifdef CONFIG_SMP
 	/*
@@ -259,16 +281,29 @@ ENTRY(_startup)
 	___invalidate_icache_all a2 a3
 	isync
 
+	/* init_arch kick-starts the linux kernel */
+
+#if XCHAL_XEA_VERSION <= 2
 	movi	a6, 0
 	xsr	a6, excsave1
-
-	/* init_arch kick-starts the linux kernel */
 
 	movi	a4, init_arch
 	callx4	a4
 
 	movi	a4, start_kernel
 	callx4	a4
+#elif XCHAL_XEA_VERSION == 3
+	movi	a10, 0
+	xsr	a10, excsave1
+
+	movi	a8, init_arch
+	callx8	a8
+
+	movi	a8, start_kernel
+	callx8	a8
+#else
+#error Unsupported XEA version
+#endif
 
 should_never_return:
 	j	should_never_return
