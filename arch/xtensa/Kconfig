@@ -129,6 +129,18 @@ config XTENSA_VARIANT_NAME
 	default "s6000"				if XTENSA_VARIANT_S6000
 	default XTENSA_VARIANT_CUSTOM_NAME	if XTENSA_VARIANT_CUSTOM
 
+choice
+	prompt "Xtensa Exception Architecture"
+	default XTENSA_XEA2
+
+config XTENSA_XEA2
+	bool "XEA2 and older"
+
+config XTENSA_XEA3
+	bool "XEA3"
+
+endchoice
+
 config XTENSA_VARIANT_MMU
 	bool "Core variant has a Full MMU (TLB, Pages, Protection, etc)"
 	depends on XTENSA_VARIANT_CUSTOM
