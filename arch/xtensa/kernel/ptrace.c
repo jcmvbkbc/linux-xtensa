@@ -124,7 +124,7 @@ int ptrace_setregs(struct task_struct *child, void __user *uregs)
 }
 
 
-int ptrace_getxregs(struct task_struct *child, void __user *uregs)
+static int ptrace_getxregs(struct task_struct *child, void __user *uregs)
 {
 	struct pt_regs *regs = task_pt_regs(child);
 	struct thread_info *ti = task_thread_info(child);
@@ -148,7 +148,7 @@ int ptrace_getxregs(struct task_struct *child, void __user *uregs)
 	return ret ? -EFAULT : 0;
 }
 
-int ptrace_setxregs(struct task_struct *child, void __user *uregs)
+static int ptrace_setxregs(struct task_struct *child, void __user *uregs)
 {
 	struct thread_info *ti = task_thread_info(child);
 	struct pt_regs *regs = task_pt_regs(child);
@@ -239,7 +239,7 @@ int ptrace_peekusr(struct task_struct *child, long regno, long __user *ret)
 	return put_user(tmp, ret);
 }
 
-int ptrace_pokeusr(struct task_struct *child, long regno, long val)
+static int ptrace_pokeusr(struct task_struct *child, long regno, long val)
 {
 	struct pt_regs *regs;
 	regs = task_pt_regs(child);
