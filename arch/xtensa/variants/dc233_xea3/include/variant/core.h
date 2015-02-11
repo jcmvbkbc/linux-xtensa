@@ -288,8 +288,8 @@
 	/* (always 1 in XEA1; levels 2 .. EXCM_LEVEL are "medium priority") */
 
 /*  Masks of interrupts at each interrupt level:  */
-#define XCHAL_INTLEVEL1_MASK		0x001F80FF
-#define XCHAL_INTLEVEL2_MASK		0x00000100
+#define XCHAL_INTLEVEL1_MASK		0x001F80BC
+#define XCHAL_INTLEVEL2_MASK		0x00000143
 #define XCHAL_INTLEVEL3_MASK		0x00200E00
 #define XCHAL_INTLEVEL4_MASK		0x00001000
 #define XCHAL_INTLEVEL5_MASK		0x00002000
@@ -297,7 +297,7 @@
 #define XCHAL_INTLEVEL7_MASK		0x00004000
 
 /*  Masks of interrupts at each range 1..n of interrupt levels:  */
-#define XCHAL_INTLEVEL1_ANDBELOW_MASK	0x001F80FF
+#define XCHAL_INTLEVEL1_ANDBELOW_MASK	0x001F80BC
 #define XCHAL_INTLEVEL2_ANDBELOW_MASK	0x001F81FF
 #define XCHAL_INTLEVEL3_ANDBELOW_MASK	0x003F8FFF
 #define XCHAL_INTLEVEL4_ANDBELOW_MASK	0x003F9FFF
@@ -306,13 +306,13 @@
 #define XCHAL_INTLEVEL7_ANDBELOW_MASK	0x003FFFFF
 
 /*  Level of each interrupt:  */
-#define XCHAL_INT0_LEVEL		1
-#define XCHAL_INT1_LEVEL		1
+#define XCHAL_INT0_LEVEL		2
+#define XCHAL_INT1_LEVEL		2
 #define XCHAL_INT2_LEVEL		1
 #define XCHAL_INT3_LEVEL		1
 #define XCHAL_INT4_LEVEL		1
 #define XCHAL_INT5_LEVEL		1
-#define XCHAL_INT6_LEVEL		1
+#define XCHAL_INT6_LEVEL		2
 #define XCHAL_INT7_LEVEL		1
 #define XCHAL_INT8_LEVEL		2
 #define XCHAL_INT9_LEVEL		3
@@ -375,7 +375,6 @@
 #define XCHAL_NMI_INTERRUPT		14	/* non-maskable interrupt */
 
 /*  Interrupt numbers for levels at which only one interrupt is configured:  */
-#define XCHAL_INTLEVEL2_NUM		8
 #define XCHAL_INTLEVEL4_NUM		12
 #define XCHAL_INTLEVEL5_NUM		13
 #define XCHAL_INTLEVEL7_NUM		14
