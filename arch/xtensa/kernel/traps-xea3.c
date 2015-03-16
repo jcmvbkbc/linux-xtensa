@@ -310,7 +310,7 @@ do_debug(struct pt_regs *regs)
 	force_sig(SIGTRAP, current);
 }
 
-void do_syscall_trace_enter(struct pt_regs *regs);
+unsigned long do_syscall_trace_enter(struct pt_regs *regs);
 void do_syscall_trace_leave(struct pt_regs *regs);
 extern void *sys_call_table[];
 void do_system_call(struct pt_regs *regs)
@@ -320,8 +320,8 @@ void do_system_call(struct pt_regs *regs)
 	regs->pc += 3;
 	spill_registers();
 	barrier();
-	idx = pt_areg(regs, 2);
-	do_syscall_trace_enter(regs);
+	regs->syscall = pt_areg(regs, 2);
+	idx = do_syscall_trace_enter(regs);
 	regs->syscall = idx;
 	if (idx < __NR_syscall_count) {
 		unsigned long (*handler)(unsigned long, ...) =

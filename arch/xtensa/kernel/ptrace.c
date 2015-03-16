@@ -13,6 +13,7 @@
  * Marc Gauthier<marc@tensilica.com> <marc@alumni.uwaterloo.ca>
  */
 
+#include <linux/audit.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
@@ -21,6 +22,7 @@
 #include <linux/smp.h>
 #include <linux/security.h>
 #include <linux/signal.h>
+#include <linux/tracehook.h>
 
 #include <asm/pgtable.h>
 #include <asm/page.h>
@@ -225,39 +227,28 @@ long arch_ptrace(struct task_struct *child, long request,
 	return ret;
 }
 
-void do_syscall_trace(void)
+unsigned long do_syscall_trace_enter(struct pt_regs *regs)
 {
-	/*
-	 * The 0x80 provides a way for the tracing parent to distinguish
-	 * between a syscall stop and SIGTRAP delivery
-	 */
-	ptrace_notify(SIGTRAP|((current->ptrace & PT_TRACESYSGOOD) ? 0x80 : 0));
+	unsigned long ret = 0;
 
-	/*
-	 * this isn't the same as continuing with a signal, but it will do
-	 * for normal use.  strace only continues with a signal if the
-	 * stopping signal is not SIGTRAP.  -brl
-	 */
-	if (current->exit_code) {
-		send_sig(current->exit_code, current, 1);
-		current->exit_code = 0;
-	}
-}
+	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
+	    tracehook_report_syscall_entry(regs))
+		ret = -1;
 
-void do_syscall_trace_enter(struct pt_regs *regs)
-{
-	if (test_thread_flag(TIF_SYSCALL_TRACE)
-			&& (current->ptrace & PT_PTRACED))
-		do_syscall_trace();
+	audit_syscall_entry(pt_areg(regs, 2), pt_areg(regs, 6),
+			    pt_areg(regs, 3), pt_areg(regs, 4),
+			    pt_areg(regs, 5));
 
-#if 0
-	audit_syscall_entry(...);
-#endif
+	return ret ? -1 : pt_areg(regs, 2);
 }
 
 void do_syscall_trace_leave(struct pt_regs *regs)
 {
-	if ((test_thread_flag(TIF_SYSCALL_TRACE))
-			&& (current->ptrace & PT_PTRACED))
-		do_syscall_trace();
+	int step;
+
+	audit_syscall_exit(regs);
+
+	step = test_thread_flag(TIF_SINGLESTEP);
+	if (step || test_thread_flag(TIF_SYSCALL_TRACE))
+		tracehook_report_syscall_exit(regs, step);
 }
