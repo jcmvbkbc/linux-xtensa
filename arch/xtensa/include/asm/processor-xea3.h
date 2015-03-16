@@ -23,27 +23,6 @@
 #define TASK_SIZE	(PLATFORM_DEFAULT_MEM_START + PLATFORM_DEFAULT_MEM_SIZE)
 #endif
 
-/*
- * General exception cause assigned to debug exceptions. Debug exceptions go
- * to their own vector, rather than the general exception vectors (user,
- * kernel, double); and their specific causes are reported via DEBUGCAUSE
- * rather than EXCCAUSE.  However it is sometimes convenient to redirect debug
- * exceptions to the general exception mechanism.  To do this, an otherwise
- * unused EXCCAUSE value was assigned to debug exceptions for this purpose.
- */
-
-#define EXCCAUSE_MAPPED_DEBUG	63
-
-/*
- * We use DEPC also as a flag to distinguish between double and regular
- * exceptions. For performance reasons, DEPC might contain the value of
- * EXCCAUSE for regular exceptions, so we use this definition to mark a
- * valid double exception address.
- * (Note: We use it in bgeui, so it should be 64, 128, or 256)
- */
-
-#define VALID_DOUBLE_EXCEPTION_ADDRESS	64
-
 /* LOCKLEVEL defines the interrupt level that masks all
  * general-purpose interrupts.
  */

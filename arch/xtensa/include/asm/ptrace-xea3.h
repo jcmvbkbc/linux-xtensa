@@ -45,7 +45,6 @@ struct pt_regs {
 	union {
 		unsigned long dummy;
 		unsigned long sar;		/*  44 */
-		unsigned long icountlevel;	/*  60 */
 	};
 	unsigned long threadptr;	/*  68 */
 	unsigned long syscall;		/*  56 */

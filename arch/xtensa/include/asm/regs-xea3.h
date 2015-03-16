@@ -82,6 +82,7 @@
 #define EXCCAUSE_DEBUG_BREAK				0
 #define EXCCAUSE_DEBUG_IBREAK				2
 #define EXCCAUSE_DEBUG_DBREAK				3
+#define EXCCAUSE_DEBUG_SINGLE_STEP			4
 
 
 /* XEA2-compatible exception cause mappings */
@@ -130,6 +131,11 @@
 //#define EXCCAUSE_COPROCESSOR7_DISABLED		39
 #endif
 
+#define EXCCAUSE_DEBUG_BI			0x204
+#define EXCCAUSE_DEBUG_BN			0x104
+#define EXCCAUSE_DEBUG_IB			0x024
+#define EXCCAUSE_DEBUG_DB			0x034
+#define EXCCAUSE_DEBUG_SS			0x044
 
 /*  PS register fields.  */
 
@@ -153,6 +159,10 @@
 #define PS_STACK_FIRST_INT	4
 #define PS_STACK_FIRST_KER	5
 #define PS_STACK_PAGE		7
+
+#define PS_SS_CONTINUE		0
+#define PS_SS_ONE_INSTRUCTION	2
+#define PS_SS_SS_EXCEPTION	3
 
 /*  DBREAKCn register fields.  */
 

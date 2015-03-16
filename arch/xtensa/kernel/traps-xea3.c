@@ -145,7 +145,10 @@ COPROCESSOR(6),
 #if XTENSA_HAVE_COPROCESSOR(7)
 COPROCESSOR(7),
 #endif
-{ EXCCAUSE_MAPPED_DEBUG,		0,		do_debug },
+{ EXCCAUSE_DEBUG_BI,			0,		do_debug },
+{ EXCCAUSE_DEBUG_IB,			0,		do_debug },
+{ EXCCAUSE_DEBUG_DB,			0,		do_debug },
+{ EXCCAUSE_DEBUG_SS,			0,		do_debug },
 { -1, -1, 0 }
 #endif
 };

@@ -384,7 +384,7 @@ static void do_signal(struct pt_regs *regs)
 {
 	struct ksignal ksig;
 
-	task_pt_regs(current)->icountlevel = 0;
+	task_pt_regs(current)->ps &= ~PS_SS_MASK;
 
 	spill_registers();
 	barrier();
@@ -427,7 +427,8 @@ static void do_signal(struct pt_regs *regs)
 		ret = setup_frame(&ksig, sigmask_to_save(), regs);
 		signal_setup_done(ret, &ksig, 0);
 		if (current->ptrace & PT_SINGLESTEP)
-			task_pt_regs(current)->icountlevel = 1;
+			task_pt_regs(current)->ps |=
+				PS_SS_ONE_INSTRUCTION << PS_SS_SHIFT;
 
 		return;
 	}
@@ -453,7 +454,8 @@ static void do_signal(struct pt_regs *regs)
 	restore_saved_sigmask();
 
 	if (current->ptrace & PT_SINGLESTEP)
-		task_pt_regs(current)->icountlevel = 1;
+		task_pt_regs(current)->ps |=
+			PS_SS_ONE_INSTRUCTION << PS_SS_SHIFT;
 	return;
 }
 
