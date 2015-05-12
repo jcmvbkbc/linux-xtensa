@@ -41,14 +41,14 @@ _TailChainSegment:
 	l32dis	a11, a1, 3
 _TailChainSegmentException:
 	rsil	a15, LOCKLEVEL
-	s32dis	a12, a1, 0 /* 128 bytes stack frame */
+	s32stk	a12, a1, 0 /* 128 bytes stack frame */
 #if PT_SIZE > 128
 	addi	a9, a9, -((PT_SIZE - 128 + 0xf) & 0xfffffff0)
 	addi	a10, a9, ((-PT_SIZE) & 0x0000000f)
 #elif PT_SIZE < 128
 	addi	a10, a9, 128 - PT_SIZE
 #endif
-	s32dis	a8, a1, 4
+	s32dis	a8, a1, 0
 
 _ExitSegment:
 	l32dis	a13, a1, 13
@@ -95,14 +95,14 @@ _EntrySegment:
 	l32dis	a10, a1, 1
 	l32dis	a11, a1, 3
 	rsil	a15, LOCKLEVEL
-	s32dis	a13, a1, 8 /* 128 bytes stack frame */
+	s32stk	a13, a1, 4 /* 128 bytes stack frame */
 #if PT_SIZE > 128
 	addi	a9, a9, -((PT_SIZE - 128 + 0xf) & 0xfffffff0)
 	addi	a10, a9, ((-PT_SIZE) & 0x0000000f)
 #elif PT_SIZE < 128
 	addi	a10, a9, 128 - PT_SIZE
 #endif
-	s32dis	a12, a1, 12
+	s32dis	a12, a1, 4
 
 //Exception
 
