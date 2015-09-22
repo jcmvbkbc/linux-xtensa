@@ -115,6 +115,7 @@ static const struct regmap_config xtfpga_i2s_regmap_config = {
 	.readable_reg = xtfpga_i2s_rd_reg,
 	.volatile_reg = xtfpga_i2s_volatile_reg,
 	.cache_type = REGCACHE_FLAT,
+	.val_format_endian = REGMAP_ENDIAN_LITTLE,
 };
 
 /* Generate functions that do PIO from TX DMA area to FIFO for all supported
@@ -136,9 +137,9 @@ static unsigned xtfpga_pcm_tx_##channels##x##sample_bits( \
 \
 	for (; i2s->tx_fifo_level < i2s->tx_fifo_high; \
 	     i2s->tx_fifo_level += 2) { \
-		iowrite32(p[tx_ptr][0], \
+		__raw_writel(le##sample_bits##_to_cpu(p[tx_ptr][0]), \
 			  i2s->regs + XTFPGA_I2S_CHAN0_DATA); \
-		iowrite32(p[tx_ptr][channels - 1], \
+		__raw_writel(le##sample_bits##_to_cpu(p[tx_ptr][channels - 1]), \
 			  i2s->regs + XTFPGA_I2S_CHAN0_DATA); \
 		if (++tx_ptr >= runtime->buffer_size) \
 			tx_ptr = 0; \
