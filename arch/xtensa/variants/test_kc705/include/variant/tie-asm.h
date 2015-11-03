@@ -8,7 +8,7 @@
    macros, etc.) for this specific Xtensa processor's TIE extensions
    and options.  It is customized to this Xtensa processor configuration.
 
-   Copyright (c) 1999-2013 Tensilica Inc.
+   Copyright (c) 1999-2014 Tensilica Inc.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -86,15 +86,37 @@
 	xchal_sa_align	\ptr, 0, 1020, 4, 4
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	// Optional caller-saved register not used by default by the compiler:
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	rsr.SCOMPARE1	\at1		// conditional store option
+	// Optional caller-saved registers used by default by the compiler:
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_CALR) & ~(\select)
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
+	rsr.ACCLO	\at1		// MAC16 option
 	s32i	\at1, \ptr, .Lxchal_ofs_+0
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	rsr.ACCHI	\at1		// MAC16 option
+	s32i	\at1, \ptr, .Lxchal_ofs_+4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
+	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
+	.endif
+	// Optional caller-saved registers not used by default by the compiler:
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
+	xchal_sa_align	\ptr, 0, 1000, 4, 4
+	rsr.M0	\at1		// MAC16 option
+	s32i	\at1, \ptr, .Lxchal_ofs_+0
+	rsr.M1	\at1		// MAC16 option
+	s32i	\at1, \ptr, .Lxchal_ofs_+4
+	rsr.M2	\at1		// MAC16 option
+	s32i	\at1, \ptr, .Lxchal_ofs_+8
+	rsr.M3	\at1		// MAC16 option
+	s32i	\at1, \ptr, .Lxchal_ofs_+12
+	rsr.BR	\at1		// boolean option
+	s32i	\at1, \ptr, .Lxchal_ofs_+16
+	rsr.SCOMPARE1	\at1		// conditional store option
+	s32i	\at1, \ptr, .Lxchal_ofs_+20
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 24
 	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	xchal_sa_align	\ptr, 0, 1000, 4, 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 24
 	.endif
     .endm	// xchal_ncp_store
 
@@ -130,15 +152,37 @@
 	xchal_sa_align	\ptr, 0, 1020, 4, 4
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	// Optional caller-saved register not used by default by the compiler:
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
+	// Optional caller-saved registers used by default by the compiler:
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_CALR) & ~(\select)
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
 	l32i	\at1, \ptr, .Lxchal_ofs_+0
+	wsr.ACCLO	\at1		// MAC16 option
+	l32i	\at1, \ptr, .Lxchal_ofs_+4
+	wsr.ACCHI	\at1		// MAC16 option
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
+	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
+	.endif
+	// Optional caller-saved registers not used by default by the compiler:
+	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
+	xchal_sa_align	\ptr, 0, 1000, 4, 4
+	l32i	\at1, \ptr, .Lxchal_ofs_+0
+	wsr.M0	\at1		// MAC16 option
+	l32i	\at1, \ptr, .Lxchal_ofs_+4
+	wsr.M1	\at1		// MAC16 option
+	l32i	\at1, \ptr, .Lxchal_ofs_+8
+	wsr.M2	\at1		// MAC16 option
+	l32i	\at1, \ptr, .Lxchal_ofs_+12
+	wsr.M3	\at1		// MAC16 option
+	l32i	\at1, \ptr, .Lxchal_ofs_+16
+	wsr.BR	\at1		// boolean option
+	l32i	\at1, \ptr, .Lxchal_ofs_+20
 	wsr.SCOMPARE1	\at1		// conditional store option
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 24
 	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	xchal_sa_align	\ptr, 0, 1000, 4, 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 24
 	.endif
     .endm	// xchal_ncp_load
 

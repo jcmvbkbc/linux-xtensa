@@ -86,15 +86,17 @@
 	xchal_sa_align	\ptr, 0, 1020, 4, 4
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	// Optional caller-saved register not used by default by the compiler:
+	// Optional caller-saved registers not used by default by the compiler:
 	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	rsr.SCOMPARE1	\at1		// conditional store option
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
+	rsr.BR	\at1		// boolean option
 	s32i	\at1, \ptr, .Lxchal_ofs_+0
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	rsr.SCOMPARE1	\at1		// conditional store option
+	s32i	\at1, \ptr, .Lxchal_ofs_+4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
 	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
 	.endif
     .endm	// xchal_ncp_store
 
@@ -130,15 +132,17 @@
 	xchal_sa_align	\ptr, 0, 1020, 4, 4
 	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
 	.endif
-	// Optional caller-saved register not used by default by the compiler:
+	// Optional caller-saved registers not used by default by the compiler:
 	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
 	l32i	\at1, \ptr, .Lxchal_ofs_+0
+	wsr.BR	\at1		// boolean option
+	l32i	\at1, \ptr, .Lxchal_ofs_+4
 	wsr.SCOMPARE1	\at1		// conditional store option
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
 	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
+	xchal_sa_align	\ptr, 0, 1016, 4, 4
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 8
 	.endif
     .endm	// xchal_ncp_load
 
@@ -147,7 +151,113 @@
 
 
 
+
+    /*
+     *  Macro to save the state of TIE coprocessor AudioEngineLX.
+     *  Required parameters:
+     *      ptr		Save area pointer address register (clobbered)
+     *			(register must contain a 8 byte aligned address).
+     *      at1..at4	Four temporary address registers (first XCHAL_CP1_NUM_ATMPS
+     *			registers are clobbered, the remaining are unused).
+     *  Optional parameters are the same as for xchal_ncp_store.
+     */
+#define xchal_cp_AudioEngineLX_store	xchal_cp1_store
+    .macro	xchal_cp1_store  ptr at1 at2 at3 at4  continue=0 ofs=-1 select=XTHAL_SAS_ALL alloc=0
+	xchal_sa_start \continue, \ofs
+	// Custom caller-saved registers not used by default by the compiler:
+	.ifeq (XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
+	xchal_sa_align	\ptr, 0, 0, 8, 8
+	rur.AE_OVF_SAR	\at1		// ureg 240
+	s32i	\at1, \ptr, .Lxchal_ofs_+0
+	rur.AE_BITHEAD	\at1		// ureg 241
+	s32i	\at1, \ptr, .Lxchal_ofs_+4
+	rur.AE_TS_FTS_BU_BP	\at1		// ureg 242
+	s32i	\at1, \ptr, .Lxchal_ofs_+8
+	rur.AE_SD_NO	\at1		// ureg 243
+	s32i	\at1, \ptr, .Lxchal_ofs_+12
+	AE_SP24X2S.I	aep0, \ptr, .Lxchal_ofs_+16
+	AE_SP24X2S.I	aep1, \ptr, .Lxchal_ofs_+24
+	AE_SP24X2S.I	aep2, \ptr, .Lxchal_ofs_+32
+	AE_SP24X2S.I	aep3, \ptr, .Lxchal_ofs_+40
+	AE_SP24X2S.I	aep4, \ptr, .Lxchal_ofs_+48
+	AE_SP24X2S.I	aep5, \ptr, .Lxchal_ofs_+56
+	addi	\ptr, \ptr, 64
+	AE_SP24X2S.I	aep6, \ptr, .Lxchal_ofs_+0
+	AE_SP24X2S.I	aep7, \ptr, .Lxchal_ofs_+8
+	AE_SQ56S.I	aeq0, \ptr, .Lxchal_ofs_+16
+	AE_SQ56S.I	aeq1, \ptr, .Lxchal_ofs_+24
+	AE_SQ56S.I	aeq2, \ptr, .Lxchal_ofs_+32
+	AE_SQ56S.I	aeq3, \ptr, .Lxchal_ofs_+40
+	.set	.Lxchal_pofs_, .Lxchal_pofs_ + 64
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 48
+	.elseif ((XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
+	xchal_sa_align	\ptr, 0, 0, 8, 8
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 112
+	.endif
+    .endm	// xchal_cp1_store
+
+    /*
+     *  Macro to restore the state of TIE coprocessor AudioEngineLX.
+     *  Required parameters:
+     *      ptr		Save area pointer address register (clobbered)
+     *			(register must contain a 8 byte aligned address).
+     *      at1..at4	Four temporary address registers (first XCHAL_CP1_NUM_ATMPS
+     *			registers are clobbered, the remaining are unused).
+     *  Optional parameters are the same as for xchal_ncp_load.
+     */
+#define xchal_cp_AudioEngineLX_load	xchal_cp1_load
+    .macro	xchal_cp1_load  ptr at1 at2 at3 at4  continue=0 ofs=-1 select=XTHAL_SAS_ALL alloc=0
+	xchal_sa_start \continue, \ofs
+	// Custom caller-saved registers not used by default by the compiler:
+	.ifeq (XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
+	xchal_sa_align	\ptr, 0, 0, 8, 8
+	l32i	\at1, \ptr, .Lxchal_ofs_+0
+	wur.AE_OVF_SAR	\at1		// ureg 240
+	l32i	\at1, \ptr, .Lxchal_ofs_+4
+	wur.AE_BITHEAD	\at1		// ureg 241
+	l32i	\at1, \ptr, .Lxchal_ofs_+8
+	wur.AE_TS_FTS_BU_BP	\at1		// ureg 242
+	l32i	\at1, \ptr, .Lxchal_ofs_+12
+	wur.AE_SD_NO	\at1		// ureg 243
+	AE_LP24X2.I	aep0, \ptr, .Lxchal_ofs_+16
+	AE_LP24X2.I	aep1, \ptr, .Lxchal_ofs_+24
+	AE_LP24X2.I	aep2, \ptr, .Lxchal_ofs_+32
+	AE_LP24X2.I	aep3, \ptr, .Lxchal_ofs_+40
+	AE_LP24X2.I	aep4, \ptr, .Lxchal_ofs_+48
+	AE_LP24X2.I	aep5, \ptr, .Lxchal_ofs_+56
+	addi	\ptr, \ptr, 64
+	AE_LP24X2.I	aep6, \ptr, .Lxchal_ofs_+0
+	AE_LP24X2.I	aep7, \ptr, .Lxchal_ofs_+8
+	AE_LQ56.I	aeq0, \ptr, .Lxchal_ofs_+16
+	AE_LQ56.I	aeq1, \ptr, .Lxchal_ofs_+24
+	AE_LQ56.I	aeq2, \ptr, .Lxchal_ofs_+32
+	AE_LQ56.I	aeq3, \ptr, .Lxchal_ofs_+40
+	.set	.Lxchal_pofs_, .Lxchal_pofs_ + 64
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 48
+	.elseif ((XTHAL_SAS_TIE | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\alloc)) == 0
+	xchal_sa_align	\ptr, 0, 0, 8, 8
+	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 112
+	.endif
+    .endm	// xchal_cp1_load
+
+#define XCHAL_CP1_NUM_ATMPS	1
 #define XCHAL_SA_NUM_ATMPS	1
+
+	/*  Empty macros for unconfigured coprocessors:  */
+	.macro xchal_cp0_store	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp0_load	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp2_store	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp2_load	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp3_store	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp3_load	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp4_store	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp4_load	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp5_store	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp5_load	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp6_store	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp6_load	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp7_store	p a b c d continue=0 ofs=-1 select=-1 ; .endm
+	.macro xchal_cp7_load	p a b c d continue=0 ofs=-1 select=-1 ; .endm
 
 #endif /*_XTENSA_CORE_TIE_ASM_H*/
 

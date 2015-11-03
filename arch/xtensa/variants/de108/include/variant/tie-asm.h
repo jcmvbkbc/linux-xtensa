@@ -76,16 +76,6 @@
      */
     .macro xchal_ncp_store  ptr at1 at2 at3 at4  continue=0 ofs=-1 select=XTHAL_SAS_ALL alloc=0
 	xchal_sa_start	\continue, \ofs
-	// Optional global register used by default by the compiler:
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~(\select)
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	rur.THREADPTR	\at1		// threadptr option
-	s32i	\at1, \ptr, .Lxchal_ofs_+0
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
-	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~(\alloc)) == 0
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
-	.endif
 	// Optional caller-saved register not used by default by the compiler:
 	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
 	xchal_sa_align	\ptr, 0, 1020, 4, 4
@@ -120,16 +110,6 @@
      */
     .macro xchal_ncp_load  ptr at1 at2 at3 at4  continue=0 ofs=-1 select=XTHAL_SAS_ALL alloc=0
 	xchal_sa_start	\continue, \ofs
-	// Optional global register used by default by the compiler:
-	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~(\select)
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	l32i	\at1, \ptr, .Lxchal_ofs_+0
-	wur.THREADPTR	\at1		// threadptr option
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
-	.elseif ((XTHAL_SAS_OPT | XTHAL_SAS_CC | XTHAL_SAS_GLOB) & ~(\alloc)) == 0
-	xchal_sa_align	\ptr, 0, 1020, 4, 4
-	.set	.Lxchal_ofs_, .Lxchal_ofs_ + 4
-	.endif
 	// Optional caller-saved register not used by default by the compiler:
 	.ifeq (XTHAL_SAS_OPT | XTHAL_SAS_NOCC | XTHAL_SAS_CALR) & ~(\select)
 	xchal_sa_align	\ptr, 0, 1020, 4, 4

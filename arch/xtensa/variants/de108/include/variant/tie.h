@@ -38,7 +38,7 @@
 #define XCHAL_CP_PORT_MASK		0x00	/* bitmask of only port CPs */
 
 /*  Save area for non-coprocessor optional and custom (TIE) state:  */
-#define XCHAL_NCP_SA_SIZE		8
+#define XCHAL_NCP_SA_SIZE		4
 #define XCHAL_NCP_SA_ALIGN		4
 
 /*  Total save area for optional and custom state (NCP + CPn):  */
@@ -85,9 +85,8 @@
  *		...what you want to expand...
  */
 
-#define XCHAL_NCP_SA_NUM	2
+#define XCHAL_NCP_SA_NUM	1
 #define XCHAL_NCP_SA_LIST(s)	\
- XCHAL_SA_REG(s,1,2,1,1,      threadptr, 4, 4, 4,0x03E7,  ur,231, 32,0,0,0) \
  XCHAL_SA_REG(s,0,0,0,1,      scompare1, 4, 4, 4,0x020C,  sr,12 , 32,0,0,0)
 
 #define XCHAL_CP0_SA_NUM	0
@@ -116,6 +115,16 @@
 
 /* Byte length of instruction from its first nibble (op0 field), per FLIX.  */
 #define XCHAL_OP0_FORMAT_LENGTHS	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3
+/* Byte length of instruction from its first byte, per FLIX.  */
+#define XCHAL_BYTE0_FORMAT_LENGTHS	\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,\
+	3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3, 3,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3
 
 #endif /*_XTENSA_CORE_TIE_H*/
 
