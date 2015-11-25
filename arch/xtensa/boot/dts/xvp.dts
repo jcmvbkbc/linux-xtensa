@@ -1,0 +1,51 @@
+/dts-v1/;
+
+/ {
+	compatible = "cdns,xtensa-iss";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "console=ttyS0,115200n8 debug eth0=tuntap,,tap9 root=/dev/simdisk0";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x08000000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges = <0x00000000 0xf0000000 0x10000000>;
+
+		xvp: xvp@00000000 {
+			compatible = "cdns,xvp";
+			reg = <0x0c000000 0x00002000
+			       0x00000000 0x00001000
+			       0x00001000 0x00fff000>;
+			interrupts = <5 1>;
+		};
+	};
+};
