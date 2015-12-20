@@ -48,14 +48,14 @@ static inline unsigned long xtensa_get_kio_paddr(void)
 #if defined(CONFIG_MMU)
 
 /* Will Become VECBASE */
-#define VIRTUAL_MEMORY_ADDRESS		0xD0000000
+#define VIRTUAL_MEMORY_ADDRESS		0xD0050000
 
 /* Image Virtual Start Address */
-#define KERNELOFFSET			0xD0003000
+#define KERNELOFFSET			0xD0053000
 
 #if defined(XCHAL_HAVE_PTP_MMU) && XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
   /* MMU v3  - XCHAL_HAVE_PTP_MMU  == 1 */
-  #define LOAD_MEMORY_ADDRESS		0x00003000
+  #define LOAD_MEMORY_ADDRESS		0x00053000
 #else
   /* MMU V2 -  XCHAL_HAVE_PTP_MMU  == 0 */
   #define LOAD_MEMORY_ADDRESS		0xD0003000
