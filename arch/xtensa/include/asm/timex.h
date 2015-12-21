@@ -32,7 +32,7 @@ extern unsigned long ccount_freq;
 
 typedef unsigned long long cycles_t;
 
-#define get_cycles()	(0)
+#define get_cycles()	(get_ccount())
 
 void local_timer_setup(unsigned cpu);
 
