@@ -28,14 +28,19 @@
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
 
-#define SERIAL_MAX_NUM_LINES 1
+#define SERIAL_MAX_NUM_LINES 2
 #define SERIAL_TIMER_VALUE (HZ / 10)
 
 static struct tty_driver *serial_driver;
-static struct tty_port serial_port;
+static struct tty_port serial_port[SERIAL_MAX_NUM_LINES];
 static struct timer_list serial_timer;
+static struct {
+	int rd_fd;
+	int wr_fd;
+} serial_fd[SERIAL_MAX_NUM_LINES] = { { .rd_fd = 0, .wr_fd = 1 } };
 
 static DEFINE_SPINLOCK(timer_lock);
+static int line_count;
 
 static char *serial_version = "0.1";
 static char *serial_name = "ISS serial driver";
@@ -51,11 +56,24 @@ static void rs_poll(unsigned long);
 
 static int rs_open(struct tty_struct *tty, struct file * filp)
 {
-	tty->port = &serial_port;
+	tty->port = serial_port + tty->index;
+	if (tty->index) {
+		char rd_name[] = "serialrd0";
+		char wr_name[] = "serialwr0";
+
+		rd_name[8] += tty->index;
+		wr_name[8] += tty->index;
+		serial_fd[tty->index].wr_fd = simc_open(wr_name, O_WRONLY, 0);
+		serial_fd[tty->index].rd_fd = simc_open(rd_name, O_RDONLY, 0);
+
+		pr_debug("%s: %s -> %d/%s -> %d\n",
+			 __func__, rd_name, serial_fd[tty->index].rd_fd,
+			 wr_name, serial_fd[tty->index].wr_fd);
+	}
 	spin_lock_bh(&timer_lock);
-	if (tty->count == 1) {
+	if (++line_count == 1) {
 		setup_timer(&serial_timer, rs_poll,
-				(unsigned long)&serial_port);
+			    (unsigned long)tty->port);
 		mod_timer(&serial_timer, jiffies + SERIAL_TIMER_VALUE);
 	}
 	spin_unlock_bh(&timer_lock);
@@ -76,8 +94,13 @@ static int rs_open(struct tty_struct *tty, struct file * filp)
  */
 static void rs_close(struct tty_struct *tty, struct file * filp)
 {
+	if (tty->index) {
+		if (serial_fd[tty->index].rd_fd != -1)
+			simc_close(serial_fd[tty->index].rd_fd);
+		simc_close(serial_fd[tty->index].wr_fd);
+	}
 	spin_lock_bh(&timer_lock);
-	if (tty->count == 1)
+	if (--line_count == 0)
 		del_timer_sync(&serial_timer);
 	spin_unlock_bh(&timer_lock);
 }
@@ -88,31 +111,47 @@ static int rs_write(struct tty_struct * tty,
 {
 	/* see drivers/char/serialX.c to reference original version */
 
-	simc_write(1, buf, count);
+	if (count > 0) {
+		int rc = simc_write(serial_fd[tty->index].wr_fd, buf, count);
+		if (rc != count)
+			pr_debug("%s: %d != %d\n", __func__, count, rc);
+	}
 	return count;
 }
 
 static void rs_poll(unsigned long priv)
 {
-	struct tty_port *port = (struct tty_port *)priv;
-	int i = 0;
-	int rd = 1;
-	unsigned char c;
+	int port_idx;
 
 	spin_lock(&timer_lock);
 
-	while (simc_poll(0)) {
-		rd = simc_read(0, &c, 1);
-		if (rd <= 0)
-			break;
-		tty_insert_flip_char(port, c, TTY_NORMAL);
-		i++;
-	}
+	for (port_idx = 0; port_idx < SERIAL_MAX_NUM_LINES; ++port_idx) {
+		struct tty_port *port = serial_port + port_idx;
+		int i = 0;
+		unsigned char c;
 
-	if (i)
-		tty_flip_buffer_push(port);
-	if (rd)
-		mod_timer(&serial_timer, jiffies + SERIAL_TIMER_VALUE);
+		if (serial_fd[port_idx].rd_fd == -1 ||
+		    !(serial_fd[port_idx].rd_fd | serial_fd[port_idx].wr_fd))
+			continue;
+
+		while (simc_poll(serial_fd[port_idx].rd_fd)) {
+			int rd = simc_read(serial_fd[port_idx].rd_fd, &c, 1);
+
+			if (rd <= 0) {
+				simc_close(serial_fd[port_idx].rd_fd);
+				serial_fd[port_idx].rd_fd = -1;
+				break;
+			}
+			if (tty_insert_flip_char(port, c, TTY_NORMAL) == 0)
+				break;
+			i++;
+		}
+
+		if (i)
+			tty_flip_buffer_push(port);
+	}
+	mod_timer(&serial_timer, jiffies + SERIAL_TIMER_VALUE);
+
 	spin_unlock(&timer_lock);
 }
 
@@ -182,7 +221,10 @@ static const struct tty_operations serial_ops = {
 
 int __init rs_init(void)
 {
-	tty_port_init(&serial_port);
+	int i;
+
+	for (i = 0; i < SERIAL_MAX_NUM_LINES; ++i)
+		tty_port_init(serial_port + i);
 
 	serial_driver = alloc_tty_driver(SERIAL_MAX_NUM_LINES);
 
@@ -202,7 +244,8 @@ int __init rs_init(void)
 	serial_driver->flags = TTY_DRIVER_REAL_RAW;
 
 	tty_set_operations(serial_driver, &serial_ops);
-	tty_port_link_device(&serial_port, serial_driver, 0);
+	for (i = 0; i < SERIAL_MAX_NUM_LINES; ++i)
+		tty_port_link_device(serial_port + i, serial_driver, i);
 
 	if (tty_register_driver(serial_driver))
 		panic("Couldn't register serial driver\n");
@@ -213,12 +256,14 @@ int __init rs_init(void)
 static __exit void rs_exit(void)
 {
 	int error;
+	int i;
 
 	if ((error = tty_unregister_driver(serial_driver)))
 		printk("ISS_SERIAL: failed to unregister serial driver (%d)\n",
 		       error);
 	put_tty_driver(serial_driver);
-	tty_port_destroy(&serial_port);
+	for (i = 0; i < SERIAL_MAX_NUM_LINES; ++i)
+		tty_port_destroy(serial_port + i);
 }
 
 
