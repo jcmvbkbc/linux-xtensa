@@ -1,0 +1,85 @@
+/dts-v1/;
+
+/ {
+	compatible = "cdns,xtensa-iss";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "console=ttyS0,115200n8 debug eth0=tuntap,,tap9 root=/dev/simdisk0";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00050000 0x07fb0000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	xvp@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "cdns,xrp";
+		reg = <0xfd001000 0x00000200
+		       0xf0000000 0x00001000
+		       0xf0001000 0x00fff000>;
+		device-irq = <0 1 5>; /* offset, bit#, IRQ# */
+		device-irq-mode = <1>;
+		host-irq = <0xfffff000 0>; /* offset, bit# */
+		host-irq-mode = <2>;
+		interrupts = <15 0>;
+		firmware-name = "xrp0.elf";
+		ranges = <0x00000000 0x00000000 0x10000000
+			  0x3ffc0000 0xc0000000 0x00020000
+			  0x3ffe0000 0xc0020000 0x00020000
+			  0x50000000 0x50000000 0x01000000
+			  0x60000000 0x60000000 0x20000000
+			  0xf0000000 0xf0000000 0x0d000000>;
+	};
+
+	xvp@1 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "cdns,xrp";
+		reg = <0xfd002000 0x00000200
+		       0xf1000000 0x00001000
+		       0xf1001000 0x00fff000>;
+		device-irq = <0 1 5>; /* offset, bit#, IRQ# */
+		device-irq-mode = <1>;
+		host-irq = <0xffffe000 0>; /* offset, bit# */
+		host-irq-mode = <2>;
+		interrupts = <15 0>;
+		firmware-name = "xrp1.elf";
+		ranges = <0x00000000 0x00000000 0x10000000
+			  0x3ffc0000 0xc0040000 0x00020000
+			  0x3ffe0000 0xc0060000 0x00020000
+			  0x50000000 0x50000000 0x01000000
+			  0x60000000 0x60000000 0x20000000
+			  0xf0000000 0xf0000000 0x0d000000>;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges = <0x00000000 0xf0000000 0x10000000>;
+	};
+};
