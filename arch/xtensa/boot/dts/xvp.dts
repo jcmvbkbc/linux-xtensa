@@ -44,7 +44,7 @@
 			compatible = "cdns,xvp";
 			reg = <0x0c000000 0x00002000
 			       0x00000000 0x00001000
-			       0x00001000 0x00fff000>;
+			       0x00001000 0x0bfff000>;
 			interrupts = <5 1>;
 		};
 	};
