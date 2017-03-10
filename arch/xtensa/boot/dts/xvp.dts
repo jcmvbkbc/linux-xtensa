@@ -7,7 +7,7 @@
 	interrupt-parent = <&pic>;
 
 	chosen {
-		bootargs = "console=ttyS0,115200n8 debug eth0=tuntap,,tap9 root=/dev/simdisk0";
+		bootargs = "console=ttyS0,115200n8 loglevel=4 eth0=tuntap,,tap9 root=/dev/simdisk0";
 	};
 
 	memory@0 {
