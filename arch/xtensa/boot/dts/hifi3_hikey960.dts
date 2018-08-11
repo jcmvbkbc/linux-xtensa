@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+/ {
+	compatible = "cdns,hifi3-hikey960";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "earlycon=hifi3-hikey960-ringbuffer,mmio32native,0x8b300000,115200n8 console=ttyS0,115200n8 ip=dhcp root=/dev/nfs rw debug";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x60000000 0x10000000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+			clocks = <&osc>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	clocks {
+		osc: main-oscillator {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <500000000>;
+		};
+	};
+
+	serial0: serial@8b300000 {
+		device_type = "serial";
+		compatible = "hifi3-hikey960-ringbuffer";
+		reg = <0x8b300000 0x00001000>;
+	};
+};
