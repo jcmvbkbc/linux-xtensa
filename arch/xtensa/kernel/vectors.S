@@ -303,6 +303,14 @@ _DoubleExceptionVector_WindowUnderflow:
 	xsr	a0, depc
 
 .Lunrecoverable:
+	movi	a3, 0x8b300000
+	s32i	a3, a3, 0
+	rsr	a2, epc1
+	s32i	a2, a3, 0
+	rsr	a2, depc
+	s32i	a2, a3, 4
+	rsr	a2, exccause
+	s32i	a2, a3, 8
 	rsr	a3, excsave1
 	wsr	a0, excsave1
 	call0	unrecoverable_exception

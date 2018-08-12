@@ -51,6 +51,14 @@ _SetupMMU:
 	movi	a0, 0x1F
 	wsr	a0, ps
 	rsync
+	movi	a2, 0x8b300000
+	movi	a3, 0
+
+	off = 0
+	.rep	16
+	s32i	a3, a2, off
+	off = off + 4
+	.endr
 
 #ifndef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 	initialize_mmu
