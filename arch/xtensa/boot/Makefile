@@ -24,6 +24,7 @@ subdir-y	:= lib
 boot-$(CONFIG_XTENSA_PLATFORM_ISS)    += Image
 boot-$(CONFIG_XTENSA_PLATFORM_XT2000) += Image zImage uImage
 boot-$(CONFIG_XTENSA_PLATFORM_XTFPGA) += Image zImage uImage
+boot-$(CONFIG_XTENSA_PLATFORM_HIFI3_HIKEY960) += Image
 
 all: $(boot-y)
 Image: boot-elf

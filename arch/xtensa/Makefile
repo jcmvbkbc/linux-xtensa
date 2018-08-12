@@ -36,6 +36,7 @@ endif
 platform-$(CONFIG_XTENSA_PLATFORM_XT2000)	:= xt2000
 platform-$(CONFIG_XTENSA_PLATFORM_ISS)		:= iss
 platform-$(CONFIG_XTENSA_PLATFORM_XTFPGA)	:= xtfpga
+platform-$(CONFIG_XTENSA_PLATFORM_HIFI3_HIKEY960)	:= hifi3_hikey960
 
 PLATFORM = $(platform-y)
 export PLATFORM

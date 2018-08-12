@@ -412,6 +412,11 @@ config XTENSA_PLATFORM_XTFPGA
 	  XTFPGA is the name of Tensilica board family (LX60, LX110, LX200, ML605).
 	  This hardware is capable of running a full Linux distribution.
 
+config XTENSA_PLATFORM_HIFI3_HIKEY960
+	bool "HiFi3 (Hikey960)"
+	select SERIAL_CONSOLE
+	select XTENSA_CALIBRATE_CCOUNT
+
 endchoice
 
 config PLATFORM_NR_IRQS
