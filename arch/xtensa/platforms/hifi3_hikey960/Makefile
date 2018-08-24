@@ -1,1 +1,1 @@
-obj-y			+= setup.o console.o
+obj-y			+= setup.o ../iss/console.o
