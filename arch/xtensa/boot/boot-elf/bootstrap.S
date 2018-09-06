@@ -54,11 +54,13 @@ _SetupMMU:
 	movi	a2, 0x8b300000
 	movi	a3, 0
 
+#ifdef CONFIG_XTENSA_PLATFORM_HIFI3_HIKEY960
 	off = 0
 	.rep	16
 	s32i	a3, a2, off
 	off = off + 4
 	.endr
+#endif
 
 #ifndef CONFIG_INITIALIZE_XTENSA_MMU_INSIDE_VMLINUX
 	initialize_mmu
