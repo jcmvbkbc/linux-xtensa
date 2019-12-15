@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include "gpio-esp32.h"
+#include "esp32s3.dtsi"
+
+/ {
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3d800000 0x00800000>;
+	};
+
+	i2c0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "i2c-gpio";
+
+		sda-gpios = <&gpio0 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio0 7 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+
+		pinctrl-0 = <&i2c0_pins>;
+		pinctrl-names = "default";
+	};
+};
+
+&iomux {
+	status = "ok";
+
+	i2c0_pins: i2c0_pins {
+		pinctrl-single,pins = <
+			PIN(6) FUN0_20MA_IE_WPU			/* SDA */
+			PIN(7) FUN0_20MA_IE_WPU>;		/* SCL */
+	};
+	spi2_pins: spi2_pins {
+		pinctrl-single,pins = <
+			PIN(10) (FUN_SEL(4) | FUN_DRV_20MA)	/* CS0 */
+			PIN(11) (FUN_SEL(4) | FUN_DRV_40MA)	/* MOSI */
+			PIN(12) (FUN_SEL(4) | FUN_DRV_40MA)	/* SCK */
+			PIN(13) (FUN_SEL(4) | FUN0_20MA_IE_WPU)>;/* MISO */
+	};
+	uart0_pins: uart0_pins {
+		pinctrl-single,pins = <
+			PIN(43) FUN0_20MA			/* U0TXD */
+			PIN(44) FUN0_20MA_IE_WPU>;		/* U0RXD */
+	};
+};
+
+&gpio0 {
+	status = "ok";
+};
+
+&uart0 {
+	pinctrl-0 = <&uart0_pins>;
+	pinctrl-names = "default";
+	status = "ok";
+};
+
+&spi2 {
+	pinctrl-0 = <&spi2_pins>;
+	pinctrl-names = "default";
+	status = "ok";
+
+	mmc_spi@0 {
+		compatible = "mmc-spi-slot";
+		reg = <0>;
+	};
+};
+
+&acm {
+	status = "ok";
+};
+
+&ipc {
+	wifi@1 {
+		compatible = "esp,esp32-wifi-shmem";
+		reg = <1>;
+	};
+};
+
+&intc {
+	reg = <0x600c2800 0x800>;
+};
