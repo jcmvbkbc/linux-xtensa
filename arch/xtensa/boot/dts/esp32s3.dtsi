@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+/ {
+	compatible = "esp32s3";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "earlycon=esp32s3uart,mmio32,0x60000000,115200n8,40000000 console=ttyS0,115200n8 debug rw root=mtd:rootfs no_hash_pointers ";
+	};
+
+	aliases {
+		serial0 = "/soc/serial@60000000";
+		serial1 = "/soc/acm@60038000";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+			clocks = <&osc>;
+		};
+	};
+
+	clocks {
+		osc: clk160 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <160000000>;
+		};
+		apb: clk80 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <80000000>;
+		};
+		serial_clk: serial_clk {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <40000000>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		interrupt-parent = <&intc>;
+		ranges;
+
+		intc: intc@600c2000 {
+			compatible = "esp,esp32-intc";
+			reg = <0x600c2000 0x800>;
+			/* first cell: interrupt matrix row
+			 * second cell: internal xtensa core IRQ number to connect to
+			 * third cell: target CPU
+			 */
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			interrupt-parent = <&pic>;
+		};
+
+		serial0: serial@60000000 {
+			compatible = "esp,esp32s3-uart";
+			reg = <0x60000000 0x80>;
+			interrupts = <27 1 0>; /* UART0, external IRQ1, CPU0 */
+			clocks = <&serial_clk>;
+		};
+
+		gpio0: gpio@60004000 {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32s3-gpio";
+			reg = <0x60004000 0x138>;
+			interrupts = <16 8 0>; /* GPIO, external IRQ8, CPU0 */
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+
+		lpm: lpm@60008000 {
+			compatible = "syscon";
+			reg = <0x60008000 0x1000>;
+		};
+
+		syscon@60008000 {
+			compatible = "syscon-reboot";
+			regmap = <&lpm>;
+			offset = <0>;
+			value = <0x80000000>;
+			mask = <0x80000000>;
+		};
+
+		trng@6003507c {
+			compatible = "esp,esp32-trng";
+			reg = <0x6003507c 0x4>;
+		};
+
+		acm@60038000 {
+			compatible = "esp,esp32s3-acm";
+			reg = <0x60038000 0x1000>;
+			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
+		};
+
+		ipc@600c0004 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32-ipc";
+			reg = <0x600c0004 4  /* queues address */
+			       0x600c0038 8  /* incoming and outgoing IRQ registers */
+			       >;
+			interrupts = <81 2 0>; /* CPU_INTR_FROM_CPU_2, IRQ 2, CPU0 */
+			flash_controller: flash@2 {
+				compatible = "esp,esp32-ipc-flash";
+				reg = <2>;
+			};
+		};
+
+	};
+};
