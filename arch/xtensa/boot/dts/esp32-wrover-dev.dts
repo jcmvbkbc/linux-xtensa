@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include "gpio-esp32.h"
+#include "esp32.dtsi"
+
+/ {
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3f800000 0x00400000>;
+	};
+
+	soc {
+		flash: flash@40400000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "mtd-rom";
+			reg = <0x40400000 0x00400000>;
+			bank-width = <2>;
+			device-width = <2>;
+			partition@40000 {
+				label = "linux";
+				reg = <0x00040000 0x001c0000>;
+			};
+			partition@200000 {
+				label = "rootfs";
+				reg = <0x00200000 0x00200000>;
+			};
+		};
+	};
+
+	i2c0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "i2c-gpio";
+
+		sda-gpios = <&gpio0 26 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio0 27 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+
+		pinctrl-0 = <&i2c0_pins>;
+		pinctrl-names = "default";
+	};
+};
+
+&iomux {
+	status = "ok";
+
+	uart0_pins: uart0_pins {
+		pinctrl-single,pins = <
+			PIN(IOMUX_U0TXD) FUN0_20MA		/* U0TXD */
+			PIN(IOMUX_U0RXD) FUN0_20MA_IE_WPU>;	/* U0RXD */
+	};
+	i2c0_pins: i2c0_pins {
+		pinctrl-single,pins = <
+			PIN(IOMUX_GPIO26) FUN0_20MA_IE_WPU	/* SDA */
+			PIN(IOMUX_GPIO27) FUN0_20MA_IE_WPU>;	/* SCL */
+	};
+};
+
+&uart0 {
+	pinctrl-0 = <&uart0_pins>;
+	pinctrl-names = "default";
+	status = "ok";
+};
+
+&gpio0 {
+	status = "ok";
+};

@@ -1,0 +1,272 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/dts-v1/;
+
+/ {
+	compatible = "esp32s3";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "earlycon=esp32s3uart,mmio32,0x60000000,115200n8,40000000 console=ttyS0,115200n8 debug rw root=mtd:rootfs no_hash_pointers ";
+	};
+
+	aliases {
+		serial0 = "/soc/serial@60000000";
+		serial1 = "/soc/serial@60010000";
+		serial2 = "/soc/serial@6002e000";
+		serial3 = "/soc/acm@60038000";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+			clocks = <&clk 1>;
+		};
+	};
+
+	clocks {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		uart0_clk: uart0_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 0>;
+			enable-gpios = <&clk_gpio0 2 0>;
+		};
+		uart1_clk: uart1_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 0>;
+			enable-gpios = <&clk_gpio0 5 0>;
+		};
+		uart2_clk: uart2_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 0>;
+			enable-gpios = <&clk_gpio1 9 0>;
+		};
+
+		spi2_clk: spi2_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 2>;
+			enable-gpios = <&clk_gpio0 6 0>;
+		};
+		spi3_clk: spi3_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 2>;
+			enable-gpios = <&clk_gpio0 16 0>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		interrupt-parent = <&intc>;
+		ranges;
+
+		flash@42000000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "mtd-rom";
+			reg = <0x42000000 0x01000000>;
+			bank-width = <2>;
+			device-width = <2>;
+			erase-size = <0x10000>;
+			controller = <&flash_controller>;
+			partitions {
+				compatible = "esp,esp32-partition-table";
+			};
+		};
+
+		uart0: serial@60000000 {
+			compatible = "esp,esp32s3-uart";
+			reg = <0x60000000 0x80>;
+			interrupts = <27 1 0>; /* UART0, external IRQ1, CPU0 */
+			clocks = <&uart0_clk>;
+			resets = <&reset 2>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		gpio0: gpio@60004000 {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32s3-gpio";
+			reg = <0x60004000 0x138>;
+			interrupts = <16 8 0>; /* GPIO, external IRQ8, CPU0 */
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			status = "disabled";
+		};
+
+		gpio_in_mux: gpio_in_mux@60004154 {
+			compatible = "pinctrl-single";
+			reg = <0x60004154 0x400>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xff>;
+			status = "disabled";
+		};
+
+		gpio_out_mux: gpio_out_mux@60004554 {
+			compatible = "pinctrl-single";
+			reg = <0x60004554 0xc4>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xfff>;
+			status = "disabled";
+		};
+
+		lpm: lpm@60008000 {
+			compatible = "syscon";
+			reg = <0x60008000 0x1000>;
+		};
+
+		syscon@60008000 {
+			compatible = "syscon-reboot";
+			regmap = <&lpm>;
+			offset = <0>;
+			value = <0x80000000>;
+			mask = <0x80000000>;
+		};
+
+		iomux: pinctrl@60009000 {
+			compatible = "pinctrl-single";
+			reg = <0x60009004 0xc4>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xffff>;
+			status = "disabled";
+		};
+
+		uart1: serial@60010000 {
+			compatible = "esp,esp32s3-uart";
+			reg = <0x60010000 0x80>;
+			interrupts = <28 4 0>; /* UART1, external IRQ4, CPU0 */
+			clocks = <&uart1_clk>;
+			resets = <&reset 5>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		spi2: spi@60024000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32s3-spi";
+			reg = <0x60024000 0x100>;
+			interrupts = <21 9 0>; /* SPI2, external IRQ9, CPU0 */
+			clocks = <&spi2_clk>;
+			resets = <&reset 6>;
+			reset-names = "reset";
+			spi-num-chipselects = <6>;
+			status = "disabled";
+		};
+
+		spi3: spi@60025000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32s3-spi";
+			reg = <0x60025000 0x100>;
+			interrupts = <22 12 0>; /* SPI3, external IRQ12, CPU0 */
+			clocks = <&spi3_clk>;
+			resets = <&reset 16>;
+			reset-names = "reset";
+			spi-num-chipselects = <3>;
+			status = "disabled";
+		};
+
+		uart2: serial@6002e000 {
+			compatible = "esp,esp32s3-uart";
+			reg = <0x6002e000 0x80>;
+			interrupts = <29 5 0>; /* UART2, external IRQ5, CPU0 */
+			clocks = <&uart2_clk>;
+			resets = <&reset 41>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		trng@6003507c {
+			compatible = "esp,esp32-trng";
+			reg = <0x6003507c 0x4>;
+		};
+
+		acm: acm@60038000 {
+			compatible = "esp,esp32s3-acm";
+			reg = <0x60038000 0x1000>;
+			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
+			resets = <&reset 42>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		ipc: ipc@600c0004 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32-ipc";
+			reg = <0x600c0004 4  /* queues address */
+			       0x600c0038 8  /* incoming and outgoing IRQ registers */
+			       >;
+			interrupts = <81 2 0>; /* CPU_INTR_FROM_CPU_2, IRQ 2, CPU0 */
+
+			flash_controller: flash@2 {
+				compatible = "esp,esp32-ipc-flash";
+				reg = <2>;
+			};
+		};
+
+		clk: clk@600c0010 {
+			compatible = "esp,esp32s3-core-clock";
+			reg = <0x600c0010 4
+			       0x600c0060 4>;
+			#clock-cells = <1>;
+			/* clock-output-names = "xtal_clk", "cpu_clk", "apb_clk"; */
+		};
+		clk_gpio0: clk_gpio@600c0018 {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32-clk-gpio";
+			reg = <0x600c0018 4>;
+			reg-names = "dat";
+		};
+		clk_gpio1: clk_gpio@600c001c {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32-clk-gpio";
+			reg = <0x600c001c 4>;
+			reg-names = "dat";
+		};
+		reset: reset@600c0020 {
+			#reset-cells = <1>;
+			compatible = "esp,esp32-reset";
+			reg = <0x600c0020 8>;
+		};
+
+		intc: intc@600c2000 {
+			compatible = "esp,esp32-intc";
+			reg = <0x600c2000 0x800>;
+			/* first cell: interrupt matrix row
+			 * second cell: internal xtensa core IRQ number to connect to
+			 * third cell: target CPU
+			 */
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			interrupt-parent = <&pic>;
+		};
+	};
+};
