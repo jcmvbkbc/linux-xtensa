@@ -26,6 +26,7 @@ endif
 
 # Platform configuration
 
+platform-$(CONFIG_XTENSA_PLATFORM_ESP32)	:= esp32
 platform-$(CONFIG_XTENSA_PLATFORM_XT2000)	:= xt2000
 platform-$(CONFIG_XTENSA_PLATFORM_ISS)		:= iss
 platform-$(CONFIG_XTENSA_PLATFORM_XTFPGA)	:= xtfpga
