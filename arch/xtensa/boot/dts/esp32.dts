@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+/ {
+	compatible = "esp32";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "earlycon=esp,esp32-uart,mmio32,0x3ff40000,115200n8 console=ttyS0,115200n8 debug rw root=mtd:data init=/bin/sh ip=dhcp";
+	};
+
+	aliases {
+		serial0 = "/serial@3ff40000";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3f800000 0x00400000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+			clocks = <&osc>;
+		};
+	};
+
+	clocks {
+		osc: clk160 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <160000000>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	serial0: serial@3ff40000 {
+		device_type = "serial";
+		compatible = "esp,esp32-uart";
+		reg = <0x3ff40000 0x80>;
+		interrupts = <0 1>; /* external irq 0 */
+	};
+
+	flash: flash@40090000 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "mtd-rom";
+		reg = <0x40090000 0x00400000>;
+		bank-width = <2>;
+		device-width = <2>;
+		partition@40000 {
+			label = "linux";
+			reg = <0x00040000 0x001c0000>;
+		};
+		partition@200000 {
+			label = "data";
+			reg = <0x00200000 0x00200000>;
+		};
+	};
+};
