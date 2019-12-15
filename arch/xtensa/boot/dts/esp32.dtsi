@@ -1,0 +1,249 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/dts-v1/;
+
+/ {
+	compatible = "esp32";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "earlycon=esp32uart,mmio32,0x3ff40000,115200n8 console=ttyS0,115200n8 debug rw root=mtd:rootfs no_hash_pointers ";
+	};
+
+	aliases {
+		serial0 = "/soc/serial@3ff40000";
+		serial1 = "/soc/serial@3ff50000";
+		serial2 = "/soc/serial@3ff6e000";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3f800000 0x00400000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+			clocks = <&clk 0>;
+		};
+	};
+
+	clocks {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		xtl_clk: clk80m {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <80000000>;
+		};
+		rc_fast_clk: clk8m5 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <8500000>;
+		};
+		apll_clk: clk128m {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <128000000>;
+		};
+
+		uart0_clk: uart0_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 1>;
+			enable-gpios = <&clk_gpio0 2 0>;
+		};
+		uart1_clk: uart1_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 1>;
+			enable-gpios = <&clk_gpio0 5 0>;
+		};
+		uart2_clk: uart2_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 1>;
+			enable-gpios = <&clk_gpio0 23 0>;
+		};
+		spi2_clk: spi2_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 1>;
+			enable-gpios = <&clk_gpio0 6 0>;
+		};
+		spi3_clk: spi3_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 1>;
+			enable-gpios = <&clk_gpio0 16 0>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		interrupt-parent = <&intc>;
+		ranges;
+
+		clk_gpio0: clk_gpio@3ff000c0 {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32-clk-gpio";
+			reg = <0x3ff000c0 4>;
+			reg-names = "dat";
+		};
+
+		reset: reset@3ff000c4 {
+			#reset-cells = <1>;
+			compatible = "esp,esp32-reset";
+			reg = <0x3ff000c4 4>;
+		};
+
+		intc: intc@3ff00104 {
+			compatible = "esp,esp32-intc";
+			reg = <0x3ff00104 0x114>;
+			/* first cell: interrupt matrix row
+			 * second cell: internal xtensa core IRQ number to connect to
+			 */
+			#interrupt-cells = <2>;
+			interrupt-controller;
+			interrupt-parent = <&pic>;
+		};
+
+		uart0: serial@3ff40000 {
+			compatible = "esp,esp32-uart";
+			reg = <0x3ff40000 0x80>;
+			interrupts = <34 1>; /* UART0, external IRQ1 */
+			clocks = <&uart0_clk>;
+			resets = <&reset 2>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		gpio0: gpio@3ff44000 {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32-gpio";
+			reg = <0x3ff44000 0x128>;
+			interrupts = <22 8>; /* GPIO, external IRQ8 */
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			status = "disabled";
+		};
+
+		gpio_in_mux: gpio_in_mux@3ff44130 {
+			compatible = "pinctrl-single";
+			reg = <0x3ff44130 0x400>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xff>;
+			status = "disabled";
+		};
+
+		gpio_out_mux: gpio_out_mux@3ff44530 {
+			compatible = "pinctrl-single";
+			reg = <0x3ff44530 0xa0>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xfff>;
+			status = "disabled";
+		};
+
+		lpm: lpm@3ff48000 {
+			compatible = "syscon";
+			reg = <0x3ff48000 0x1000>;
+		};
+
+		syscon@3ff48000 {
+			compatible = "syscon-reboot";
+			regmap = <&lpm>;
+			offset = <0>;
+			value = <0x80000000>;
+			mask = <0x80000000>;
+		};
+
+		clk: clk@3ff48070 {
+			compatible = "esp,esp32-core-clock";
+			reg = <0x3ff48070 4
+			       0x3ff0003c 4
+			       0x3ff66000 4>;
+			clocks = <&xtl_clk>, <&rc_fast_clk>, <&apll_clk>;
+			clock-names = "xtl", "rc_fast", "apll";
+			#clock-cells = <1>;
+			/* clock-output-names = "cpu_clk", "apb_clk"; */
+		};
+
+		iomux: pinctrl@3ff49000 {
+			compatible = "pinctrl-single";
+			reg = <0x3ff49004 0x90>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xffff>;
+			status = "disabled";
+		};
+
+		uart1: serial@3ff50000 {
+			compatible = "esp,esp32-uart";
+			reg = <0x3ff40000 0x80>;
+			interrupts = <35 2>; /* UART1, external IRQ2 */
+			clocks = <&uart1_clk>;
+			resets = <&reset 5>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		spi2: spi@3ff64000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32-spi";
+			reg = <0x60024000 0x100>;
+			interrupts = <30 4>; /* SPI2, external IRQ4 */
+			clocks = <&spi2_clk>;
+			resets = <&reset 6>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		spi3: spi@3ff65000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32-spi";
+			reg = <0x60025000 0x100>;
+			interrupts = <31 5>; /* SPI3, external IRQ5 */
+			clocks = <&spi3_clk>;
+			resets = <&reset 16>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		uart2: serial@3ff6e000 {
+			compatible = "esp,esp32-uart";
+			reg = <0x3ff40000 0x80>;
+			interrupts = <36 3>; /* UART2, external IRQ3 */
+			clocks = <&uart2_clk>;
+			resets = <&reset 23>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		trng@3ff75144 {
+			compatible = "esp,esp32-trng";
+			reg = <0x3ff75144 0x4>;
+		};
+	};
+};
