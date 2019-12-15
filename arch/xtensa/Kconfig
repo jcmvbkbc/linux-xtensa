@@ -397,6 +397,18 @@ choice
 	prompt "Xtensa System Type"
 	default XTENSA_PLATFORM_ISS
 
+config XTENSA_PLATFORM_ESP32
+	bool "ESP32"
+	select ESP32_INTC
+	select PLATFORM_HAVE_XIP
+	select PLATFORM_WANT_DEFAULT_MEM
+	select XIP_KERNEL
+	select XTENSA_CALIBRATE_CCOUNT
+	select XTENSA_LOAD_STORE
+	help
+	  ESP32 is a dual-core Xtensa-based IoT MCU from Espressif.
+	  Configured with FLASH and PSRAM it is capable of running noMMU Linux.
+
 config XTENSA_PLATFORM_ISS
 	bool "ISS"
 	select XTENSA_CALIBRATE_CCOUNT

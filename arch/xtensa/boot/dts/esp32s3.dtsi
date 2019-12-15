@@ -1,0 +1,265 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	compatible = "esp32s3";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "earlycon=esp32s3uart,mmio32,0x60000000,115200n8,40000000 console=ttyS0,115200n8 debug rw root=mtd:rootfs no_hash_pointers ";
+	};
+
+	aliases {
+		serial0 = "/soc/serial@60000000";
+		serial1 = "/soc/serial@60010000";
+		serial2 = "/soc/serial@6002e000";
+		serial3 = "/soc/acm@60038000";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+			clocks = <&osc>;
+		};
+	};
+
+	clocks {
+		osc: clk160 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <160000000>;
+		};
+		apb: clk80 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <80000000>;
+		};
+		serial_clk: serial_clk {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <40000000>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		interrupt-parent = <&intc>;
+		ranges;
+
+		intc: intc@600c2000 {
+			compatible = "esp,esp32-intc";
+			reg = <0x600c2000 0x800>;
+			/* first cell: interrupt matrix row
+			 * second cell: internal xtensa core IRQ number to connect to
+			 * third cell: target CPU
+			 */
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			interrupt-parent = <&pic>;
+		};
+
+		serial0: serial@60000000 {
+			compatible = "esp,esp32s3-uart";
+			reg = <0x60000000 0x80>;
+			interrupts = <27 1 0>; /* UART0, external IRQ1, CPU0 */
+			clocks = <&serial_clk>;
+			pinctrl-0 = <&uart0_pins>;
+			pinctrl-names = "default";
+		};
+
+		gpio0: gpio@60004000 {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32s3-gpio";
+			reg = <0x60004000 0x138>;
+			interrupts = <16 8 0>; /* GPIO, external IRQ8, CPU0 */
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+
+/* peri is Signal No. for desired Input signal
+ * from table 6-2 Peripheral Signals via GPIO Matrix from esp32s3 TRM
+ */
+#define GPIO_FUNC_IN_SEL(peri)	((peri) * 4)
+
+		gpio_in_mux@60004154 {
+			compatible = "pinctrl-single";
+			reg = <0x60004154 0x400>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xff>;
+
+			uart2_gpio_in: uart2_gpio_in {
+				pinctrl-single,pins = <
+					GPIO_FUNC_IN_SEL(18) 5>;	/* U2RXD: signal 18, GPIO5 */
+			};
+		};
+
+#define GPIO_FUNC_OUT_SEL(pin)	((pin) * 4)
+
+		gpio_out_mux@60004554 {
+			compatible = "pinctrl-single";
+			reg = <0x60004554 0xc4>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xfff>;
+
+			uart2_gpio_out: uart2_gpio_out {
+				pinctrl-single,pins = <
+					GPIO_FUNC_OUT_SEL(4) 18>;	/* U2TXD: GPIO4, signal 18 */
+			};
+		};
+
+		lpm: lpm@60008000 {
+			compatible = "syscon";
+			reg = <0x60008000 0x1000>;
+		};
+
+		syscon@60008000 {
+			compatible = "syscon-reboot";
+			regmap = <&lpm>;
+			offset = <0>;
+			value = <0x80000000>;
+			mask = <0x80000000>;
+		};
+
+#define PIN(pin)		((pin) * 4)
+
+#define FUN_WPD			0x0080
+#define FUN_WPU			0x0100
+#define FUN_IE			0x0200
+#define FUN_DRV_5MA		0x0000
+#define FUN_DRV_10MA		0x0400
+#define FUN_DRV_20MA		0x0800
+#define FUN_DRV_40MA		0x0c00
+#define FUN_SEL(fn)		(((fn) & 0x7) << 12)
+#define FILTER_EN		0x8000
+
+#define FUN0_20MA		(FUN_SEL(0) | FUN_DRV_20MA)
+#define FUN0_20MA_IE		(FUN_SEL(0) | FUN_DRV_20MA | FUN_IE)
+#define FUN0_20MA_IE_WPU	(FUN_SEL(0) | FUN_DRV_20MA | FUN_IE | FUN_WPU)
+
+		pinctrl@60009000 {
+			compatible = "pinctrl-single";
+			reg = <0x60009004 0xc4>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xffff>;
+
+			uart0_pins: uart0_pins {
+				pinctrl-single,pins = <
+					PIN(43) FUN0_20MA			/* U0TXD */
+					PIN(44) FUN0_20MA_IE_WPU>;		/* U0RXD */
+			};
+			uart1_pins: uart1_pins {
+				pinctrl-single,pins = <
+					PIN(17) (FUN_SEL(2) | FUN0_20MA)	/* U1TXD */
+					PIN(18) (FUN_SEL(2) | FUN0_20MA_IE_WPU)>;/* U1RXD */
+			};
+			uart2_pins: uart2_pins {
+				pinctrl-single,pins = <
+					PIN(4) FUN0_20MA			/* U2TXD on GPIO4 */
+					PIN(5) FUN0_20MA_IE_WPU>;		/* U2RXD on GPIO5 */
+			};
+			i2c0_pins: i2c0_pins {
+				pinctrl-single,pins = <
+					PIN(6) FUN0_20MA_IE_WPU			/* SDA */
+					PIN(7) FUN0_20MA_IE_WPU>;		/* SCL */
+			};
+			spi0_pins: spi0_pins {
+				pinctrl-single,pins = <
+					PIN(9) FUN0_20MA			/* SCK */
+					PIN(10) FUN0_20MA_IE			/* MISO */
+					PIN(11) FUN0_20MA			/* MOSI */
+					PIN(12) FUN0_20MA>;			/* CS */
+			};
+		};
+
+		serial@60010000 { /* needs clk and rst in syscon */
+			compatible = "esp,esp32s3-uart";
+			reg = <0x60010000 0x80>;
+			interrupts = <28 4 0>; /* UART1, external IRQ4, CPU0 */
+			clocks = <&serial_clk>;
+			pinctrl-0 = <&uart1_pins>;
+			pinctrl-names = "default";
+		};
+
+		serial@6002e000 {
+			compatible = "esp,esp32s3-uart";
+			reg = <0x6002e000 0x80>;
+			interrupts = <29 5 0>; /* UART2, external IRQ5, CPU0 */
+			clocks = <&serial_clk>;
+			pinctrl-0 = <&uart2_gpio_in>, <&uart2_gpio_out>, <&uart2_pins>;
+			pinctrl-names = "default", "default", "default";
+		};
+
+		trng@6003507c {
+			compatible = "esp,esp32-trng";
+			reg = <0x6003507c 0x4>;
+		};
+
+		acm@60038000 {
+			compatible = "esp,esp32s3-acm";
+			reg = <0x60038000 0x1000>;
+			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
+		};
+
+		ipc@600c0004 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32-ipc";
+			reg = <0x600c0004 4  /* queues address */
+			       0x600c0038 8  /* incoming and outgoing IRQ registers */
+			       >;
+			interrupts = <81 2 0>; /* CPU_INTR_FROM_CPU_2, IRQ 2, CPU0 */
+			flash_controller: flash@2 {
+				compatible = "esp,esp32-ipc-flash";
+				reg = <2>;
+			};
+		};
+	};
+
+	i2c0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "i2c-gpio";
+
+		sda-gpios = <&gpio0 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio0 7 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+
+		pinctrl-0 = <&i2c0_pins>;
+		pinctrl-names = "default";
+	};
+
+	spi0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "spi-gpio";
+
+		sck-gpios = <&gpio0 9 0>;
+		miso-gpios = <&gpio0 10 0>;
+		mosi-gpios = <&gpio0 11 0>;
+		cs-gpios = <&gpio0 12 0>;
+		num-chipselects = <1>;
+
+		pinctrl-0 = <&spi0_pins>;
+		pinctrl-names = "default";
+	};
+};
