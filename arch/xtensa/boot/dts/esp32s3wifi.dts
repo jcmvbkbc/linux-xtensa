@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+#include "esp32s3.dtsi"
+
+/ {
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3d800000 0x00800000>;
+	};
+
+	soc {
+		intc: intc@600c2000 {
+			reg = <0x600c2800 0x800>;
+		};
+
+		ipc@600c0004 {
+			wifi@1 {
+				compatible = "esp,esp32-wifi-shmem";
+				reg = <1>;
+			};
+		};
+
+		flash@42000000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "mtd-rom";
+			reg = <0x42000000 0x01000000>;
+			bank-width = <2>;
+			device-width = <2>;
+			erase-size = <0x10000>;
+			controller = <&flash_controller>;
+			partitions {
+				compatible = "esp,esp32-partition-table";
+			};
+		};
+	};
+};
