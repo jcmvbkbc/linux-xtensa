@@ -1590,6 +1590,15 @@ config SERIAL_SUNPLUS_CONSOLE
 	  you can alter that using a kernel command line option such as
 	  "console=ttySUPx".
 
+config SERIAL_ESP32
+	tristate "Espressif ESP32 UART driver support"
+	depends on XTENSA_PLATFORM_ESP32 || (COMPILE_TEST && OF)
+	select SERIAL_CORE
+	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
+	help
+	  Driver for Espressif ESP32 UARTs.
+
 endmenu
 
 config SERIAL_MCTRL_GPIO

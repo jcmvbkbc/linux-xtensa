@@ -280,4 +280,7 @@
 /* Sunplus UART */
 #define PORT_SUNPLUS	123
 
+/* Espressif ESP32 UART */
+#define PORT_ESP32UART	124
+
 #endif /* _UAPILINUX_SERIAL_CORE_H */
