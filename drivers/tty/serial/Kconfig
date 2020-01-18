@@ -1578,6 +1578,15 @@ config SERIAL_NUVOTON_MA35D1_CONSOLE
 	  but you can alter that using a kernel command line option such as
 	  "console=ttyNVTx".
 
+config SERIAL_ESP32
+	tristate "Espressif ESP32 UART support"
+	depends on XTENSA_PLATFORM_ESP32 || (COMPILE_TEST && OF)
+	select SERIAL_CORE
+	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
+	help
+	  Driver for Espressif ESP32 UARTs.
+
 endmenu
 
 config SERIAL_MCTRL_GPIO
