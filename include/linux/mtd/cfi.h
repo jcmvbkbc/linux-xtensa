@@ -304,7 +304,7 @@ uint32_t cfi_send_gen_cmd(u_char cmd, uint32_t cmd_addr, uint32_t base,
 				struct map_info *map, struct cfi_private *cfi,
 				int type, map_word *prev_val);
 
-static inline uint8_t cfi_read_query(struct map_info *map, uint32_t addr)
+static __always_inline uint8_t cfi_read_query(struct map_info *map, uint32_t addr)
 {
 	map_word val = map_read(map, addr);
 
@@ -320,7 +320,7 @@ static inline uint8_t cfi_read_query(struct map_info *map, uint32_t addr)
 	}
 }
 
-static inline uint16_t cfi_read_query16(struct map_info *map, uint32_t addr)
+static __always_inline uint16_t cfi_read_query16(struct map_info *map, uint32_t addr)
 {
 	map_word val = map_read(map, addr);
 
