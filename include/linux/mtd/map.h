@@ -386,7 +386,7 @@ static inline map_word map_word_ff(struct map_info *map)
 	return r;
 }
 
-static inline map_word inline_map_read(struct map_info *map, unsigned long ofs)
+static __always_inline map_word inline_map_read(struct map_info *map, unsigned long ofs)
 {
 	map_word r;
 
