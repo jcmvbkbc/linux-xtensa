@@ -131,10 +131,30 @@
  *   - attribute value 1101 (and 1111 on T1050 and earlier) is reserved
  */
 
-#define _PAGE_ATTRIB_MASK	0xf
-
 #define _PAGE_HW_EXEC		(1<<0)	/* hardware: page is executable */
 #define _PAGE_HW_WRITE		(1<<1)	/* hardware: page is writable */
+
+#if XCHAL_MMU_VERSION == XCHAL_MMU_VERSION_ROCHESTER
+
+#define _PAGE_ATTRIB_MASK	(0xf0b)
+
+#define _PAGE_CA_BYPASS		(0x000)	/* bypass, non-speculative */
+#define _PAGE_CA_WB		(0x000)	/* write-back */
+#define _PAGE_CA_WT		(0x000)	/* write-through */
+#define _PAGE_CA_MASK		(0xf08)
+#define _PAGE_CA_INVALID	(0x400)
+#define _PAGE_HW_VALID		(0x000)
+#define _PAGE_NONE		(0x408)
+
+/* Software */
+#define _PAGE_WRITABLE_BIT	6
+#define _PAGE_WRITABLE		(1<<6)	/* software: page writable */
+#define _PAGE_DIRTY		(1<<7)	/* software: page dirty */
+#define _PAGE_ACCESSED		(1<<2)	/* software: page accessed (read) */
+
+#else
+
+#define _PAGE_ATTRIB_MASK	0xf
 
 #define _PAGE_CA_BYPASS		(0<<2)	/* bypass, non-speculative */
 #define _PAGE_CA_WB		(1<<2)	/* write-back */
@@ -151,13 +171,14 @@
 #define _PAGE_NONE		0x0f
 #endif
 
-#define _PAGE_USER		(1<<4)	/* user access (ring=1) */
-
 /* Software */
 #define _PAGE_WRITABLE_BIT	6
 #define _PAGE_WRITABLE		(1<<6)	/* software: page writable */
 #define _PAGE_DIRTY		(1<<7)	/* software: page dirty */
 #define _PAGE_ACCESSED		(1<<8)	/* software: page accessed (read) */
+#endif
+
+#define _PAGE_USER		(1<<4)	/* user access (ring=1) */
 
 #ifdef CONFIG_MMU
 
@@ -367,11 +388,19 @@ ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 #define SWP_TYPE_BITS		5
 #define MAX_SWAPFILES_CHECK() BUILD_BUG_ON(MAX_SWAPFILES_SHIFT > SWP_TYPE_BITS)
 
+#if XCHAL_MMU_VERSION == XCHAL_MMU_VERSION_ROCHESTER
+#define __swp_type(entry)	(((entry).val & 0x7) | (((entry).val >> 2) & 0x38))
+#define __swp_offset(entry)	((entry).val >> 12)
+#define __swp_entry(type,offs)	\
+	((swp_entry_t){((type) & 0x7) | (((type) & 0x38) << 2) | ((offs) << 12) | \
+	 _PAGE_CA_INVALID | _PAGE_USER})
+#else
 #define __swp_type(entry)	(((entry).val >> 6) & 0x1f)
 #define __swp_offset(entry)	((entry).val >> 11)
 #define __swp_entry(type,offs)	\
 	((swp_entry_t){((type) << 6) | ((offs) << 11) | \
 	 _PAGE_CA_INVALID | _PAGE_USER})
+#endif
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
 

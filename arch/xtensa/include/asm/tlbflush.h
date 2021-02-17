@@ -13,6 +13,11 @@
 #include <asm/processor.h>
 
 #define DTLB_WAY_PGD	7
+#if XCHAL_MMU_VERSION == XCHAL_MMU_VERSION_ROCHESTER
+#define DTLB_PGD_TLB_ENTRIES 4
+#else
+#define DTLB_PGD_TLB_ENTRIES 1
+#endif
 
 #define ITLB_ARF_WAYS	4
 #define DTLB_ARF_WAYS	4
@@ -141,9 +146,13 @@ static inline void write_itlb_entry (pte_t entry, int way)
 
 static inline void invalidate_page_directory (void)
 {
-	invalidate_dtlb_entry (DTLB_WAY_PGD);
-	invalidate_dtlb_entry (DTLB_WAY_PGD+1);
-	invalidate_dtlb_entry (DTLB_WAY_PGD+2);
+	unsigned i;
+
+	for (i = 0; i < DTLB_PGD_TLB_ENTRIES; ++i) {
+		invalidate_dtlb_entry((i << PAGE_SHIFT) + DTLB_WAY_PGD);
+		invalidate_dtlb_entry((i << PAGE_SHIFT) + DTLB_WAY_PGD + 1);
+		invalidate_dtlb_entry((i << PAGE_SHIFT) + DTLB_WAY_PGD + 2);
+	}
 }
 
 static inline void invalidate_itlb_mapping (unsigned address)
