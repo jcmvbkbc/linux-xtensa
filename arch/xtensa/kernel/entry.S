@@ -1826,10 +1826,11 @@ ENDPROC(fast_second_level_miss)
 
 ENTRY(fast_store_prohibited)
 
-	/* Save a1 and a3. */
+	/* Save a1, a3 and a4. */
 
 	s32i	a1, a2, PT_AREG1
 	s32i	a3, a2, PT_AREG3
+	s32i	a4, a2, PT_AREG4
 
 	GET_CURRENT(a1,a2)
 	l32i	a0, a1, TASK_MM		# tsk->mm
@@ -1847,9 +1848,11 @@ ENTRY(fast_store_prohibited)
 	 */
 
 	_PTE_OFFSET(a0, a1, a3)
+	movi	a4, _PAGE_CA_MASK
 	l32i	a3, a0, 0		# read pteval
+	and	a4, a4, a3
 	movi	a1, _PAGE_CA_INVALID
-	ball	a3, a1, .Lfast_store_slow
+	beq	a4, a1, .Lfast_store_slow
 	bbci.l	a3, _PAGE_WRITABLE_BIT, .Lfast_store_slow
 
 	movi	a1, _PAGE_ACCESSED | _PAGE_DIRTY | _PAGE_HW_WRITE
@@ -1872,6 +1875,7 @@ ENTRY(fast_store_prohibited)
 
 	/* Restore the working registers, and return. */
 
+	l32i	a4, a2, PT_AREG4
 	l32i	a3, a2, PT_AREG3
 	l32i	a1, a2, PT_AREG1
 	l32i	a0, a2, PT_AREG0
@@ -1893,6 +1897,7 @@ ENTRY(fast_store_prohibited)
 
 	/* If there was a problem, handle fault in C */
 .Lfast_store_slow:
+	l32i	a4, a2, PT_AREG4
 	rsr	a1, excvaddr
 	pdtlb	a0, a1
 	bbci.l	a0, DTLB_HIT_BIT, 1f
