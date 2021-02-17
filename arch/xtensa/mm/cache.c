@@ -107,6 +107,19 @@ void copy_user_highpage(struct page *dst, struct page *src,
 	void *src_vaddr = coherent_kvaddr(src, TLBTEMP_BASE_2, vaddr,
 					  &src_paddr);
 
+#if 0
+	pr_err("%s: vaddr = 0x%08lx, dst_page = 0x%08lx, dst_page va = 0x%08lx, src_page = 0x%08lx, src_page va = 0x%08lx, dst_vaddr = 0x%08lx, src_vaddr = 0x%08lx, dst_paddr = 0x%08lx, src_paddr = 0x%08lx\n",
+	       __func__,
+	       vaddr,
+	       (unsigned long)dst,
+	       (unsigned long)page_to_virt(dst),
+	       (unsigned long)src,
+	       (unsigned long)page_to_virt(src),
+	       (unsigned long)dst_vaddr,
+	       (unsigned long)src_vaddr,
+	       (unsigned long)dst_paddr,
+	       (unsigned long)src_paddr);
+#endif
 	preempt_disable();
 	kmap_invalidate_coherent(dst, vaddr);
 	set_bit(PG_arch_1, &dst->flags);
