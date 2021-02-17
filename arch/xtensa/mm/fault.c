@@ -90,6 +90,9 @@ void do_page_fault(struct pt_regs *regs)
 	struct mm_struct *mm = current->mm;
 	unsigned int exccause = regs->exccause;
 	unsigned int address = regs->excvaddr;
+	unsigned long tlb_virtual = -1ul;
+	unsigned long tlb_translation = -1ul;
+	unsigned long way;
 	int code;
 
 	int is_write, is_exec;
@@ -119,10 +122,27 @@ void do_page_fault(struct pt_regs *regs)
 		    exccause == EXCCAUSE_ITLB_MISS ||
 		    exccause == EXCCAUSE_FETCH_CACHE_ATTRIBUTE) ? 1 : 0;
 
-	pr_debug("[%s:%d:%08x:%d:%08lx:%s%s]\n",
+	if (is_exec) {
+		way = itlb_probe(address);
+
+		if ((way & (1 << ITLB_HIT_BIT)) != 0) {
+			tlb_virtual = read_itlb_virtual(way);
+			tlb_translation = read_itlb_translation(way);
+		}
+	} else {
+		way = dtlb_probe(address);
+
+		if ((way & (1 << DTLB_HIT_BIT)) != 0) {
+			tlb_virtual = read_dtlb_virtual(way);
+			tlb_translation = read_dtlb_translation(way);
+		}
+	}
+
+	pr_debug("[%s:%d:%08x:%d:%08lx:%s][w:%08lx, virt:%08lx, trans:%08lx]\n",
 		 current->comm, current->pid,
 		 address, exccause, regs->pc,
-		 is_write ? "w" : "", is_exec ? "x" : "");
+		 is_exec ? "x" : is_write ? "w" : "r",
+		 way, tlb_virtual, tlb_translation);
 
 	if (user_mode(regs))
 		flags |= FAULT_FLAG_USER;
