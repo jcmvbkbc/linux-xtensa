@@ -136,11 +136,11 @@
 
 #if XCHAL_MMU_VERSION == XCHAL_MMU_VERSION_ROCHESTER
 
-#define _PAGE_ATTRIB_MASK	(0xf0b)
+#define _PAGE_ATTRIB_MASK	(0xf0f)
 
 #define _PAGE_CA_BYPASS		(0x000)	/* bypass, non-speculative */
-#define _PAGE_CA_WB		(0x000)	/* write-back */
-#define _PAGE_CA_WT		(0x000)	/* write-through */
+#define _PAGE_CA_WB		(0xf0c)	/* write-back */
+#define _PAGE_CA_WT		(0xf08)	/* write-through */
 #define _PAGE_CA_MASK		(0xf08)
 #define _PAGE_CA_INVALID	(0x400)
 #define _PAGE_HW_VALID		(0x000)
@@ -150,7 +150,7 @@
 #define _PAGE_WRITABLE_BIT	6
 #define _PAGE_WRITABLE		(1<<6)	/* software: page writable */
 #define _PAGE_DIRTY		(1<<7)	/* software: page dirty */
-#define _PAGE_ACCESSED		(1<<2)	/* software: page accessed (read) */
+#define _PAGE_ACCESSED		(0)	/* software: page accessed (read) */
 
 #else
 
