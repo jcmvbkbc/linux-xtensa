@@ -614,6 +614,7 @@
 
 /*  See core-matmap.h header file for more details.  */
 
+#define XCHAL_MMU_VERSION		4
 #define XCHAL_HAVE_TLBS			1	/* inverse of HAVE_CACHEATTR */
 #define XCHAL_HAVE_SPANNING_WAY		1	/* one way maps I+D 4GB vaddr */
 #define XCHAL_SPANNING_WAY		6	/* TLB spanning way number */
