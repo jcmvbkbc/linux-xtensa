@@ -68,7 +68,7 @@ static void rs_poll(struct timer_list *unused)
 	int rd = 1;
 	unsigned char c;
 
-	while (simc_poll(0)) {
+	for (;;) {
 		rd = simc_read(0, &c, 1);
 		if (rd <= 0)
 			break;
