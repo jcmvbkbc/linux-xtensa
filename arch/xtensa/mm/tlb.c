@@ -215,6 +215,28 @@ static void tlb_suspicious(void)
 	WARN_ON(1);
 }
 
+void dump_tlb_entry(unsigned w, unsigned e, bool dtlb)
+{
+	unsigned tlbidx = w | (e << PAGE_SHIFT);
+	unsigned r0 = dtlb ?
+		read_dtlb_virtual(tlbidx) : read_itlb_virtual(tlbidx);
+	unsigned r1 = dtlb ?
+		read_dtlb_translation(tlbidx) : read_itlb_translation(tlbidx);
+	unsigned vpn = (r0 & PAGE_MASK) | (e << PAGE_SHIFT);
+
+	pr_info("%cTLB[%d][%d]: v=%08x, p=%08x, vaddr=%08x\n",
+		dtlb ? 'D' : 'I', w, e, r0, r1, vpn);
+}
+
+void dump_tlb(void)
+{
+	unsigned w, e;
+
+	for (w = 7; w < 9; ++w)
+		for (e = 0; e < 4; ++e)
+			dump_tlb_entry(w, e, 1);
+}
+
 /*
  * Check that TLB entries with kernel ASID (1) have kernel VMA (>= TASK_SIZE),
  * and TLB entries with user ASID (>=4) have VMA < TASK_SIZE.
