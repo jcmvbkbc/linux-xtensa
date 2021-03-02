@@ -231,6 +231,13 @@ SECTIONS
 #define LAST	.dummy
 
 #if !MERGED_VECTORS
+  SECTION_VECTOR4 (_exception_data,
+		  .data.exception,
+		  CONFIG_VECTORS_DATA,
+		  LAST)
+#undef LAST
+#define LAST	.data.exception
+
   /* The vectors are relocated to the real position at startup time */
 
 #ifdef SUPPORT_WINDOWED

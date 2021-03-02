@@ -697,6 +697,15 @@ config VECTORS_ADDR
 	  This is the virtual address of the (relocatable) vectors base.
 	  It must be within KSEG if MMU is used.
 
+config VECTORS_DATA
+	hex "Vectors data virtual address"
+	default 0x00000000
+	depends on XTENSA_VECTORS_SEPARATE
+	help
+	  This is the virtual address of the data block associated with
+	  vectors and fast exception handlers.
+	  It must be within KSEG if MMU is used.
+
 config XIP_DATA_ADDR
 	hex "XIP kernel data virtual address"
 	depends on XIP_KERNEL

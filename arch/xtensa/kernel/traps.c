@@ -159,8 +159,8 @@ COPROCESSOR(7),
  * 2. it is a temporary memory buffer for the exception handlers.
  */
 
-DEFINE_PER_CPU(struct exc_table, exc_table);
-DEFINE_PER_CPU(struct debug_table, debug_table);
+DEFINE_PER_CPU_SECTION(struct exc_table, exc_table, ".exception");
+DEFINE_PER_CPU_SECTION(struct debug_table, debug_table, ".exception");
 
 void die(const char*, struct pt_regs*, long);
 
