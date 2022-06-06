@@ -225,6 +225,100 @@
 #endif
 	.endm
 
+#ifdef CONFIG_XTENSA_FORCE_L32
+#if defined(__XTENSA_EL__)
+	.macro	__extract	r, s, size
+		srl		\r, \s
+		extui		\r, \r, 0, \size
+	.endm
+#elif defined(__XTENSA_EB__)
+	.macro	__extract	r, s, size
+		sll		\r, \s
+		extui		\r, \r, 32 - \size, \size
+	.endm
+#else
+#error Unsupported Xtensa endianness
+#endif
+
+	/* Prepare for Aligned load and Shift */
+	.macro  __l32asp	v, addr, offset
+		.if		\offset != 0
+		addi		\v, \addr, \offset
+		__ssa8		\v
+		srli		\v, \v, 2
+		.else
+		__ssa8		\addr
+		srli		\v, \addr, 2
+		.endif
+		slli		\v, \v, 2
+	.endm
+
+	/*
+	 * Do l32i from Aligned address, prepare Shift
+	 * and handle possible eXception
+	 */
+	.macro  __l32asx	v, addr, offset, handler
+		__l32asp	\v, \addr, \offset
+		.section	__ex_table, "a"
+		.word		97f, \handler
+		.previous
+97:
+		l32i		\v, \v, 0
+	.endm
+
+	.macro  l8uax		v, addr, offset, handler
+		__l32asx	\v, \addr, \offset, \handler
+		__extract	\v, \v, 8
+	.endm
+
+	.macro  l16uax		v, addr, offset, handler
+		__l32asx	\v, \addr, \offset, \handler
+		__extract	\v, \v, 16
+	.endm
+
+	/*
+	 * Do l32i from Aligned address and prepare Shift
+	 */
+	.macro	__l32as		v, addr, offset
+		__l32asp	\v, \addr, \offset
+		l32i		\v, \v, 0
+	.endm
+
+	.macro  l8ua		v, addr, offset
+		__l32as		\v, \addr, \offset
+		__extract	\v, \v, 8
+	.endm
+
+	.macro  l16ua		v, addr, offset
+		__l32as		\v, \addr, \offset
+		__extract	\v, \v, 16
+	.endm
+#else
+	.macro  l8uax		v, addr, offset, handler
+		.section	__ex_table, "a"
+		.word		97f, \handler
+		.previous
+97:
+		l8ui		\v, \addr, \offset
+	.endm
+
+	.macro  l16uax		v, addr, offset, handler
+		.section	__ex_table, "a"
+		.word		97f, \handler
+		.previous
+97:
+		l16ui		\v, \addr, \offset
+	.endm
+
+	.macro  l8ua		v, addr, offset
+		l8ui		\v, \addr, \offset
+	.endm
+
+	.macro  l16ua		v, addr, offset
+		l16ui		\v, \addr, \offset
+	.endm
+#endif
+
 #if defined(__XTENSA_WINDOWED_ABI__)
 
 /* Assembly instructions for windowed kernel ABI. */

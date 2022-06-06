@@ -95,6 +95,9 @@ config KASAN_SHADOW_OFFSET
 	hex
 	default 0x6e400000
 
+config XTENSA_FORCE_L32
+	def_bool n
+
 config CPU_BIG_ENDIAN
 	def_bool $(success,test "$(shell,echo __XTENSA_EB__ | $(CC) -E -P -)" = 1)
 
