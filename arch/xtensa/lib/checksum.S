@@ -95,12 +95,12 @@ ENTRY(csum_partial)
 #endif
 3:
 	_bbci.l	a3, 1, 5f	/* remaining 2-byte chunk */
-	l16ui	a6, a2, 0
+	l16ua	a6, a2, 0
 	ONES_ADD(a4, a6)
 	addi	a2, a2, 2
 5:
 	_bbci.l	a3, 0, 7f	/* remaining 1-byte chunk */
-6:	l8ui	a6, a2, 0
+6:	l8ua	a6, a2, 0
 #ifdef __XTENSA_EB__
 	slli	a6, a6, 8	/* load byte into bits 8..15 */
 #endif
@@ -117,7 +117,7 @@ ENTRY(csum_partial)
 	extui	a5, a2, 0, 1
 	bnez	a5, 8f		/* branch if 1-byte aligned */
 
-	l16ui	a6, a2, 0	/* common case, len >= 2 */
+	l16ua	a6, a2, 0	/* common case, len >= 2 */
 	ONES_ADD(a4, a6)
 	addi	a2, a2, 2	/* adjust buf */
 	addi	a3, a3, -2	/* adjust len */
@@ -137,9 +137,9 @@ ENTRY(csum_partial)
 	add	a5, a5, a2	/* a5 = end of last 4-byte chunk */
 .Loop3:
 #endif
-	l8ui	a6, a2, 0	/* bits 24..31 */
-	l16ui	a7, a2, 1	/* bits  8..23 */
-	l8ui	a8, a2, 3	/* bits  0.. 8 */
+	l8ua	a6, a2, 0	/* bits 24..31 */
+	l16ua	a7, a2, 1	/* bits  8..23 */
+	l8ua	a8, a2, 3	/* bits  0.. 8 */
 #ifdef	__XTENSA_EB__
 	slli	a6, a6, 24
 #else
@@ -155,8 +155,8 @@ ENTRY(csum_partial)
 #endif
 2:
 	_bbci.l	a3, 1, 3f	/* remaining 2-byte chunk, still odd addr */
-	l8ui	a6, a2, 0
-	l8ui	a7, a2, 1
+	l8ua	a6, a2, 0
+	l8ua	a7, a2, 1
 #ifdef	__XTENSA_EB__
 	slli	a6, a6, 8
 #else
@@ -291,7 +291,7 @@ EX(10f)	s32i	a9, a3, 0
 	add	a10, a10, a2	/* a10 = end of last 2-byte src chunk */
 .Loop7:
 #endif
-EX(10f)	l16ui	a9, a2, 0
+	l16uax	a9, a2, 0, 10f
 EX(10f)	s16i	a9, a3, 0
 	ONES_ADD(a5, a9)
 	addi	a2, a2, 2
@@ -302,7 +302,7 @@ EX(10f)	s16i	a9, a3, 0
 4:
 	/* This section processes a possible trailing odd byte. */
 	_bbci.l	a4, 0, 8f	/* 1-byte chunk */
-EX(10f)	l8ui	a9, a2, 0
+	l8uax	a9, a2, 0, 10f
 EX(10f)	s8i	a9, a3, 0
 #ifdef __XTENSA_EB__
 	slli	a9, a9, 8	/* shift byte to bits 8..15 */
@@ -326,8 +326,8 @@ EX(10f)	s8i	a9, a3, 0
 	add	a10, a10, a2	/* a10 = end of last odd-aligned, 2-byte src chunk */
 .Loop8:
 #endif
-EX(10f)	l8ui	a9, a2, 0
-EX(10f)	l8ui	a8, a2, 1
+	l8uax	a9, a2, 0, 10f
+	l8uax	a8, a2, 1, 10f
 EX(10f)	s8i	a9, a3, 0
 EX(10f)	s8i	a8, a3, 1
 #ifdef __XTENSA_EB__
