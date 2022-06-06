@@ -90,7 +90,7 @@ ENTRY(__xtensa_copy_user)
 	bltui	a4, 7, .Lbytecopy	# do short copies byte by byte
 
 	# copy 1 byte
-EX(10f)	l8ui	a6, a3, 0
+	l8uax	a6, a3, 0, 10f
 	addi	a3, a3,  1
 EX(10f)	s8i	a6, a5,  0
 	addi	a5, a5,  1
@@ -100,8 +100,8 @@ EX(10f)	s8i	a6, a5,  0
 .Ldst2mod4:	# dst 16-bit aligned
 	# copy 2 bytes
 	bltui	a4, 6, .Lbytecopy	# do short copies byte by byte
-EX(10f)	l8ui	a6, a3, 0
-EX(10f)	l8ui	a7, a3, 1
+	l8uax	a6, a3, 0, 10f
+	l8uax	a7, a3, 1, 10f
 	addi	a3, a3,  2
 EX(10f)	s8i	a6, a5,  0
 EX(10f)	s8i	a7, a5,  1
@@ -123,7 +123,7 @@ EX(10f)	s8i	a7, a5,  1
 	add	a7, a3, a4	# a7 = end address for source
 #endif /* !XCHAL_HAVE_LOOPS */
 .Lnextbyte:
-EX(10f)	l8ui	a6, a3, 0
+	l8uax	a6, a3, 0, 10f
 	addi	a3, a3, 1
 EX(10f)	s8i	a6, a5, 0
 	addi	a5, a5, 1
@@ -181,14 +181,14 @@ EX(10f)	s32i	a6, a5,  0
 .L3:
 	bbci.l	a4, 1, .L4
 	# copy 2 bytes
-EX(10f)	l16ui	a6, a3,  0
+	l16uax	a6, a3, 0, 10f
 	addi	a3, a3,  2
 EX(10f)	s16i	a6, a5,  0
 	addi	a5, a5,  2
 .L4:
 	bbci.l	a4, 0, .L5
 	# copy 1 byte
-EX(10f)	l8ui	a6, a3,  0
+	l8uax	a6, a3, 0, 10f
 EX(10f)	s8i	a6, a5,  0
 .L5:
 	movi	a2, 0		# return success for len bytes copied
@@ -267,8 +267,8 @@ EX(10f)	s32i	a6, a5,  0
 	add	a3, a3, a10	# readjust a3 with correct misalignment
 	bbci.l	a4, 1, .L14
 	# copy 2 bytes
-EX(10f)	l8ui	a6, a3,  0
-EX(10f)	l8ui	a7, a3,  1
+	l8uax	a6, a3, 0, 10f
+	l8uax	a7, a3, 1, 10f
 	addi	a3, a3,  2
 EX(10f)	s8i	a6, a5,  0
 EX(10f)	s8i	a7, a5,  1
@@ -276,7 +276,7 @@ EX(10f)	s8i	a7, a5,  1
 .L14:
 	bbci.l	a4, 0, .L15
 	# copy 1 byte
-EX(10f)	l8ui	a6, a3,  0
+	l8uax	a6, a3, 0, 10f
 EX(10f)	s8i	a6, a5,  0
 .L15:
 	movi	a2, 0		# return success for len bytes copied

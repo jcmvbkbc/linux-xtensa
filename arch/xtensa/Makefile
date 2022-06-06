@@ -35,6 +35,9 @@ KBUILD_CFLAGS += -ffreestanding -D__linux__
 KBUILD_CFLAGS += -pipe -mlongcalls -mtext-section-literals
 KBUILD_CFLAGS += $(call cc-option,-mforce-no-pic,)
 KBUILD_CFLAGS += $(call cc-option,-mno-serialize-volatile,)
+ifneq ($(CONFIG_XTENSA_FORCE_L32),)
+KBUILD_CFLAGS += $(call cc-option,-mforce-l32,)
+endif
 ifneq ($(CONFIG_KERNEL_ABI_CALL0),)
 KBUILD_CFLAGS += -mabi=call0
 KBUILD_AFLAGS += -mabi=call0

@@ -15,6 +15,7 @@
 #ifndef _XTENSA_STRING_H
 #define _XTENSA_STRING_H
 
+#ifndef CONFIG_XTENSA_FORCE_L32
 #define __HAVE_ARCH_STRCPY
 static inline char *strcpy(char *__dest, const char *__src)
 {
@@ -107,14 +108,16 @@ static inline int strncmp(const char *__cs, const char *__ct, size_t __n)
 }
 
 #define __HAVE_ARCH_MEMSET
+#define __HAVE_ARCH_MEMCPY
+#define __HAVE_ARCH_MEMMOVE
+#endif
+
 extern void *memset(void *__s, int __c, size_t __count);
 extern void *__memset(void *__s, int __c, size_t __count);
 
-#define __HAVE_ARCH_MEMCPY
 extern void *memcpy(void *__to, __const__ void *__from, size_t __n);
 extern void *__memcpy(void *__to, __const__ void *__from, size_t __n);
 
-#define __HAVE_ARCH_MEMMOVE
 extern void *memmove(void *__dest, __const__ void *__src, size_t __n);
 extern void *__memmove(void *__dest, __const__ void *__src, size_t __n);
 
