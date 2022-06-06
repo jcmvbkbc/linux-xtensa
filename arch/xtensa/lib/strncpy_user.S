@@ -66,7 +66,7 @@ ENTRY(__strncpy_user)
 	j	.Ldstunaligned
 
 .Lsrc1mod2:	# src address is odd
-EX(11f)	l8ui	a9, a3, 0		# get byte 0
+	l8uax	a9, a3, 0, 11f		# get byte 0
 	addi	a3, a3, 1		# advance src pointer
 EX(10f)	s8i	a9, a11, 0		# store byte 0
 	beqz	a9, .Lret		# if byte 0 is zero
@@ -76,14 +76,14 @@ EX(10f)	s8i	a9, a11, 0		# store byte 0
 	bbci.l	a3, 1, .Lsrcaligned	# if src is now word-aligned
 
 .Lsrc2mod4:	# src address is 2 mod 4
-EX(11f)	l8ui	a9, a3, 0		# get byte 0
+	l8uax	a9, a3, 0, 11f		# get byte 0
 	/* 1-cycle interlock */
 EX(10f)	s8i	a9, a11, 0		# store byte 0
 	beqz	a9, .Lret		# if byte 0 is zero
 	addi	a11, a11, 1		# advance dst pointer
 	addi	a4, a4, -1		# decrement len
 	beqz	a4, .Lret		# if len is zero
-EX(11f)	l8ui	a9, a3, 1		# get byte 0
+	l8uax	a9, a3, 1, 11f		# get byte 0
 	addi	a3, a3, 2		# advance src pointer
 EX(10f)	s8i	a9, a11, 0		# store byte 0
 	beqz	a9, .Lret		# if byte 0 is zero
@@ -123,7 +123,7 @@ EX(10f)	s32i	a9, a11, 0		# store word to dst
 .Loop1done:
 	bbci.l	a4, 1, .L100
 	# copy 2 bytes
-EX(11f)	l16ui	a9, a3, 0
+	l16uax	a9, a3, 0, 11f
 	addi	a3, a3, 2		# advance src pointer
 #ifdef __XTENSA_EB__
 	bnone	a9, a7, .Lz0		# if byte 2 is zero
@@ -136,7 +136,7 @@ EX(10f)	s16i	a9, a11, 0
 	addi	a11, a11, 2		# advance dst pointer
 .L100:
 	bbci.l	a4, 0, .Lret
-EX(11f)	l8ui	a9, a3, 0
+	l8uax	a9, a3, 0, 11f
 	/* slot */
 EX(10f)	s8i	a9, a11, 0
 	beqz	a9, .Lret		# if byte is zero
@@ -187,7 +187,7 @@ EX(10f)	s8i	a9, a11, 2
 	add	a10, a11, a4		# a10 = ending address
 #endif /* XCHAL_HAVE_LOOPS */
 .Lnextbyte:
-EX(11f)	l8ui	a9, a3, 0
+	l8uax	a9, a3, 0, 11f
 	addi	a3, a3, 1
 EX(10f)	s8i	a9, a11, 0
 	beqz	a9, .Lunalignedend

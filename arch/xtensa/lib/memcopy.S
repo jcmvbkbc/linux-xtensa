@@ -9,6 +9,8 @@
  * Copyright (C) 2002 - 2012 Tensilica Inc.
  */
 
+#ifndef CONFIG_XTENSA_FORCE_L32
+
 #include <linux/linkage.h>
 #include <asm/asmmacro.h>
 #include <asm/core.h>
@@ -540,3 +542,5 @@ WEAK(memmove)
 ENDPROC(__memmove)
 EXPORT_SYMBOL(__memmove)
 EXPORT_SYMBOL(memmove)
+
+#endif
