@@ -191,6 +191,53 @@ do {									\
 } while (0)
 
 
+#ifdef CONFIG_XTENSA_FORCE_L32
+#if defined(__XTENSA_EL__)
+#define XTENSA_EXTRACT1 \
+	"   extui  %[x], %[x], 0, 8	\n"
+#define XTENSA_EXTRACT2 \
+	"   extui  %[x], %[x], 0, 16	\n"
+
+#define XTENSA_LOAD_1_2 \
+	"   addi   %[x], %[mem]		\n"	\
+	"   ssa8l  %[x]			\n"	\
+	"   srli   %[x], %[x], 2	\n"	\
+	"   slli   %[x], %[x], 2	\n"	\
+	"1: l32i   %[x], %[x], 0	\n"	\
+	"   srl    %[x], %[x]		\n"
+#elif defined(__XTENSA_EB__)
+#define XTENSA_EXTRACT1 \
+	"   extui  %[x], %[x], 24, 8	\n"
+#define XTENSA_EXTRACT2 \
+	"   extui  %[x], %[x], 16, 16	\n"
+
+#define XTENSA_LOAD_1_2 \
+	"   addi   %[x], %[mem]		\n"	\
+	"   ssa8b  %[x]			\n"	\
+	"   srli   %[x], %[x], 2	\n"	\
+	"   slli   %[x], %[x], 2	\n"	\
+	"1: l32i   %[x], %[x], 0	\n"	\
+	"   sll    %[x], %[x]		\n"
+#else
+#error Unsupported Xtensa endianness
+#endif
+
+#define XTENSA_EXTRACT4
+
+#define XTENSA_LOAD1 XTENSA_LOAD_1_2
+#define XTENSA_LOAD2 XTENSA_LOAD_1_2
+#define XTENSA_LOAD4 \
+	"1: l32i   %[x], %[mem]		\n"
+
+#define XTENSA_LOAD(insn, extract) \
+	XTENSA_LOAD ## extract			\
+	XTENSA_EXTRACT ## extract
+
+#else
+#define XTENSA_LOAD(insn, extract) \
+	"1: "insn" %[x], %[mem]		\n"
+#endif
+
 /*
  * WARNING: If you modify this macro at all, verify that the
  * __check_align_* macros still work.
@@ -200,7 +247,7 @@ do {							\
 	u32 __x = 0;					\
 	__asm__ __volatile__(				\
 		__check_align_##align			\
-		"1: "insn"  %[x], %[mem]	\n"	\
+		XTENSA_LOAD(insn, align)		\
 		"2:				\n"	\
 		"   .section  .fixup,\"ax\"	\n"	\
 		"   .align 4			\n"	\
