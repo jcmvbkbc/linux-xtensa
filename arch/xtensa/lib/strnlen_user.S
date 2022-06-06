@@ -117,7 +117,7 @@ EX(10f)	l32i	a9, a4, 4	# load 4 bytes for remaining checks
 	abi_ret_default
 
 .L1mod2:	# address is odd
-EX(10f)	l8ui	a9, a4, 4		# get byte 0
+	l8uax	a9, a4, 4, 10f		# get byte 0
 	addi	a4, a4, 1		# advance string pointer
 	beqz	a9, .Lz3		# if byte 0 is zero
 	bbci.l	a4, 1, .Laligned	# if string pointer is now word-aligned
