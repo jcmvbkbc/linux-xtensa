@@ -99,14 +99,23 @@ static struct timer_data {
 	u8 *data;
 	u32 index;
 	u32 size;
+	ktime_t prev;
 } timer_data;
 
 static enum hrtimer_restart timer_cb(struct hrtimer *timer)
 {
 	struct timer_data *p = &timer_data;
-	u64 over;
+	ktime_t now = ktime_get();
 
-	over = hrtimer_forward(timer, ktime_get(), PERIOD);
+	hrtimer_forward(timer, now, PERIOD);
+	if (p->prev != 0) {
+		while (p->prev < now) {
+			++p->index;
+			p->prev += PERIOD;
+		}
+	} else {
+		p->prev = now;
+	}
 	if (p->index < p->size) {
 		volatile void __iomem *rtc_base;
 
@@ -114,9 +123,7 @@ static enum hrtimer_restart timer_cb(struct hrtimer *timer)
 		writel(RTCIO_PAD_PDAC1_FUNC_DAC_DEFAULT |
 		       (p->data[p->index] << RTCIO_PAD_PDAC1_DAC_SHIFT),
 		       rtc_base + 0x84);
-		p->index += over;
-		if (p->index < p->size)
-			return HRTIMER_RESTART;
+		return HRTIMER_RESTART;
 	}
 	return HRTIMER_NORESTART;
 }
