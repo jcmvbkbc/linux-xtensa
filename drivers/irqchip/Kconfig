@@ -302,6 +302,14 @@ config XTENSA_MX
 	select IRQ_DOMAIN
 	select GENERIC_IRQ_EFFECTIVE_AFF_MASK if SMP
 
+config ESP32_INTC
+	bool "ESP32 interrupt matrix"
+	select IRQ_DOMAIN_HIERARCHY
+	help
+	  Interrupt matrix controller from Espressif ESP32. It is connected
+	  to the xtensa core interrupt controllers on the chip and is supposed
+	  to be connected to the xtensa PIC in the device tree.
+
 config XILINX_INTC
 	bool "Xilinx Interrupt Controller IP"
 	depends on OF_ADDRESS
