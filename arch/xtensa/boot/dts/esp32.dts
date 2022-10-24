@@ -8,7 +8,7 @@
 	interrupt-parent = <&pic>;
 
 	chosen {
-		bootargs = "earlycon=esp32uart,mmio32,0x3ff40000,115200n8 console=ttyS0,115200n8 debug rw root=mtd:data init=/bin/sh ip=dhcp";
+		bootargs = "earlycon=esp32uart,mmio32,0x3ff40000,115200n8 console=ttyS0,115200n8 debug rw root=mtd:data init=/bin/sh ip=dhcp no_hash_pointers ";
 	};
 
 	aliases {
