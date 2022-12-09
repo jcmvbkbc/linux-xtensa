@@ -34,24 +34,21 @@ void platform_restart(void)
 	/* control never gets here */
 }
 
-void platform_heartbeat(void)
+void __init platform_setup(char **p)
 {
 	volatile void __iomem *base;
 
 	base = (volatile void __iomem *)0x3FF48000;
-	writel(0x050D83AA1, base + 0xa4);
-	writel(1, base + 0xa0);
-	writel(0, base + 0xa4);
+	writel(0x50D83AA1, base + 0xa4);
+	writel(0, base + 0x8c);
 
 	base = (volatile void __iomem *)0x3FF5F000;
-	writel(0x050D83AA1, base + 0x64);
-	writel(1, base + 0x60);
-	writel(0, base + 0x64);
+	writel(0x50D83AA1, base + 0x64);
+	writel(0, base + 0x48);
 
 	base = (volatile void __iomem *)0x3FF60000;
-	writel(0x050D83AA1, base + 0x64);
-	writel(1, base + 0x60);
-	writel(0, base + 0x64);
+	writel(0x50D83AA1, base + 0x64);
+	writel(0, base + 0x48);
 }
 
 #ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
