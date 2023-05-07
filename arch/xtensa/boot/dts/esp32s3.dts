@@ -83,16 +83,16 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 			compatible = "mtd-rom";
-			reg = <0x42830000 0x00780000>;
+			reg = <0x42830000 0x00800000>;
 			bank-width = <2>;
 			device-width = <2>;
 			partition@0 {
 				label = "linux";
-				reg = <0x00000000 0x00200000>;
+				reg = <0x00000000 0x00300000>;
 			};
 			partition@200000 {
 				label = "data";
-				reg = <0x00200000 0x00580000>;
+				reg = <0x00300000 0x00580000>;
 			};
 		};
 	};
