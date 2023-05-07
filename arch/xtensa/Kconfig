@@ -691,7 +691,6 @@ choice
 
 config XTENSA_VECTORS_IN_TEXT
 	bool "Merge relocatable vectors into kernel text"
-	depends on !MTD_XIP
 	help
 	  This option puts relocatable vectors into the kernel .text section
 	  with proper alignment.
