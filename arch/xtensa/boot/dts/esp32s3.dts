@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+/ {
+	compatible = "esp32s3";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "earlycon=esp32uart,mmio32,0x60000000,115200n8 console=ttyS0,115200n8 debug rw root=mtd:data no_hash_pointers ";
+	};
+
+	aliases {
+		serial0 = "/soc/serial@60000000";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3c030000 0x00800000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+			clocks = <&osc>;
+		};
+	};
+
+	clocks {
+		osc: clk160 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <160000000>;
+		};
+		apb: clk80 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <80000000>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		interrupt-parent = <&intc>;
+		ranges;
+
+		intc: intc@600c2000 {
+			compatible = "esp,esp32-intc";
+			reg = <0x600c2000 0x114>;
+			/* first cell: interrupt matrix row
+			 * second cell: internal xtensa core IRQ number to connect to
+			 */
+			#interrupt-cells = <2>;
+			interrupt-controller;
+			interrupt-parent = <&pic>;
+		};
+
+		serial0: serial@60000000 {
+			device_type = "serial";
+			compatible = "esp,esp32-uart";
+			reg = <0x60000000 0x80>;
+			interrupts = <27 1>; /* UART0, external IRQ1 */
+			clocks = <&apb>;
+		};
+
+		flash: flash@42830000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "mtd-rom";
+			reg = <0x42830000 0x00780000>;
+			bank-width = <2>;
+			device-width = <2>;
+			partition@0 {
+				label = "linux";
+				reg = <0x00000000 0x00200000>;
+			};
+			partition@200000 {
+				label = "data";
+				reg = <0x00200000 0x00580000>;
+			};
+		};
+	};
+};
