@@ -38,15 +38,15 @@ void __init platform_setup(char **p)
 {
 	volatile void __iomem *base;
 
-	base = (volatile void __iomem *)0x3FF48000;
-	writel(0x50D83AA1, base + 0xa4);
-	writel(0, base + 0x8c);
+	base = (volatile void __iomem *)0x60008000;
+	writel(0x50D83AA1, base + 0xb0);
+	writel(0, base + 0x98);
 
-	base = (volatile void __iomem *)0x3FF5F000;
+	base = (volatile void __iomem *)0x6001f000;
 	writel(0x50D83AA1, base + 0x64);
 	writel(0, base + 0x48);
 
-	base = (volatile void __iomem *)0x3FF60000;
+	base = (volatile void __iomem *)0x60020000;
 	writel(0x50D83AA1, base + 0x64);
 	writel(0, base + 0x48);
 }

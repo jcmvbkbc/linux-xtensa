@@ -66,7 +66,8 @@ static struct uart_port *esp32_uart_ports[UART_NR];
 #ifdef DEBUG
 void dbg_echo(const char *s)
 {
-	volatile void __iomem *base = (volatile void __iomem *)0x3ff40000;
+	//volatile void __iomem *base = (volatile void __iomem *)0x3ff40000;
+	volatile void __iomem *base = (volatile void __iomem *)0x60000000;
 
 	while ((readl(base + UART_STATUS_REG) & UART_TXFIFO_CNT_MASK) != 0)
 		;
