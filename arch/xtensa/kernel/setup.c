@@ -381,6 +381,19 @@ void __init setup_arch(char **cmdline_p)
 	conswitchp = &vga_con;
 # endif
 #endif
+	if (0) {
+		u32 i, j;
+		u32 base = 0x40290000;
+		//u32 base = 0xf0000000;
+
+		for (i = 0; i < 0x00400000; i += 65536) {
+			u32 sum = 0;
+			for (j = 0; j < 16384; ++j) {
+				sum += j[(u32*)(base + i)];
+			}
+			pr_info("%08x..%08x: %08x\n", i, i + 65536, sum);
+		}
+	}
 }
 
 static DEFINE_PER_CPU(struct cpu, cpu_data);
