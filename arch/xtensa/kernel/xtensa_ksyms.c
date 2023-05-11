@@ -20,6 +20,7 @@
 #include <linux/in6.h>
 
 #include <linux/uaccess.h>
+#include <asm/asm-prototypes.h>
 #include <asm/cacheflush.h>
 #include <asm/checksum.h>
 #include <asm/dma.h>
@@ -50,21 +51,6 @@ EXPORT_SYMBOL(clear_page);
 EXPORT_SYMBOL(copy_page);
 
 EXPORT_SYMBOL(empty_zero_page);
-
-/*
- * gcc internal math functions
- */
-extern long long __ashrdi3(long long, int);
-extern long long __ashldi3(long long, int);
-extern long long __bswapdi2(long long);
-extern int __bswapsi2(int);
-extern long long __lshrdi3(long long, int);
-extern int __divsi3(int, int);
-extern int __modsi3(int, int);
-extern int __mulsi3(int, int);
-extern unsigned int __udivsi3(unsigned int, unsigned int);
-extern unsigned int __umodsi3(unsigned int, unsigned int);
-extern unsigned long long __umulsidi3(unsigned int, unsigned int);
 
 EXPORT_SYMBOL(__ashldi3);
 EXPORT_SYMBOL(__ashrdi3);
