@@ -28,10 +28,13 @@ void platform_power_off(void)
 
 void platform_restart(void)
 {
-	/* Flush and reset the mmu, simulate a processor reset, and
-	 * jump to the reset vector. */
-	cpu_reset();
-	/* control never gets here */
+	volatile void __iomem *base;
+
+	base = (volatile void __iomem *)0x60008000;
+	writel(0x80000000 , base);
+
+	while (1)
+		cpu_relax();
 }
 
 void __init platform_setup(char **p)
