@@ -79,20 +79,33 @@
 			clocks = <&apb>;
 		};
 
-		flash: flash@40090000 {
+		lpm: lpm@60008000 {
+			compatible = "syscon";
+			reg = <0x3ff48000 0x1000>;
+		};
+
+		syscon@60008000 {
+			compatible = "syscon-reboot";
+			regmap = <&lpm>;
+			offset = <0>;
+			value = <0x80000000>;
+			mask = <0x80000000>;
+		};
+
+		flash: flash@400f0000 {
 			#address-cells = <1>;
 			#size-cells = <1>;
 			compatible = "mtd-rom";
-			reg = <0x40090000 0x00400000>;
+			reg = <0x400f0000 0x00400000>;
 			bank-width = <2>;
 			device-width = <2>;
 			partition@40000 {
 				label = "linux";
-				reg = <0x00040000 0x001c0000>;
+				reg = <0x00000000 0x001c0000>;
 			};
 			partition@200000 {
 				label = "data";
-				reg = <0x00200000 0x00200000>;
+				reg = <0x001c0000 0x00200000>;
 			};
 		};
 	};

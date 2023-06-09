@@ -25,9 +25,10 @@ void __init platform_setup(char **p)
 	v = readl(base);
 	pr_info("RTC_CNTL_RTC_OPTIONS0_REG = %08x\n", v);
 	writel((v & ~3) | 2, base);
-#endif
+
 	base = (volatile void __iomem *)0x600c0000;
 	v = readl(base);
 	pr_info("SYSTEM_CORE_1_CONTROL_0_REG = %08x\n", v);
 	writel(v | 1, base);
+#endif
 }
