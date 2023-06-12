@@ -9,6 +9,8 @@
  * Copyright (C) 2002 - 2012 Tensilica Inc.
  */
 
+#ifndef CONFIG_XTENSA_FORCE_L32
+
 #include <linux/linkage.h>
 #include <asm/asmmacro.h>
 #include <asm/core.h>
@@ -551,3 +553,5 @@ WEAK(memmove)
 	abi_ret_default
 
 ENDPROC(__memmove)
+
+#endif

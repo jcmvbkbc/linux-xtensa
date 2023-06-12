@@ -15,7 +15,16 @@
 #ifndef _XTENSA_STRING_H
 #define _XTENSA_STRING_H
 
-#ifndef CONFIG_XTENSA_FORCE_L32
+#ifdef CONFIG_XTENSA_FORCE_L32
+
+#if !(defined(CONFIG_KASAN) && !defined(__SANITIZE_ADDRESS__))
+#define __memcpy(dst, src, len) memcpy(dst, src, len)
+#define __memmove(dst, src, len) memmove(dst, src, len)
+#define __memset(s, c, n) memset(s, c, n)
+#endif
+
+#else
+
 #define __HAVE_ARCH_STRCPY
 static inline char *strcpy(char *__dest, const char *__src)
 {
