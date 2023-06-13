@@ -53,12 +53,3 @@ void __init platform_setup(char **p)
 	writel(0x50D83AA1, base + 0x64);
 	writel(0, base + 0x48);
 }
-
-#ifdef CONFIG_XTENSA_CALIBRATE_CCOUNT
-
-void __init platform_calibrate_ccount(void)
-{
-	ccount_freq = 0;
-}
-
-#endif
