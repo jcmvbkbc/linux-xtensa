@@ -8,7 +8,7 @@
 	interrupt-parent = <&pic>;
 
 	chosen {
-		bootargs = "earlycon=esp32uart,mmio32,0x60000000,115200n8 console=ttyS0,115200n8 debug rw root=mtd:data no_hash_pointers ";
+		bootargs = "earlycon=esp32s3uart,mmio32,0x60000000,115200n8 console=ttyS0,115200n8 debug rw root=mtd:data no_hash_pointers ";
 	};
 
 	aliases {
@@ -73,7 +73,7 @@
 
 		serial0: serial@60000000 {
 			device_type = "serial";
-			compatible = "esp,esp32-uart";
+			compatible = "esp,esp32s3-uart";
 			reg = <0x60000000 0x80>;
 			interrupts = <27 1>; /* UART0, external IRQ1 */
 			clocks = <&apb>;
