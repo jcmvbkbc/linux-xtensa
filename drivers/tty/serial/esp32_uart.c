@@ -18,46 +18,85 @@
 #define ESP32_UART_TX_FIFO_SIZE	127
 #define ESP32_UART_RX_FIFO_SIZE	127
 
-#define UART_FIFO_REG		0x00
-#define UART_INT_RAW_REG	0x04
-#define UART_INT_ST_REG		0x08
-#define UART_INT_ENA_REG	0x0c
-#define UART_INT_CLR_REG	0x10
-#define UART_RXFIFO_FULL_INT_MASK	0x00000001
-#define UART_TXFIFO_EMPTY_INT_MASK	0x00000002
-#define UART_BRK_DET_INT_MASK		0x00000080
-#define UART_STATUS_REG		0x1c
-#define UART_RXFIFO_CNT_MASK		0x000003ff
-#define UART_RXFIFO_CNT_SHIFT		0
-#define UART_TXFIFO_CNT_MASK		0x03ff0000
-#define UART_TXFIFO_CNT_SHIFT		16
-#define UART_ST_UTX_OUT_MASK		0x0f000000
-#define UART_ST_UTX_OUT_IDLE		0x00000000
-#define UART_ST_UTX_OUT_SHIFT		24
-#define UART_CONF0_REG		0x20
-#define UART_PARITY_MASK		0x00000001
-#define UART_PARITY_EN_MASK		0x00000002
-#define UART_BIT_NUM_MASK		0x0000000c
-#define UART_BIT_NUM_5			0x00000000
-#define UART_BIT_NUM_6			0x00000004
-#define UART_BIT_NUM_7			0x00000008
-#define UART_BIT_NUM_8			0x0000000c
-#define UART_STOP_BIT_NUM_MASK		0x00000030
-#define UART_STOP_BIT_NUM_1		0x00000010
-#define UART_STOP_BIT_NUM_2		0x00000030
-#define UART_TICK_REF_ALWAYS_ON_MASK	0x00000000
-#define UART_CONF1_REG		0x24
-#define UART_RXFIFO_FULL_THRHD_MASK	0x000003ff
-#define UART_RXFIFO_FULL_THRHD_SHIFT	0
-#define UART_TXFIFO_EMPTY_THRHD_MASK	0x000ffc00
-#define UART_TXFIFO_EMPTY_THRHD_SHIFT	10
+#define UART_FIFO_REG			0x00
+#define UART_INT_RAW_REG		0x04
+#define UART_INT_ST_REG			0x08
+#define UART_INT_ENA_REG		0x0c
+#define UART_INT_CLR_REG		0x10
+#define UART_RXFIFO_FULL_INT_MASK		0x00000001
+#define UART_TXFIFO_EMPTY_INT_MASK		0x00000002
+#define UART_BRK_DET_INT_MASK			0x00000080
+#define UART_STATUS_REG			0x1c
+#define ESP32_UART_RXFIFO_CNT_MASK		0x000000ff
+#define ESP32S3_UART_RXFIFO_CNT_MASK		0x000003ff
+#define UART_RXFIFO_CNT_SHIFT			0
+#define ESP32_UART_TXFIFO_CNT_MASK		0x00ff0000
+#define ESP32S3_UART_TXFIFO_CNT_MASK		0x03ff0000
+#define UART_TXFIFO_CNT_SHIFT			16
+#define UART_ST_UTX_OUT_MASK			0x0f000000
+#define UART_ST_UTX_OUT_IDLE			0x00000000
+#define UART_ST_UTX_OUT_SHIFT			24
+#define UART_CONF0_REG			0x20
+#define UART_PARITY_MASK			0x00000001
+#define UART_PARITY_EN_MASK			0x00000002
+#define UART_BIT_NUM_MASK			0x0000000c
+#define UART_BIT_NUM_5				0x00000000
+#define UART_BIT_NUM_6				0x00000004
+#define UART_BIT_NUM_7				0x00000008
+#define UART_BIT_NUM_8				0x0000000c
+#define UART_STOP_BIT_NUM_MASK			0x00000030
+#define UART_STOP_BIT_NUM_1			0x00000010
+#define UART_STOP_BIT_NUM_2			0x00000030
+#define ESP32_UART_TICK_REF_ALWAYS_ON_MASK	0x08000000
+#define ESP32S3_UART_TICK_REF_ALWAYS_ON_MASK	0x00000000
+#define UART_CONF1_REG			0x24
+#define ESP32_UART_RXFIFO_FULL_THRHD_MASK	0x0000007f
+#define ESP32S3_UART_RXFIFO_FULL_THRHD_MASK	0x000003ff
+#define UART_RXFIFO_FULL_THRHD_SHIFT		0
+#define ESP32_UART_TXFIFO_EMPTY_THRHD_MASK	0x00007f00
+#define ESP32S3_UART_TXFIFO_EMPTY_THRHD_MASK	0x000ffc00
+#define ESP32_UART_TXFIFO_EMPTY_THRHD_SHIFT	8
+#define ESP32S3_UART_TXFIFO_EMPTY_THRHD_SHIFT	10
 
+struct esp32_uart_variant
+{
+	u32 rxfifo_cnt_mask;
+	u32 txfifo_cnt_mask;
+	u32 tick_ref_always_on_mask;
+	u32 rxfifo_full_thrhd_mask;
+	u32 txfifo_empty_thrhd_mask;
+	u32 txfifo_empty_thrhd_shift;
+	const char *type;
+};
+
+static const struct esp32_uart_variant esp32_variant = {
+	.rxfifo_cnt_mask = ESP32_UART_RXFIFO_CNT_MASK,
+	.txfifo_cnt_mask = ESP32_UART_TXFIFO_CNT_MASK,
+	.tick_ref_always_on_mask = ESP32_UART_TICK_REF_ALWAYS_ON_MASK,
+	.rxfifo_full_thrhd_mask = ESP32_UART_RXFIFO_FULL_THRHD_MASK,
+	.txfifo_empty_thrhd_mask = ESP32_UART_TXFIFO_EMPTY_THRHD_MASK,
+	.txfifo_empty_thrhd_shift = ESP32_UART_TXFIFO_EMPTY_THRHD_SHIFT,
+	.type = "ESP32 UART",
+};
+
+static const struct esp32_uart_variant esp32s3_variant = {
+	.rxfifo_cnt_mask = ESP32S3_UART_RXFIFO_CNT_MASK,
+	.txfifo_cnt_mask = ESP32S3_UART_TXFIFO_CNT_MASK,
+	.tick_ref_always_on_mask = ESP32S3_UART_TICK_REF_ALWAYS_ON_MASK,
+	.rxfifo_full_thrhd_mask = ESP32S3_UART_RXFIFO_FULL_THRHD_MASK,
+	.txfifo_empty_thrhd_mask = ESP32S3_UART_TXFIFO_EMPTY_THRHD_MASK,
+	.txfifo_empty_thrhd_shift = ESP32S3_UART_TXFIFO_EMPTY_THRHD_SHIFT,
+	.type = "ESP32S3 UART",
+};
 
 static const struct of_device_id esp32_uart_dt_ids[] = {
 	{
 		.compatible = "esp,esp32-uart",
-	},
-	{ /* sentinel */ }
+		.data = &esp32_variant,
+	}, {
+		.compatible = "esp,esp32s3-uart",
+		.data = &esp32s3_variant,
+	}, { /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, esp32_uart_dt_ids);
 
@@ -92,6 +131,11 @@ void dbg_printf(const char *fmt, ...)
 }
 #endif
 
+static const struct esp32_uart_variant *port_variant(struct uart_port *port)
+{
+	return port->private_data;
+}
+
 static void esp32_uart_write(struct uart_port *port, unsigned long reg, u32 v)
 {
 	writel(v, port->membase + reg);
@@ -105,20 +149,20 @@ static u32 esp32_uart_read(struct uart_port *port, unsigned long reg)
 static u32 esp32_uart_tx_fifo_cnt(struct uart_port *port)
 {
 	return (esp32_uart_read(port, UART_STATUS_REG) &
-		UART_TXFIFO_CNT_MASK) >> UART_TXFIFO_CNT_SHIFT;
+		port_variant(port)->txfifo_cnt_mask) >> UART_TXFIFO_CNT_SHIFT;
 }
 
 static u32 esp32_uart_rx_fifo_cnt(struct uart_port *port)
 {
 	return (esp32_uart_read(port, UART_STATUS_REG) &
-		UART_RXFIFO_CNT_MASK) >> UART_RXFIFO_CNT_SHIFT;
+		port_variant(port)->rxfifo_cnt_mask) >> UART_RXFIFO_CNT_SHIFT;
 }
 
 /* return TIOCSER_TEMT when transmitter is not busy */
 static unsigned int esp32_uart_tx_empty(struct uart_port *port)
 {
 	u32 status = esp32_uart_read(port, UART_STATUS_REG) &
-		(UART_TXFIFO_CNT_MASK | UART_ST_UTX_OUT_MASK);
+		(port_variant(port)->txfifo_cnt_mask | UART_ST_UTX_OUT_MASK);
 
 	pr_debug("%s: %08x\n", __func__, status);
 	return status == UART_ST_UTX_OUT_IDLE ? TIOCSER_TEMT : 0;
@@ -264,7 +308,7 @@ static int esp32_uart_startup(struct uart_port *port)
 	spin_lock_irqsave(&port->lock, flags);
 	esp32_uart_write(port, UART_CONF1_REG,
 			 (1 << UART_RXFIFO_FULL_THRHD_SHIFT) |
-			 (1 << UART_TXFIFO_EMPTY_THRHD_SHIFT));
+			 (1 << port_variant(port)->txfifo_empty_thrhd_shift));
 	esp32_uart_write(port, UART_INT_CLR_REG,
 			 UART_RXFIFO_FULL_INT_MASK |
 			 UART_BRK_DET_INT_MASK);
@@ -294,7 +338,7 @@ static void esp32_uart_set_termios(struct uart_port *port,
 				   struct ktermios *termios,
 				   const struct ktermios *old)
 {
-	u32 conf0 = UART_TICK_REF_ALWAYS_ON_MASK;
+	u32 conf0 = port_variant(port)->tick_ref_always_on_mask;
 
 	if (termios->c_cflag & PARENB) {
 		conf0 |= UART_PARITY_EN_MASK;
@@ -327,7 +371,7 @@ static void esp32_uart_set_termios(struct uart_port *port,
 
 static const char *esp32_uart_type(struct uart_port *port)
 {
-	return "ESP32 UART";
+	return port_variant(port)->type;
 }
 
 static void esp32_uart_release_port(struct uart_port *port)
@@ -495,6 +539,7 @@ static int __init esp32_uart_early_console_setup(struct earlycon_device *device,
 	if (!device->port.membase)
 		return -ENODEV;
 
+	device->port.private_data = (void *)&esp32_variant;
 	device->con->write = esp32_uart_earlycon_write;
 #ifdef CONFIG_CONSOLE_POLL
 	device->con->read = esp32_uart_earlycon_read;
@@ -505,6 +550,24 @@ static int __init esp32_uart_early_console_setup(struct earlycon_device *device,
 
 OF_EARLYCON_DECLARE(esp32uart, "esp,esp32-uart",
 		    esp32_uart_early_console_setup);
+
+static int __init esp32s3_uart_early_console_setup(struct earlycon_device *device,
+						   const char *options)
+{
+	if (!device->port.membase)
+		return -ENODEV;
+
+	device->port.private_data = (void *)&esp32s3_variant;
+	device->con->write = esp32_uart_earlycon_write;
+#ifdef CONFIG_CONSOLE_POLL
+	device->con->read = esp32_uart_earlycon_read;
+#endif
+
+	return 0;
+}
+
+OF_EARLYCON_DECLARE(esp32s3uart, "esp,esp32s3-uart",
+		    esp32s3_uart_early_console_setup);
 
 static struct uart_driver esp32_uart_reg = {
 	.owner		= THIS_MODULE,
@@ -517,9 +580,14 @@ static struct uart_driver esp32_uart_reg = {
 static int esp32_uart_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
+	static const struct of_device_id *match;
 	struct uart_port *port;
 	struct resource *res;
 	int ret;
+
+	match = of_match_device(esp32_uart_dt_ids, &pdev->dev);
+	if (!match)
+		return -ENODEV;
 
 	port = devm_kzalloc(&pdev->dev, sizeof(*port), GFP_KERNEL);
 	if (!port)
@@ -557,6 +625,7 @@ static int esp32_uart_probe(struct platform_device *pdev)
 	port->flags = UPF_BOOT_AUTOCONF;
 	port->has_sysrq = 1;
 	port->fifosize = ESP32_UART_TX_FIFO_SIZE;
+	port->private_data = (void *)match->data;
 
 	esp32_uart_ports[port->line] = port;
 
