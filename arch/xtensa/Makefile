@@ -37,8 +37,14 @@ KBUILD_CFLAGS += $(call cc-option,-mforce-no-pic,)
 KBUILD_CFLAGS += $(call cc-option,-mno-serialize-volatile,)
 KBUILD_CFLAGS += $(call cc-option,-mno-fdpic,)
 ifneq ($(CONFIG_KERNEL_ABI_CALL0),)
+KBUILD_CPPFLAGS += -mabi=call0
 KBUILD_CFLAGS += -mabi=call0
 KBUILD_AFLAGS += -mabi=call0
+endif
+ifneq ($(CONFIG_KERNEL_ABI_DEFAULT),)
+KBUILD_CPPFLAGS += -mabi=windowed
+KBUILD_CFLAGS += -mabi=windowed
+KBUILD_AFLAGS += -mabi=windowed
 endif
 
 KBUILD_AFLAGS += -mlongcalls -mtext-section-literals
