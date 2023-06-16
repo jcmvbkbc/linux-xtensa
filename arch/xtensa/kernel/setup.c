@@ -686,6 +686,14 @@ c_show(struct seq_file *f, void *slot)
 		     XCHAL_DCACHE_LINESIZE,
 		     XCHAL_DCACHE_WAYS,
 		     XCHAL_DCACHE_SIZE);
+	seq_printf(f,
+		   "load/store exceptions\t: %d\n"
+		   "load/store clock count\t: %d\n",
+		   this_cpu_ptr(&exc_table)->fast_handler_count,
+		   this_cpu_ptr(&exc_table)->fast_handler_total);
+
+
+
 
 	return 0;
 }
