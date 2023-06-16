@@ -37,6 +37,10 @@ struct exc_table {
 	void *fast_kernel_handler[EXCCAUSE_N];
 	/* Default C-Handlers */
 	xtensa_exception_handler *default_handler[EXCCAUSE_N];
+
+	u32 fast_handler_start;
+	u32 fast_handler_count;
+	u32 fast_handler_total;
 };
 
 DECLARE_PER_CPU(struct exc_table, exc_table);

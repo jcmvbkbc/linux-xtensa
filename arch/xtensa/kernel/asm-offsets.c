@@ -152,6 +152,12 @@ int main(void)
 	DEFINE(EXC_TABLE_FAST_KERNEL,
 	       offsetof(struct exc_table, fast_kernel_handler));
 	DEFINE(EXC_TABLE_DEFAULT, offsetof(struct exc_table, default_handler));
+	DEFINE(EXC_TABLE_FAST_HANDLER_START,
+	       offsetof(struct exc_table, fast_handler_start));
+	DEFINE(EXC_TABLE_FAST_HANDLER_COUNT,
+	       offsetof(struct exc_table, fast_handler_count));
+	DEFINE(EXC_TABLE_FAST_HANDLER_TOTAL,
+	       offsetof(struct exc_table, fast_handler_total));
 
 #ifdef CONFIG_HIBERNATION
 	DEFINE(PBE_ADDRESS, offsetof(struct pbe, address));
