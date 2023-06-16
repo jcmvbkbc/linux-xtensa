@@ -462,7 +462,13 @@ ENTRY(fast_unaligned)
 1:
 	movi	a4, 0
 	rsr	a3, excsave1
+	rsr	a5, ccount
+	l32i	a6, a3, EXC_TABLE_FAST_HANDLER_START
+	l32i	a7, a3, EXC_TABLE_FAST_HANDLER_TOTAL
 	s32i	a4, a3, EXC_TABLE_FIXUP
+	sub	a5, a5, a6
+	add	a7, a7, a5
+	s32i	a7, a3, EXC_TABLE_FAST_HANDLER_TOTAL
 
 	/* Restore working register */
 
@@ -502,6 +508,12 @@ ENTRY(fast_unaligned)
 	rsr	a3, excsave1
 	movi	a4, fast_unaligned_fixup
 	s32i	a4, a3, EXC_TABLE_FIXUP
+
+	l32i	a5, a3, EXC_TABLE_FAST_HANDLER_COUNT
+	rsr	a6, ccount
+	addi	a5, a5, 1
+	s32i	a6, a3, EXC_TABLE_FAST_HANDLER_START
+	s32i	a5, a3, EXC_TABLE_FAST_HANDLER_COUNT
 
 	rsr	a8, excvaddr		# load unaligned memory address
 
