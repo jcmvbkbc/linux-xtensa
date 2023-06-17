@@ -8,25 +8,32 @@
 #include <linux/of_platform.h>
 
 #define ESP32_INTC_DISCONNECTED 6
+#ifdef CONFIG_SMP
+#define MAX_CPU_COUNT 2
+#else
+#define MAX_CPU_COUNT 1
+#endif
 
 struct esp32_intc {
-	void __iomem *base;
+	void __iomem *base[MAX_CPU_COUNT];
 	int n_irq;
+	int n_cpus;
 };
 
-static void esp32_intc_write(struct esp32_intc *priv, int i, int p)
+static void esp32_intc_write(struct esp32_intc *priv, int cpu, int irq, int p)
 {
 	pr_debug("%s: 0x%08x -> 0x%08lx\n",
-		 __func__, p, (unsigned long)(priv->base + i * 4));
-	writel(p, priv->base + i * 4);
+		 __func__, p, (unsigned long)(priv->base[cpu] + irq * 4));
+	writel(p, priv->base[cpu] + irq * 4);
 }
 
 static void esp32_intc_disconnect_all(struct esp32_intc *priv)
 {
-	int i;
+	int cpu, irq;
 
-	for (i = 0; i < priv->n_irq; ++i)
-		esp32_intc_write(priv, i, ESP32_INTC_DISCONNECTED);
+	for (cpu = 0; cpu < priv->n_cpus; ++cpu)
+		for (irq = 0; irq < priv->n_irq; ++irq)
+			esp32_intc_write(priv, cpu, irq, ESP32_INTC_DISCONNECTED);
 }
 
 static struct irq_chip esp32_intc_chip = {
@@ -54,15 +61,26 @@ static int esp32_intc_domain_alloc(struct irq_domain *domain, unsigned int virq,
 	for (i = 0; i < nr_irqs; ++i) {
 		struct irq_fwspec pfwspec;
 		irq_hw_number_t hwirq;
+		int cpu;
 		int rc;
 
 		pr_debug("  %d: param_count = %d, param[0] = %d, param[1] = %d\n",
 			 i, fwspec[i].param_count,
 			 fwspec[i].param[0], fwspec[i].param[1]);
 
-		if (fwspec[i].param_count != 2 ||
-		    fwspec[i].param[0] >= priv->n_irq)
-		    return -EINVAL;
+		if (fwspec[i].param_count < 2 || fwspec[i].param_count > 3)
+			return -EINVAL;
+
+		if (fwspec[i].param_count == 2)
+			cpu = 0;
+		else
+			cpu = fwspec[i].param[2];
+
+		if (cpu >= priv->n_cpus)
+			return -EINVAL;
+
+		if (fwspec[i].param[0] >= priv->n_irq)
+			return -EINVAL;
 
 		hwirq = fwspec[i].param[1];
 
@@ -79,7 +97,7 @@ static int esp32_intc_domain_alloc(struct irq_domain *domain, unsigned int virq,
 			return rc;
 		}
 
-		esp32_intc_write(priv, fwspec[i].param[0], hwirq);
+		esp32_intc_write(priv, cpu, fwspec[i].param[0], hwirq);
 		rc = irq_domain_set_hwirq_and_chip(domain, virq + i, hwirq,
 						   &esp32_intc_chip, NULL);
 		if (rc) {
@@ -108,6 +126,7 @@ static int __init esp32_intc_hw_init(struct device_node *node,
 	struct platform_device *pdev;
 	struct esp32_intc *priv;
 	resource_size_t size;
+	int cpu;
 
 	pdev = of_find_device_by_node(node);
 	if (!pdev)
@@ -117,11 +136,19 @@ static int __init esp32_intc_hw_init(struct device_node *node,
 	if (!priv)
 		return -ENOMEM;
 
-	priv->base = devm_of_iomap(&pdev->dev, node, 0, &size);
-	if (IS_ERR(priv->base))
-		return PTR_ERR(priv->base);
-
-	priv->n_irq = size / 4;
+	for (cpu = 0; cpu < MAX_CPU_COUNT; ++cpu) {
+		priv->base[cpu] = devm_of_iomap(&pdev->dev, node, cpu, &size);
+		if (IS_ERR(priv->base[cpu])) {
+			if (cpu == 0)
+				return PTR_ERR(priv->base[cpu]);
+			break;
+		}
+		if (cpu == 0)
+			priv->n_irq = size / 4;
+		else if (priv->n_irq != size / 4)
+			return -EINVAL;
+	}
+	priv->n_cpus = cpu;
 
 	*hw = priv;
 
