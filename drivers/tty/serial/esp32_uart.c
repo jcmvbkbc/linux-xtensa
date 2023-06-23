@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <linux/clk.h>
 #include <linux/console.h>
 #include <linux/io.h>
 #include <linux/irq.h>
@@ -10,6 +11,7 @@
 #include <linux/slab.h>
 #include <linux/tty_flip.h>
 #include <linux/delay.h>
+#include <asm/serial.h>
 
 #define DRIVER_NAME	"esp32-uart"
 #define DEV_NAME	"ttyS"
@@ -26,6 +28,12 @@
 #define UART_RXFIFO_FULL_INT_MASK		0x00000001
 #define UART_TXFIFO_EMPTY_INT_MASK		0x00000002
 #define UART_BRK_DET_INT_MASK			0x00000080
+#define UART_CLKDIV_REG			0x14
+#define ESP32_UART_CLKDIV_MASK			0x000fffff
+#define ESP32S3_UART_CLKDIV_MASK		0x00000fff
+#define UART_CLKDIV_SHIFT			0
+#define UART_CLKDIV_FRAG_MASK			0x00f00000
+#define UART_CLKDIV_FRAG_SHIFT			20
 #define UART_STATUS_REG			0x1c
 #define ESP32_UART_RXFIFO_CNT_MASK		0x000000ff
 #define ESP32S3_UART_RXFIFO_CNT_MASK		0x000003ff
@@ -58,8 +66,15 @@
 #define ESP32_UART_TXFIFO_EMPTY_THRHD_SHIFT	8
 #define ESP32S3_UART_TXFIFO_EMPTY_THRHD_SHIFT	10
 
+struct esp32_port
+{
+	struct uart_port port;
+	struct clk *clk;
+};
+
 struct esp32_uart_variant
 {
+	u32 clkdiv_mask;
 	u32 rxfifo_cnt_mask;
 	u32 txfifo_cnt_mask;
 	u32 tick_ref_always_on_mask;
@@ -70,6 +85,7 @@ struct esp32_uart_variant
 };
 
 static const struct esp32_uart_variant esp32_variant = {
+	.clkdiv_mask = ESP32_UART_CLKDIV_MASK,
 	.rxfifo_cnt_mask = ESP32_UART_RXFIFO_CNT_MASK,
 	.txfifo_cnt_mask = ESP32_UART_TXFIFO_CNT_MASK,
 	.tick_ref_always_on_mask = ESP32_UART_TICK_REF_ALWAYS_ON_MASK,
@@ -80,6 +96,7 @@ static const struct esp32_uart_variant esp32_variant = {
 };
 
 static const struct esp32_uart_variant esp32s3_variant = {
+	.clkdiv_mask = ESP32S3_UART_CLKDIV_MASK,
 	.rxfifo_cnt_mask = ESP32S3_UART_RXFIFO_CNT_MASK,
 	.txfifo_cnt_mask = ESP32S3_UART_TXFIFO_CNT_MASK,
 	.tick_ref_always_on_mask = ESP32S3_UART_TICK_REF_ALWAYS_ON_MASK,
@@ -100,7 +117,7 @@ static const struct of_device_id esp32_uart_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, esp32_uart_dt_ids);
 
-static struct uart_port *esp32_uart_ports[UART_NR];
+static struct esp32_port *esp32_uart_ports[UART_NR];
 
 #ifdef DEBUG
 void dbg_echo(const char *s)
@@ -304,6 +321,11 @@ static int esp32_uart_startup(struct uart_port *port)
 {
 	int ret = 0;
 	unsigned long flags;
+	struct esp32_port *sport = container_of(port, struct esp32_port, port);
+
+	ret = clk_prepare_enable(sport->clk);
+	if (ret)
+		return ret;
 
 	spin_lock_irqsave(&port->lock, flags);
 	esp32_uart_write(port, UART_CONF1_REG,
@@ -330,8 +352,22 @@ static int esp32_uart_startup(struct uart_port *port)
 
 static void esp32_uart_shutdown(struct uart_port *port)
 {
+	struct esp32_port *sport = container_of(port, struct esp32_port, port);
+
 	esp32_uart_write(port, UART_INT_ENA_REG, 0);
 	devm_free_irq(port->dev, port->irq, port);
+	clk_disable_unprepare(sport->clk);
+}
+
+static void esp32_uart_set_baud(struct uart_port *port, u32 baud)
+{
+	u32 div = port->uartclk / baud;
+	u32 frag = (port->uartclk * 16) / baud - div * 16;
+
+	if (!WARN_ON(div > port_variant(port)->clkdiv_mask)) {
+		esp32_uart_write(port, UART_CLKDIV_REG,
+				 div | (frag << UART_CLKDIV_FRAG_SHIFT));
+	}
 }
 
 static void esp32_uart_set_termios(struct uart_port *port,
@@ -339,6 +375,7 @@ static void esp32_uart_set_termios(struct uart_port *port,
 				   const struct ktermios *old)
 {
 	u32 conf0 = port_variant(port)->tick_ref_always_on_mask;
+	u32 baud;
 
 	if (termios->c_cflag & PARENB) {
 		conf0 |= UART_PARITY_EN_MASK;
@@ -367,6 +404,12 @@ static void esp32_uart_set_termios(struct uart_port *port,
 		conf0 |= UART_STOP_BIT_NUM_1;
 
 	esp32_uart_write(port, UART_CONF0_REG, conf0);
+
+	baud = uart_get_baud_rate(port, termios, old,
+				  port->uartclk / port_variant(port)->clkdiv_mask,
+				  port->uartclk / 16);
+	if (baud)
+		esp32_uart_set_baud(port, baud);
 }
 
 static const char *esp32_uart_type(struct uart_port *port)
@@ -393,6 +436,11 @@ static void esp32_uart_config_port(struct uart_port *port, int flags)
 #ifdef CONFIG_CONSOLE_POLL
 static int esp32_uart_poll_init(struct uart_port *port)
 {
+	struct esp32_port *sport = container_of(port, struct esp32_port, port);
+
+	ret = clk_prepare_enable(sport->clk);
+	if (ret)
+		return ret;
 	return 0;
 }
 
@@ -447,7 +495,8 @@ static void esp32_uart_string_write(struct uart_port *port, const char *s,
 static void
 esp32_uart_console_write(struct console *co, const char *s, unsigned int count)
 {
-	struct uart_port *port = esp32_uart_ports[co->index];
+	struct esp32_port *sport = esp32_uart_ports[co->index];
+	struct uart_port *port = &sport->port;
 	unsigned long flags;
 	int locked = 1;
 
@@ -466,7 +515,7 @@ esp32_uart_console_write(struct console *co, const char *s, unsigned int count)
 
 static int __init esp32_uart_console_setup(struct console *co, char *options)
 {
-	struct uart_port *port;
+	struct esp32_port *sport;
 	int baud = 115200;
 	int bits = 8;
 	int parity = 'n';
@@ -480,16 +529,28 @@ static int __init esp32_uart_console_setup(struct console *co, char *options)
 	if (co->index == -1 || co->index >= ARRAY_SIZE(esp32_uart_ports))
 		co->index = 0;
 
-	port = esp32_uart_ports[co->index];
-	if (!port)
+	sport = esp32_uart_ports[co->index];
+	if (!sport)
 		return -ENODEV;
+
+	ret = clk_prepare_enable(sport->clk);
+	if (ret)
+		return ret;
 
 	if (options)
 		uart_parse_options(options, &baud, &parity, &bits, &flow);
 
-	ret = uart_set_options(port, co, baud, parity, bits, flow);
+	ret = uart_set_options(&sport->port, co, baud, parity, bits, flow);
 
 	return ret;
+}
+
+static int esp32_uart_console_exit(struct console *co)
+{
+	struct esp32_port *sport = esp32_uart_ports[co->index];
+
+	clk_disable_unprepare(sport->clk);
+	return 0;
 }
 
 static struct uart_driver esp32_uart_reg;
@@ -498,6 +559,7 @@ static struct console esp32_uart_console = {
 	.write		= esp32_uart_console_write,
 	.device		= uart_console_device,
 	.setup		= esp32_uart_console_setup,
+	.exit		= esp32_uart_console_exit,
 	.flags		= CON_PRINTBUFFER,
 	.index		= -1,
 	.data		= &esp32_uart_reg,
@@ -533,19 +595,27 @@ static int esp32_uart_earlycon_read(struct console *con, char *s, unsigned int n
 }
 #endif
 
-static int __init esp32_uart_early_console_setup(struct earlycon_device *device,
-						 const char *options)
+static int __init esp32xx_uart_early_console_setup(struct earlycon_device *device,
+						   const char *options)
 {
 	if (!device->port.membase)
 		return -ENODEV;
 
-	device->port.private_data = (void *)&esp32_variant;
 	device->con->write = esp32_uart_earlycon_write;
 #ifdef CONFIG_CONSOLE_POLL
 	device->con->read = esp32_uart_earlycon_read;
 #endif
+	if (device->port.uartclk != BASE_BAUD * 16)
+		esp32_uart_set_baud(&device->port, device->baud);
 
 	return 0;
+}
+
+static int __init esp32_uart_early_console_setup(struct earlycon_device *device,
+						 const char *options)
+{
+	device->port.private_data = (void *)&esp32_variant;
+	return esp32xx_uart_early_console_setup(device, options);
 }
 
 OF_EARLYCON_DECLARE(esp32uart, "esp,esp32-uart",
@@ -554,16 +624,8 @@ OF_EARLYCON_DECLARE(esp32uart, "esp,esp32-uart",
 static int __init esp32s3_uart_early_console_setup(struct earlycon_device *device,
 						   const char *options)
 {
-	if (!device->port.membase)
-		return -ENODEV;
-
 	device->port.private_data = (void *)&esp32s3_variant;
-	device->con->write = esp32_uart_earlycon_write;
-#ifdef CONFIG_CONSOLE_POLL
-	device->con->read = esp32_uart_earlycon_read;
-#endif
-
-	return 0;
+	return esp32xx_uart_early_console_setup(device, options);
 }
 
 OF_EARLYCON_DECLARE(esp32s3uart, "esp,esp32s3-uart",
@@ -582,6 +644,7 @@ static int esp32_uart_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	static const struct of_device_id *match;
 	struct uart_port *port;
+	struct esp32_port *sport;
 	struct resource *res;
 	int ret;
 
@@ -589,9 +652,11 @@ static int esp32_uart_probe(struct platform_device *pdev)
 	if (!match)
 		return -ENODEV;
 
-	port = devm_kzalloc(&pdev->dev, sizeof(*port), GFP_KERNEL);
-	if (!port)
+	sport = devm_kzalloc(&pdev->dev, sizeof(*sport), GFP_KERNEL);
+	if (!sport)
 		return -ENOMEM;
+
+	port = &sport->port;
 
 	ret = of_alias_get_id(np, "serial");
 	if (ret < 0) {
@@ -617,6 +682,12 @@ static int esp32_uart_probe(struct platform_device *pdev)
 		return PTR_ERR(port->membase);
 	}
 
+	sport->clk = devm_clk_get(&pdev->dev, NULL);
+	if (IS_ERR(sport->clk)) {
+		return PTR_ERR(sport->clk);
+	}
+	port->uartclk = clk_get_rate(sport->clk);
+
 	port->dev = &pdev->dev;
 	port->type = PORT_ESP32UART;
 	port->iotype = UPIO_MEM;
@@ -627,7 +698,7 @@ static int esp32_uart_probe(struct platform_device *pdev)
 	port->fifosize = ESP32_UART_TX_FIFO_SIZE;
 	port->private_data = (void *)match->data;
 
-	esp32_uart_ports[port->line] = port;
+	esp32_uart_ports[port->line] = sport;
 
 	platform_set_drvdata(pdev, port);
 
