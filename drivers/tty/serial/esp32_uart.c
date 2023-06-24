@@ -38,6 +38,8 @@
 #define ESP32_UART_RXFIFO_CNT_MASK		0x000000ff
 #define ESP32S3_UART_RXFIFO_CNT_MASK		0x000003ff
 #define UART_RXFIFO_CNT_SHIFT			0
+#define UART_DSRN_MASK				0x00002000
+#define UART_CTSN_MASK				0x00004000
 #define ESP32_UART_TXFIFO_CNT_MASK		0x00ff0000
 #define ESP32S3_UART_TXFIFO_CNT_MASK		0x03ff0000
 #define UART_TXFIFO_CNT_SHIFT			16
@@ -55,6 +57,12 @@
 #define UART_STOP_BIT_NUM_MASK			0x00000030
 #define UART_STOP_BIT_NUM_1			0x00000010
 #define UART_STOP_BIT_NUM_2			0x00000030
+#define UART_SW_RTS_MASK			0x00000040
+#define UART_SW_DTR_MASK			0x00000080
+#define UART_LOOPBACK_MASK			0x00004000
+#define UART_TX_FLOW_EN_MASK			0x00008000
+#define UART_RTS_INV_MASK			0x00800000
+#define UART_DTR_INV_MASK			0x01000000
 #define ESP32_UART_TICK_REF_ALWAYS_ON_MASK	0x08000000
 #define ESP32S3_UART_TICK_REF_ALWAYS_ON_MASK	0x00000000
 #define UART_CONF1_REG			0x24
@@ -65,6 +73,8 @@
 #define ESP32S3_UART_TXFIFO_EMPTY_THRHD_MASK	0x000ffc00
 #define ESP32_UART_TXFIFO_EMPTY_THRHD_SHIFT	8
 #define ESP32S3_UART_TXFIFO_EMPTY_THRHD_SHIFT	10
+#define ESP32_UART_RX_FLOW_EN_MASK		0x00800000
+#define ESP32S3_UART_RX_FLOW_EN_MASK		0x00400000
 
 struct esp32_port
 {
@@ -77,10 +87,10 @@ struct esp32_uart_variant
 	u32 clkdiv_mask;
 	u32 rxfifo_cnt_mask;
 	u32 txfifo_cnt_mask;
-	u32 tick_ref_always_on_mask;
 	u32 rxfifo_full_thrhd_mask;
 	u32 txfifo_empty_thrhd_mask;
 	u32 txfifo_empty_thrhd_shift;
+	u32 rx_flow_en;
 	const char *type;
 };
 
@@ -88,10 +98,10 @@ static const struct esp32_uart_variant esp32_variant = {
 	.clkdiv_mask = ESP32_UART_CLKDIV_MASK,
 	.rxfifo_cnt_mask = ESP32_UART_RXFIFO_CNT_MASK,
 	.txfifo_cnt_mask = ESP32_UART_TXFIFO_CNT_MASK,
-	.tick_ref_always_on_mask = ESP32_UART_TICK_REF_ALWAYS_ON_MASK,
 	.rxfifo_full_thrhd_mask = ESP32_UART_RXFIFO_FULL_THRHD_MASK,
 	.txfifo_empty_thrhd_mask = ESP32_UART_TXFIFO_EMPTY_THRHD_MASK,
 	.txfifo_empty_thrhd_shift = ESP32_UART_TXFIFO_EMPTY_THRHD_SHIFT,
+	.rx_flow_en = ESP32_UART_RX_FLOW_EN_MASK,
 	.type = "ESP32 UART",
 };
 
@@ -99,10 +109,10 @@ static const struct esp32_uart_variant esp32s3_variant = {
 	.clkdiv_mask = ESP32S3_UART_CLKDIV_MASK,
 	.rxfifo_cnt_mask = ESP32S3_UART_RXFIFO_CNT_MASK,
 	.txfifo_cnt_mask = ESP32S3_UART_TXFIFO_CNT_MASK,
-	.tick_ref_always_on_mask = ESP32S3_UART_TICK_REF_ALWAYS_ON_MASK,
 	.rxfifo_full_thrhd_mask = ESP32S3_UART_RXFIFO_FULL_THRHD_MASK,
 	.txfifo_empty_thrhd_mask = ESP32S3_UART_TXFIFO_EMPTY_THRHD_MASK,
 	.txfifo_empty_thrhd_shift = ESP32S3_UART_TXFIFO_EMPTY_THRHD_SHIFT,
+	.rx_flow_en = ESP32S3_UART_RX_FLOW_EN_MASK,
 	.type = "ESP32S3 UART",
 };
 
@@ -187,11 +197,32 @@ static unsigned int esp32_uart_tx_empty(struct uart_port *port)
 
 static void esp32_uart_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
+	u32 conf0 = esp32_uart_read(port, UART_CONF0_REG) &
+		~(UART_LOOPBACK_MASK |
+		  UART_SW_RTS_MASK | UART_RTS_INV_MASK |
+		  UART_SW_DTR_MASK | UART_DTR_INV_MASK);
+
+	if (mctrl & TIOCM_RTS)
+		conf0 |= UART_SW_RTS_MASK;
+	if (mctrl & TIOCM_DTR)
+		conf0 |= UART_SW_DTR_MASK;
+	if (mctrl & TIOCM_LOOP)
+		conf0 |= UART_LOOPBACK_MASK;
+
+	esp32_uart_write(port, UART_CONF0_REG, conf0);
 }
 
 static unsigned int esp32_uart_get_mctrl(struct uart_port *port)
 {
-	return 0;
+	u32 status = esp32_uart_read(port, UART_STATUS_REG);
+	unsigned int ret = TIOCM_CAR;
+
+	if (status & UART_DSRN_MASK)
+		ret |= TIOCM_DSR;
+	if (status & UART_CTSN_MASK)
+		ret |= TIOCM_CTS;
+
+	return ret;
 }
 
 static void esp32_uart_stop_tx(struct uart_port *port)
@@ -374,8 +405,17 @@ static void esp32_uart_set_termios(struct uart_port *port,
 				   struct ktermios *termios,
 				   const struct ktermios *old)
 {
-	u32 conf0 = port_variant(port)->tick_ref_always_on_mask;
+	unsigned long flags;
+	u32 conf0, conf1;
 	u32 baud;
+	const u32 rx_flow_en = port_variant(port)->rx_flow_en;
+
+	spin_lock_irqsave(&port->lock, flags);
+	conf0 = esp32_uart_read(port, UART_CONF0_REG) &
+		~(UART_PARITY_EN_MASK | UART_PARITY_MASK |
+		  UART_BIT_NUM_MASK | UART_STOP_BIT_NUM_MASK);
+	conf1 = esp32_uart_read(port, UART_CONF1_REG) &
+		~rx_flow_en;
 
 	if (termios->c_cflag & PARENB) {
 		conf0 |= UART_PARITY_EN_MASK;
@@ -403,7 +443,12 @@ static void esp32_uart_set_termios(struct uart_port *port,
 	else
 		conf0 |= UART_STOP_BIT_NUM_1;
 
+	if (termios->c_cflag & CRTSCTS)
+		conf1 |= rx_flow_en;
+
 	esp32_uart_write(port, UART_CONF0_REG, conf0);
+	esp32_uart_write(port, UART_CONF1_REG, conf1);
+	spin_unlock_irqrestore(&port->lock, flags);
 
 	baud = uart_get_baud_rate(port, termios, old,
 				  port->uartclk / port_variant(port)->clkdiv_mask,
