@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config ESP32_WIFI
+	tristate "Espressif esp32/esp32sx/esp32cx devices"
+	depends on CFG80211
+	select WIRELESS_EXT
+	select CRYPTO
+	select CRYPTO_SKCIPHER
+	select WEXT_SPY
+	select WEXT_PRIV
+	help
+	  This is the standard Linux driver to support esp32 family of devices.
+
+config ESP32_WIFI_SPI
+	def_bool y
+
+config ESP32_WIFI_SDIO
+	bool
