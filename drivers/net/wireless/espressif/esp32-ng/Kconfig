@@ -18,8 +18,12 @@ config ESP32_BT
 	help
 	  Also support Bluetooth on esp32 device family.
 
-config ESP32_WIFI_SPI
+config ESP32_WIFI_SHMEM
 	def_bool y
+	select ESP32_IPC
+
+config ESP32_WIFI_SPI
+	bool
 
 config ESP32_WIFI_SDIO
 	bool
