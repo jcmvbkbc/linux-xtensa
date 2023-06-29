@@ -515,7 +515,8 @@ static int esp_cfg80211_set_tx_power(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
 				     enum nl80211_tx_power_setting type, int mbm)
 {
-	struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_device *esp_dev = wiphy_priv(wiphy);
+	struct esp_adapter *adapter = esp_dev->adapter;
 	struct esp_wifi_device *priv = NULL;
 
 	if (!wiphy || !adapter) {
