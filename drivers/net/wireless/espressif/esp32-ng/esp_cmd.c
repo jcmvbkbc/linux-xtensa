@@ -316,13 +316,8 @@ static void esp_cmd_work(struct work_struct *work)
 {
 	int ret;
 	struct command_node *cmd_node = NULL;
-	struct esp_adapter *adapter = NULL;
+	struct esp_adapter *adapter = container_of(work, struct esp_adapter, cmd_work);
 	struct esp_payload_header *payload_header = NULL;
-
-	adapter = esp_get_adapter();
-
-	if (!adapter)
-		return;
 
 	if (!test_bit(ESP_DRIVER_ACTIVE, &adapter->state_flags))
 		return;
