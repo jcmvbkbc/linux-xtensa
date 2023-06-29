@@ -515,7 +515,8 @@ static int esp_cfg80211_set_tx_power(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
 				     enum nl80211_tx_power_setting type, int mbm)
 {
-	struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_device *esp_dev = wiphy_priv(wiphy);
+	struct esp_adapter *adapter = esp_dev->adapter;
 	struct esp_wifi_device *priv = NULL;
 
 	if (!wiphy || !adapter) {
@@ -607,7 +608,6 @@ static void esp_reg_notifier(struct wiphy *wiphy,
 {
 	struct esp_wifi_device *priv = NULL;
 	struct esp_device *esp_dev = NULL;
-	struct esp_adapter *adapter = esp_get_adapter();
 
 	if (!wiphy || !request) {
 		esp_info("%u invalid input\n", __LINE__);
@@ -620,7 +620,7 @@ static void esp_reg_notifier(struct wiphy *wiphy,
 		esp_info("%u esp_dev not initialized yet \n", __LINE__);
 		return;
 	}
-	if (test_bit(ESP_CLEANUP_IN_PROGRESS, &adapter->state_flags)) {
+	if (test_bit(ESP_CLEANUP_IN_PROGRESS, &esp_dev->adapter->state_flags)) {
                return;
 	}
 
