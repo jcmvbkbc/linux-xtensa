@@ -1,103 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
+/include/ "esp32s3.dtsi"
 
 / {
-	compatible = "esp32s3";
-	#address-cells = <1>;
-	#size-cells = <1>;
-	interrupt-parent = <&pic>;
-
-	chosen {
-		bootargs = "earlycon=esp32s3uart,mmio32,0x60000000,115200n8,40000000 console=ttyS0,115200n8 debug rw root=mtd:data no_hash_pointers ";
-	};
-
-	aliases {
-		serial0 = "/soc/serial@60000000";
-	};
-
 	memory@0 {
 		device_type = "memory";
 		reg = <0x3c030000 0x00800000>;
 	};
 
-	cpus {
-		#address-cells = <1>;
-		#size-cells = <0>;
-		cpu@0 {
-			compatible = "cdns,xtensa-cpu";
-			reg = <0>;
-			clocks = <&osc>;
-		};
-	};
-
-	clocks {
-		osc: clk160 {
-			#clock-cells = <0>;
-			compatible = "fixed-clock";
-			clock-frequency = <160000000>;
-		};
-		apb: clk80 {
-			#clock-cells = <0>;
-			compatible = "fixed-clock";
-			clock-frequency = <80000000>;
-		};
-		serial_clk: serial_clk {
-			#clock-cells = <0>;
-			compatible = "fixed-clock";
-			clock-frequency = <40000000>;
-		};
-	};
-
-	pic: pic {
-		compatible = "cdns,xtensa-pic";
-		/* one cell: internal irq number,
-		 * two cells: second cell == 0: internal irq number
-		 *            second cell == 1: external irq number
-		 */
-		#interrupt-cells = <2>;
-		interrupt-controller;
-	};
-
 	soc {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		compatible = "simple-bus";
-		interrupt-parent = <&intc>;
-		ranges;
-
-		intc: intc@600c2000 {
-			compatible = "esp,esp32-intc";
-			reg = <0x600c2000 0x114>;
-			/* first cell: interrupt matrix row
-			 * second cell: internal xtensa core IRQ number to connect to
-			 * third cell: target CPU
-			 */
-			#interrupt-cells = <3>;
-			interrupt-controller;
-			interrupt-parent = <&pic>;
-		};
-
-		serial0: serial@60000000 {
-			device_type = "serial";
-			compatible = "esp,esp32s3-uart";
-			reg = <0x60000000 0x80>;
-			interrupts = <27 1 0>; /* UART0, external IRQ1, CPU0 */
-			clocks = <&serial_clk>;
-		};
-
-		lpm: lpm@60008000 {
-			compatible = "syscon";
-			reg = <0x60008000 0x1000>;
-		};
-
-		syscon@60008000 {
-			compatible = "syscon-reboot";
-			regmap = <&lpm>;
-			offset = <0>;
-			value = <0x80000000>;
-			mask = <0x80000000>;
-		};
-
 		flash: flash@42830000 {
 			#address-cells = <1>;
 			#size-cells = <1>;
