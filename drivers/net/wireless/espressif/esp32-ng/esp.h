@@ -85,7 +85,7 @@ struct esp_adapter {
 	 * struct esp_sdio_context */
 	void                    *if_context;
 
-	struct esp_if_ops       *if_ops;
+	const struct esp_if_ops *if_ops;
 
 	/* Private for each interface */
 	struct esp_wifi_device  *priv[ESP_MAX_INTERFACE];

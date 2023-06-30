@@ -20,7 +20,7 @@ struct esp_if_ops {
 int esp_init_interface_layer(struct esp_adapter *adapter, u32 speed);
 void esp_deinit_interface_layer(void);
 
-int esp_wifi_init(struct esp_adapter *adapter);
+int esp_wifi_init(struct esp_adapter *adapter, const struct esp_if_ops *if_ops);
 void esp_wifi_deinit(struct esp_adapter *adapter);
 
 #endif
