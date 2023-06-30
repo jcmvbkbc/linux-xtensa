@@ -597,7 +597,7 @@ static int esp_cfg80211_get_tx_power(struct wiphy *wiphy,
 	return 0;
 }
 
-static struct cfg80211_ops esp_cfg80211_ops = {
+static const struct cfg80211_ops esp_cfg80211_ops = {
 #if 0
 	.add_virtual_intf = esp_cfg80211_add_iface,
 	.del_virtual_intf = esp_cfg80211_del_iface,
