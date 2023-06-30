@@ -22,13 +22,8 @@
 #include "esp_cfg80211.h"
 #include "esp_stats.h"
 
-#define HOST_GPIO_PIN_INVALID -1
-static int resetpin = HOST_GPIO_PIN_INVALID;
 extern u8 ap_bssid[MAC_ADDR_LEN];
 extern volatile u8 host_sleep;
-
-module_param(resetpin, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-MODULE_PARM_DESC(resetpin, "Host's GPIO pin number which is connected to ESP32's EN to reset ESP32 device");
 
 static void deinit_adapter(struct esp_adapter *adapter);
 
@@ -841,32 +836,6 @@ static void deinit_adapter(struct esp_adapter *adapter)
 		destroy_workqueue(adapter->mac_filter_wq);
 }
 
-static void esp_reset(void)
-{
-	if (resetpin != HOST_GPIO_PIN_INVALID) {
-		/* Check valid GPIO or not */
-		if (!gpio_is_valid(resetpin)) {
-			esp_warn("host resetpin (%d) configured is invalid GPIO\n", resetpin);
-			resetpin = HOST_GPIO_PIN_INVALID;
-		} else {
-			gpio_request(resetpin, "sysfs");
-
-			/* HOST's resetpin set to OUTPUT, HIGH */
-			gpio_direction_output(resetpin, true);
-
-			/* HOST's resetpin set to LOW */
-			gpio_set_value(resetpin, 0);
-			udelay(200);
-
-			/* HOST's resetpin set to INPUT */
-			gpio_direction_input(resetpin);
-
-			esp_dbg("Triggering ESP reset.\n");
-		}
-	}
-}
-
-
 int esp_wifi_init(struct esp_adapter *adapter, const struct esp_if_ops *if_ops)
 {
 	return init_adapter(adapter, if_ops);
@@ -887,10 +856,6 @@ void esp_wifi_deinit(struct esp_adapter *adapter)
 	if (adapter->hcidev)
 		esp_deinit_bt(adapter);
 	deinit_adapter(adapter);
-
-	if (resetpin != HOST_GPIO_PIN_INVALID) {
-		gpio_free(resetpin);
-	}
 }
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");
