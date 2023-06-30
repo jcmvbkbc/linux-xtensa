@@ -894,9 +894,11 @@ static void esp_events_work(struct work_struct *work)
 	dev_kfree_skb_any(skb);
 }
 
-static int init_adapter(struct esp_adapter *adapter)
+static int init_adapter(struct esp_adapter *adapter, const struct esp_if_ops *if_ops)
 {
 	memset(adapter, 0, sizeof(*adapter));
+
+	adapter->if_ops = if_ops;
 
 	/* Prepare interface RX work */
 	adapter->if_rx_workqueue = alloc_workqueue("ESP_IF_RX_WORK_QUEUE", 0, 0);
@@ -970,9 +972,9 @@ static void esp_reset(void)
 }
 
 
-int esp_wifi_init(struct esp_adapter *adapter)
+int esp_wifi_init(struct esp_adapter *adapter, const struct esp_if_ops *if_ops)
 {
-	return init_adapter(adapter);
+	return init_adapter(adapter, if_ops);
 }
 
 void esp_wifi_deinit(struct esp_adapter *adapter)
@@ -988,6 +990,9 @@ void esp_wifi_deinit(struct esp_adapter *adapter)
 	}
 	clear_bit(ESP_DRIVER_ACTIVE, &adapter->state_flags);
 
+	esp_remove_card(adapter);
+	if (adapter->hcidev)
+		esp_deinit_bt(adapter);
 	deinit_adapter(adapter);
 
 	if (resetpin != HOST_GPIO_PIN_INVALID) {
