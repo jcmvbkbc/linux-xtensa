@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+/include/ "esp32s3.dtsi"
+
+/ {
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3d800000 0x00800000>;
+	};
+
+	soc {
+		intc: intc@600c2000 {
+			reg = <0x600c2800 0x800>;
+		};
+
+		wifi@600c0004 {
+			compatible = "esp,esp-wifi-shmem";
+			reg = <0x600c0004 4  /* queues address */
+			       0x600c0038 8  /* incoming and outgoing IRQ registers */
+			       >;
+			interrupts = <81 2 0>; /* CPU_INTR_FROM_CPU_2, IRQ 2, CPU0 */
+		};
+
+		flash: flash@42090000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "mtd-rom";
+			reg = <0x42090000 0x00800000>;
+			bank-width = <2>;
+			device-width = <2>;
+			partition@0 {
+				label = "linux";
+				reg = <0x00000000 0x00300000>;
+			};
+			partition@300000 {
+				label = "data";
+				reg = <0x00300000 0x00400000>;
+			};
+		};
+	};
+};
