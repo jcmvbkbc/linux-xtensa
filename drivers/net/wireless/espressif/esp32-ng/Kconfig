@@ -9,7 +9,14 @@ config ESP32_WIFI
 	select WEXT_SPY
 	select WEXT_PRIV
 	help
-	  This is the standard Linux driver to support esp32 family of devices.
+	  This is the standard Linux driver to support wifi on esp32 device
+	  family.
+
+config ESP32_BT
+	bool "Support BT on esp32/esp32sx/esp32cx devices"
+	depends on ESP32_WIFI && BT
+	help
+	  Also support Bluetooth on esp32 device family.
 
 config ESP32_WIFI_SPI
 	def_bool y
