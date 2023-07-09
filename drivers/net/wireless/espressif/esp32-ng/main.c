@@ -202,13 +202,14 @@ void print_capabilities(u32 cap)
 
 void init_bt(struct esp_adapter *adapter)
 {
-
+#ifdef CONFIG_ESP32_BT
 	if ((adapter->capabilities & ESP_BT_SPI_SUPPORT) ||
 		(adapter->capabilities & ESP_BT_SDIO_SUPPORT)) {
 		msleep(200);
 		esp_info("ESP Bluetooth init\n");
 		esp_init_bt(adapter);
 	}
+#endif
 }
 
 static int check_esp_version(struct fw_version *ver)
@@ -576,8 +577,10 @@ int esp_remove_card(struct esp_adapter *adapter)
 	}
 
 	esp_stop_network_ifaces(adapter);
+#ifdef CONFIG_ESP32_BT
 	/* BT may have been initialized after fw bootup event, deinit it */
 	esp_deinit_bt(adapter);
+#endif
 	esp_commands_teardown(adapter);
 	esp_remove_network_ifaces(adapter);
 	esp_remove_wiphy(adapter);
@@ -660,8 +663,6 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	struct esp_payload_header *payload_header = NULL;
 	u16 len = 0, offset = 0;
 	u16 rx_checksum = 0, checksum = 0;
-	struct hci_dev *hdev = adapter->hcidev;
-	u8 *type = NULL;
 	struct sk_buff *eap_skb = NULL;
 	struct ethhdr *eth = NULL;
 
@@ -747,7 +748,11 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 		}
 
 	} else if (payload_header->if_type == ESP_HCI_IF) {
+#ifdef CONFIG_ESP32_BT
+		struct hci_dev *hdev = adapter->hcidev;
+
 		if (hdev) {
+			u8 *type = NULL;
 
 			type = skb->data;
 			hci_skb_pkt_type(skb) = *type;
@@ -763,6 +768,10 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 				esp_hci_update_rx_counter(hdev, *type, skb->len);
 			}
 		}
+#else
+		pr_err("%s: got ESP_HCI_IF packet\n", __func__);
+		dev_kfree_skb_any(skb);
+#endif
 	} else if (payload_header->if_type == ESP_INTERNAL_IF) {
 
 		/* Queue event skb for processing in events workqueue */
@@ -960,8 +969,10 @@ void esp_wifi_deinit(struct esp_adapter *adapter)
 	clear_bit(ESP_DRIVER_ACTIVE, &adapter->state_flags);
 
 	esp_remove_card(adapter);
+#ifdef CONFIG_ESP32_BT
 	if (adapter->hcidev)
 		esp_deinit_bt(adapter);
+#endif
 	deinit_adapter(adapter);
 }
 MODULE_LICENSE("GPL");
