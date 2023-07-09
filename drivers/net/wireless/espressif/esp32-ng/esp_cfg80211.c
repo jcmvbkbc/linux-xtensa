@@ -105,6 +105,7 @@ static const u32 esp_cipher_suites[] = {
 	WLAN_CIPHER_SUITE_AES_CMAC,
 };
 
+#ifdef CONFIG_PM
 static const struct wiphy_wowlan_support esp_wowlan_support = {
 	.flags = WIPHY_WOWLAN_ANY | WIPHY_WOWLAN_MAGIC_PKT,
 	.n_patterns = 0,
@@ -112,6 +113,7 @@ static const struct wiphy_wowlan_support esp_wowlan_support = {
 	.pattern_min_len = 0,
 	.max_pkt_offset = 0,
 };
+#endif
 
 static int esp_inetaddr_event(struct notifier_block *nb,
 	unsigned long event, void *data)
