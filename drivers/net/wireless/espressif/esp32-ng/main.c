@@ -845,21 +845,15 @@ struct sk_buff *esp_alloc_skb(u32 len)
 }
 
 
-static int esp_get_packets(struct esp_adapter *adapter)
+static void esp_get_packets(struct esp_adapter *adapter)
 {
-	struct sk_buff *skb = NULL;
+	struct sk_buff *skb;
 
 	if (!adapter || !adapter->if_ops || !adapter->if_ops->read)
-		return -EINVAL;
+		return;
 
-	skb = adapter->if_ops->read(adapter);
-
-	if (!skb)
-		return -EFAULT;
-
-	process_rx_packet(adapter, skb);
-
-	return 0;
+	while ((skb = adapter->if_ops->read(adapter)))
+	       process_rx_packet(adapter, skb);
 }
 
 int esp_send_packet(struct esp_adapter *adapter, struct sk_buff *skb)
