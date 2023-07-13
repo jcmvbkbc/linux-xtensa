@@ -20,6 +20,7 @@ obj-$(CONFIG_HAVE_HW_BREAKPOINT) += hw_breakpoint.o
 obj-$(CONFIG_S32C1I_SELFTEST) += s32c1i_selftest.o
 obj-$(CONFIG_JUMP_LABEL) += jump_label.o
 obj-$(CONFIG_HIBERNATION) += hibernate.o
+obj-$(CONFIG_TRAX) += trax.o
 
 # In the Xtensa architecture, assembly generates literals which must always
 # precede the L32R instruction with a relative offset less than 256 kB.
