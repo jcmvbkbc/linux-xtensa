@@ -46,3 +46,20 @@ config PRINT_USER_CODE_ON_UNHANDLED_EXCEPTION
 	  exception (starting at address aligned on 16 byte boundary).
 	  This may simplify finding faulting code in the absence of other
 	  debug facilities.
+
+config TRAX
+	bool "Xtensa TRAX support"
+	help
+	  Enable support for TRAX: xtensa hardware tracing module.
+
+config TRAX_DECODE
+	bool "Decode TRAX messages in the TRAX dump"
+	depends on TRAX
+	help
+	  TRAX data can be dumped into the kernel log when pre-configured
+	  disaster occurs. This dump can contain just the raw data that need
+	  to be decoded elsewhere or it can be decoded in the kernel and
+	  presented in human-readable form. This form is much longer though
+	  and it takes more time to dump it.
+
+	  Say 'Y' here if you prefer human-readable emergency TRAX dump.
