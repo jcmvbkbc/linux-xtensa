@@ -21,6 +21,7 @@
 #include <asm/cacheflush.h>
 #include <asm/hardirq.h>
 #include <asm/traps.h>
+#include <asm/trax.h>
 
 void bad_page_fault(struct pt_regs*, unsigned long, int);
 
@@ -199,6 +200,8 @@ bad_area:
 	mmap_read_unlock(mm);
 bad_area_nosemaphore:
 	if (user_mode(regs)) {
+		trax_dump();
+		trax_start();
 		force_sig_fault(SIGSEGV, code, (void *) address);
 		return;
 	}
@@ -211,6 +214,8 @@ bad_area_nosemaphore:
 	 */
 out_of_memory:
 	mmap_read_unlock(mm);
+	trax_dump();
+	trax_start();
 	if (!user_mode(regs))
 		bad_page_fault(regs, address, SIGKILL);
 	else
@@ -218,6 +223,8 @@ out_of_memory:
 	return;
 
 do_sigbus:
+	trax_dump();
+	trax_start();
 	mmap_read_unlock(mm);
 
 	/* Send a sigbus, regardless of whether we were in kernel
@@ -245,7 +252,8 @@ bad_page_fault(struct pt_regs *regs, unsigned long address, int sig)
 		regs->pc = entry->fixup;
 		return;
 	}
-
+	trax_dump();
+	trax_start();
 	/* Oops. The kernel tried to access some bad page. We'll have to
 	 * terminate things with extreme prejudice.
 	 */

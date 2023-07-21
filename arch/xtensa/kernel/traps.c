@@ -44,6 +44,7 @@
 #include <asm/processor.h>
 #include <asm/traps.h>
 #include <asm/hw_breakpoint.h>
+#include <asm/trax.h>
 
 /*
  * Machine specific interrupt handlers
@@ -200,6 +201,8 @@ static inline void dump_user_code(struct pt_regs *regs)
 
 void do_unhandled(struct pt_regs *regs)
 {
+	trax_dump();
+	trax_start();
 	__die_if_kernel("Caught unhandled exception - should not happen",
 			regs, SIGKILL);
 
@@ -357,6 +360,9 @@ static void do_illegal_instruction(struct pt_regs *regs)
 		do_div0(regs);
 		return;
 	}
+
+	trax_dump();
+	trax_start();
 
 	__die_if_kernel("Illegal instruction in kernel", regs, SIGKILL);
 
@@ -629,6 +635,9 @@ DEFINE_SPINLOCK(die_lock);
 void __noreturn die(const char * str, struct pt_regs * regs, long err)
 {
 	static int die_counter;
+
+	trax_dump();
+	trax_start();
 
 	console_verbose();
 	spin_lock_irq(&die_lock);
