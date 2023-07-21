@@ -44,6 +44,7 @@
 #include <asm/processor.h>
 #include <asm/traps.h>
 #include <asm/hw_breakpoint.h>
+#include <asm/trax.h>
 
 /*
  * Machine specific interrupt handlers
@@ -200,6 +201,8 @@ static inline void dump_user_code(struct pt_regs *regs)
 
 void do_unhandled(struct pt_regs *regs)
 {
+	trax_dump();
+	trax_start();
 	__die_if_kernel("Caught unhandled exception - should not happen",
 			regs, SIGKILL);
 
@@ -357,6 +360,9 @@ static void do_illegal_instruction(struct pt_regs *regs)
 		do_div0(regs);
 		return;
 	}
+
+	trax_dump();
+	trax_start();
 
 	__die_if_kernel("Illegal instruction in kernel", regs, SIGKILL);
 
@@ -631,6 +637,8 @@ void __noreturn die(const char * str, struct pt_regs * regs, long err)
 	static int die_counter;
 	const char *pr = "";
 
+	trax_dump();
+	trax_start();
 	if (IS_ENABLED(CONFIG_PREEMPTION))
 		pr = IS_ENABLED(CONFIG_PREEMPT_RT) ? " PREEMPT_RT" : " PREEMPT";
 
