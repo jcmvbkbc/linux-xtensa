@@ -1,3 +1,4 @@
+//#define DEBUG
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Espressif Systems Wireless LAN device driver
@@ -592,7 +593,10 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	/* chop off the header from skb */
 	skb_pull(skb, offset);
 
+	pr_debug("if_type = %d, len = %d\n", payload_header->if_type, payload_header->len);
 	if (payload_header->if_type == ESP_STA_IF || payload_header->if_type == ESP_AP_IF) {
+
+		pr_debug("packet_type = %d\n", payload_header->packet_type);
 
 		/* retrieve priv based on payload header contents */
 		priv = get_priv_from_payload_header(adapter, payload_header);

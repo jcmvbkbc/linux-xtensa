@@ -1,3 +1,4 @@
+//#define DEBUG
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Espressif Systems Wireless LAN device driver
@@ -473,6 +474,7 @@ int process_cmd_resp(struct esp_adapter *adapter, struct sk_buff *skb)
 
 
 	wake_up_interruptible(&adapter->wait_for_cmd_resp);
+	//WARN_ON(!queue_work(adapter->cmd_wq, &adapter->cmd_work));
 	queue_work(adapter->cmd_wq, &adapter->cmd_work);
 
 	return 0;
@@ -496,12 +498,16 @@ static void process_scan_result_event(struct esp_wifi_device *priv,
 		return;
 	}
 
+	pr_debug("scan_evt->header.len = %d, scan_evt->frame_len = %d\n",
+		 scan_evt->header.len, scan_evt->frame_len);
+
 	/*if (!priv->scan_in_progress) {
 		return;
 	}*/
 
 	/* End of scan; notify cfg80211 */
 	if (scan_evt->header.status == 0) {
+		pr_debug("scan done\n");
 
 		ESP_MARK_SCAN_DONE(priv, false);
 		if (priv->waiting_for_scan_done) {
