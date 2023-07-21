@@ -869,7 +869,8 @@ static unsigned long determine_vm_flags(struct file *file,
 		else
 			vm_flags |= VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC;
 
-		if (!(prot & PROT_WRITE) && !current->ptrace)
+		if (!(prot & PROT_WRITE) &&
+		    (IS_ENABLED(CONFIG_XIP_KERNEL) || !current->ptrace))
 			/*
 			 * R/O private file mapping which cannot be used to
 			 * modify memory, especially also not via active ptrace
