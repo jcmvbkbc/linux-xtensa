@@ -106,6 +106,10 @@
 			       0x600c0038 8  /* incoming and outgoing IRQ registers */
 			       >;
 			interrupts = <81 2 0>; /* CPU_INTR_FROM_CPU_2, IRQ 2, CPU0 */
+			flash_controller: flash@2 {
+				compatible = "esp,esp32-ipc-flash";
+				reg = <2>;
+			};
 		};
 
 	};
