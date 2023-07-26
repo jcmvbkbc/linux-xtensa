@@ -244,7 +244,7 @@ static int test_mmap_thread(void)
 
 	fflush(NULL);
 
-	pid = fork();
+	pid = vfork();
 	if (!pid) {
 		int i;
 		char bf;
