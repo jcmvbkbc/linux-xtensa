@@ -29,7 +29,7 @@ static noinline int bp_2(void)
 
 static int spawn_child(void)
 {
-	int child = fork();
+	int child = vfork();
 
 	if (child == 0) {
 		/*
