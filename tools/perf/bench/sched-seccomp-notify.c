@@ -110,7 +110,7 @@ int bench_sched_seccomp_notify(int argc, const char **argv)
 	if (listener < 0)
 		err(EXIT_FAILURE, "can't create a notification descriptor");
 
-	pid = fork();
+	pid = vfork();
 	if (pid < 0)
 		err(EXIT_FAILURE, "fork");
 	if (pid == 0) {

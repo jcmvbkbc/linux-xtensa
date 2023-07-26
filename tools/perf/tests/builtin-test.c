@@ -210,7 +210,7 @@ static bool perf_test__matches(const char *desc, int curr, int argc, const char 
 
 static int run_test(struct test_suite *test, int subtest)
 {
-	int status, err = -1, child = dont_fork ? 0 : fork();
+	int status, err = -1, child = dont_fork ? 0 : vfork();
 	char sbuf[STRERR_BUFSIZE];
 
 	if (child < 0) {
