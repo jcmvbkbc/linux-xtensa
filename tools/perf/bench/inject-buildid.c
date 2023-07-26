@@ -288,7 +288,7 @@ static int setup_injection(struct bench_data *data, bool build_id_all)
 	if (pipe(data->output_pipe) < 0)
 		return -1;
 
-	data->pid = fork();
+	data->pid = vfork();
 	if (data->pid < 0)
 		return -1;
 
