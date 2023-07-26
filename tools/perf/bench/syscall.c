@@ -36,7 +36,7 @@ static const char * const bench_syscall_usage[] = {
 
 static void test_fork(void)
 {
-	pid_t pid = fork();
+	pid_t pid = vfork();
 
 	if (pid < 0) {
 		fprintf(stderr, "fork failed\n");
@@ -55,7 +55,7 @@ static void test_execve(void)
 {
 	const char *pathname = "/bin/true";
 	char *const argv[] = { (char *)pathname, NULL };
-	pid_t pid = fork();
+	pid_t pid = vfork();
 
 	if (pid < 0) {
 		fprintf(stderr, "fork failed\n");
@@ -124,7 +124,7 @@ static int bench_syscall_common(int argc, const char **argv, int syscall)
 		name = "getpgid()";
 		break;
 	case __NR_fork:
-		name = "fork()";
+		name = "vfork()";
 		break;
 	case __NR_execve:
 		name = "execve()";

@@ -31,7 +31,7 @@ static int sqrtloop(int argc, const char **argv)
 	if (argc > 0)
 		sec = atoi(argv[0]);
 
-	switch (fork()) {
+	switch (vfork()) {
 	case 0:
 		return __sqrtloop(sec);
 	case -1:
