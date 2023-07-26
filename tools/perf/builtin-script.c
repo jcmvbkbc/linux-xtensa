@@ -4208,7 +4208,7 @@ int cmd_script(int argc, const char **argv)
 			return -1;
 		}
 
-		pid = fork();
+		pid = vfork();
 		if (pid < 0) {
 			perror("failed to fork");
 			return -1;
