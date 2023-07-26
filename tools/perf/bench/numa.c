@@ -1587,7 +1587,7 @@ static int __bench_numa(const char *name)
 	gettimeofday(&start, NULL);
 
 	for (i = 0; i < g->p.nr_proc; i++) {
-		pid = fork();
+		pid = vfork();
 		dprintf(" # process %2d: PID %d\n", i, pid);
 
 		BUG_ON(pid < 0);

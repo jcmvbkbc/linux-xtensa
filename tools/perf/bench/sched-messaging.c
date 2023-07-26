@@ -148,9 +148,9 @@ static pthread_t create_worker(void *ctx, void *(*func)(void *))
 	if (!thread_mode) {
 		/* process mode */
 		/* Fork the receiver. */
-		switch (fork()) {
+		switch (vfork()) {
 		case -1:
-			err(EXIT_FAILURE, "fork()");
+			err(EXIT_FAILURE, "vfork()");
 			break;
 		case 0:
 			(*func) (ctx);

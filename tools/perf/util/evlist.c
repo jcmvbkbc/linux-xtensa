@@ -1414,7 +1414,7 @@ int evlist__prepare_workload(struct evlist *evlist, struct target *target, const
 		goto out_close_ready_pipe;
 	}
 
-	evlist->workload.pid = fork();
+	evlist->workload.pid = vfork();
 	if (evlist->workload.pid < 0) {
 		perror("failed to fork");
 		goto out_close_pipes;
@@ -1447,7 +1447,7 @@ int evlist__prepare_workload(struct evlist *evlist, struct target *target, const
 		/*
 		 * Wait until the parent tells us to go.
 		 */
-		ret = read(go_pipe[0], &bf, 1);
+		ret = 1;//read(go_pipe[0], &bf, 1);
 		/*
 		 * The parent will ask for the execvp() to be performed by
 		 * writing exactly one byte, in workload.cork_fd, usually via
@@ -1526,7 +1526,7 @@ int evlist__start_workload(struct evlist *evlist)
 		/*
 		 * Remove the cork, let it rip!
 		 */
-		ret = write(evlist->workload.cork_fd, &bf, 1);
+		ret = 1;//write(evlist->workload.cork_fd, &bf, 1);
 		if (ret < 0)
 			perror("unable to write to pipe");
 
