@@ -6599,6 +6599,7 @@ accounting:
 	if (vma->vm_flags & VM_WRITE)
 		flags |= RING_BUFFER_WRITABLE;
 
+#if 0
 	if (!rb) {
 		rb = rb_alloc(nr_pages,
 			      event->attr.watermark ? event->attr.wakeup_watermark : 0,
@@ -6624,6 +6625,7 @@ accounting:
 		if (!ret)
 			rb->aux_mmap_locked = extra;
 	}
+#endif
 
 unlock:
 	if (!ret) {
@@ -6647,7 +6649,69 @@ aux_unlock:
 	if (event->pmu->event_mapped)
 		event->pmu->event_mapped(event, vma->vm_mm);
 
+	pr_info("%s: ret = %d\n", __func__, ret);
 	return ret;
+}
+
+unsigned long perf_get_unmapped_area(struct file *file,
+				     unsigned long addr, unsigned long len,
+				     unsigned long pgoff, unsigned long flags)
+{
+	unsigned long ret = -EINVAL;
+	struct perf_event *event = file->private_data;
+	unsigned long nr_pages = len / PAGE_SIZE;
+
+	pr_debug("%s: addr = 0x%lx, len = 0x%lx, pgoff = 0x%lx, flags = 0x%lx, event = %p, event->rb = %p\n",
+		 __func__, addr, len, pgoff, flags, event, event->rb);
+
+	if (!event->rb) {
+		int flags = RING_BUFFER_WRITABLE;
+		struct perf_buffer *rb = NULL;
+
+		if (pgoff != 0) {
+			ret = -EINVAL;
+			goto unlock;
+		}
+		--nr_pages;
+		rb = rb_alloc(nr_pages,
+			      event->attr.watermark ? event->attr.wakeup_watermark : 0,
+			      event->cpu, flags);
+
+		if (!rb) {
+			ret = -ENOMEM;
+			goto unlock;
+		}
+		atomic_set(&rb->mmap_count, 1);
+		rb->mmap_user = get_current_user();
+		rb->mmap_locked = 0;
+
+		ring_buffer_attach(event, rb);
+
+		perf_event_update_time(event);
+		perf_event_init_userpage(event);
+		perf_event_update_userpage(event);
+	}
+	if (event->rb) {
+		struct perf_buffer *rb = event->rb;
+
+		if (!pgoff) {
+			ret = (unsigned long)rb->user_page;
+		} else {
+			ret = rb_alloc_aux(rb, event, pgoff, nr_pages,
+					   event->attr.aux_watermark, flags);
+			if (ret < 0)
+				goto unlock;
+			ret = (unsigned long)rb->data_pages[pgoff - 1];
+		}
+	}
+unlock:
+	pr_debug("%s: ret = 0x%lx\n", __func__, ret);
+	return ret;
+}
+
+static unsigned perf_mmap_capabilities(struct file *file)
+{
+	return NOMMU_MAP_DIRECT | NOMMU_MAP_READ | NOMMU_MAP_WRITE;
 }
 
 static int perf_fasync(int fd, struct file *filp, int on)
@@ -6674,6 +6738,10 @@ static const struct file_operations perf_fops = {
 	.unlocked_ioctl		= perf_ioctl,
 	.compat_ioctl		= perf_compat_ioctl,
 	.mmap			= perf_mmap,
+#ifndef CONFIG_MMU
+	.get_unmapped_area	= perf_get_unmapped_area,
+	.mmap_capabilities	= perf_mmap_capabilities,
+#endif
 	.fasync			= perf_fasync,
 };
 
