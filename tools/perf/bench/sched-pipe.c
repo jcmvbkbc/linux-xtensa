@@ -248,7 +248,7 @@ int bench_sched_pipe(int argc, const char **argv)
 			BUG_ON(ret);
 		}
 	} else {
-		pid = fork();
+		pid = vfork();
 		assert(pid >= 0);
 
 		if (!pid) {

@@ -78,7 +78,7 @@ int start_command(struct child_process *cmd)
 	}
 
 	fflush(NULL);
-	cmd->pid = fork();
+	cmd->pid = vfork();
 	if (!cmd->pid) {
 		if (cmd->no_stdin)
 			dup_devnull(0);
