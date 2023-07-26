@@ -172,10 +172,10 @@ static void create_process_worker(union messaging_worker *worker,
 				  void *ctx, void *(*func)(void *))
 {
 	/* Fork the receiver. */
-	worker->pid = fork();
+	worker->pid = vfork();
 
 	if (worker->pid == -1) {
-		err(EXIT_FAILURE, "fork()");
+		err(EXIT_FAILURE, "vfork()");
 	} else if (worker->pid == 0) {
 		(*func) (ctx);
 		exit(0);
