@@ -17,7 +17,7 @@ static pid_t spawn(void)
 {
 	pid_t pid;
 
-	pid = fork();
+	pid = vfork();
 	if (pid)
 		return pid;
 

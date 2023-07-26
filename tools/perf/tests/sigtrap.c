@@ -177,7 +177,7 @@ static void *test_thread(void *arg)
 	pid_t tid = syscall(SYS_gettid);
 	int i;
 
-	pthread_barrier_wait(barrier);
+	//pthread_barrier_...barrier);
 
 	__atomic_fetch_add(&ctx.tids_want_signal, tid, __ATOMIC_RELAXED);
 	for (i = 0; i < ctx.iterate_on - 1; i++)
@@ -190,7 +190,7 @@ static int run_test_threads(pthread_t *threads, pthread_barrier_t *barrier)
 {
 	int i;
 
-	pthread_barrier_wait(barrier);
+	//pthread_barrier_...barrier);
 	for (i = 0; i < NUM_THREADS; i++)
 		TEST_ASSERT_EQUAL("pthread_join() failed", pthread_join(threads[i], NULL), 0);
 
@@ -245,7 +245,7 @@ static int test__sigtrap(struct test_suite *test __maybe_unused, int subtest __m
 		return TEST_SKIP;
 	}
 
-	pthread_barrier_init(&barrier, NULL, NUM_THREADS + 1);
+	//pthread_barrier_...&barrier, NULL, NUM_THREADS + 1);
 
 	action.sa_flags = SA_SIGINFO | SA_NODEFER;
 	action.sa_sigaction = sigtrap_handler;
@@ -281,7 +281,7 @@ out_close_perf_event:
 out_restore_sigaction:
 	sigaction(SIGTRAP, &oldact, NULL);
 out:
-	pthread_barrier_destroy(&barrier);
+	//pthread_barrier_destroy(&barrier);
 	btf__exit();
 	return ret;
 }
