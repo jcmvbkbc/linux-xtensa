@@ -337,7 +337,7 @@ static int daemon_session__run(struct daemon_session *session,
 
 	session->start = time(NULL);
 
-	session->pid = fork();
+	session->pid = vfork();
 	if (session->pid < 0)
 		return -1;
 	if (session->pid > 0) {
@@ -1181,7 +1181,7 @@ static int go_background(struct daemon *daemon)
 {
 	int pid, fd;
 
-	pid = fork();
+	pid = vfork();
 	if (pid < 0)
 		return -1;
 
