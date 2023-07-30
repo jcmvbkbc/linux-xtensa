@@ -573,6 +573,16 @@ config HW_RANDOM_JH7110
 	  To compile this driver as a module, choose M here.
 	  The module will be called jh7110-trng.
 
+config HW_RANDOM_ESP32
+	tristate "Espressif ESP32xx Random Number Generator support"
+	depends on HAS_IOMEM && OF
+	help
+	  This driver provides support for the True Random Number
+	  Generator in Espressif ESP32xx chips.
+
+	  To compile this driver as a module, choose M here.
+	  The module will be called esp32-trng.
+
 endif # HW_RANDOM
 
 config UML_RANDOM
