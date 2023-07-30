@@ -92,5 +92,10 @@
 			value = <0x80000000>;
 			mask = <0x80000000>;
 		};
+
+		trng@6003507c {
+			compatible = "esp,esp32-trng";
+			reg = <0x6003507c 0x4>;
+		};
 	};
 };
