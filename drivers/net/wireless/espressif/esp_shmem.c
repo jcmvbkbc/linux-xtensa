@@ -288,9 +288,13 @@ static int process_rx_buf(struct esp_wifi_shmem *hw, struct sk_buff *skb)
 static bool esp_wifi_shmem_handle_rx(struct esp_wifi_shmem *hw, void *p)
 {
 	struct sk_buff *rx_skb = esp_alloc_skb(SHMEM_BUF_SIZE);
-	u8 *rx_buf = skb_put(rx_skb, SHMEM_BUF_SIZE);
+	u8 *rx_buf;
 	int ret;
 
+	if (!rx_skb)
+		return false;
+
+	rx_buf = skb_put(rx_skb, SHMEM_BUF_SIZE);
 	memcpy(rx_buf, p, SHMEM_BUF_SIZE);
 
 	ret = process_rx_buf(hw, rx_skb);
