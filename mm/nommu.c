@@ -1199,6 +1199,10 @@ share:
 
 	up_write(&nommu_region_sem);
 
+	if (IS_ENABLED(CONFIG_XTENSA_PLATFORM_ESP32) &&
+	    (vma->vm_flags & VM_EXEC) && result >= 0x3c000000 && result < 0x3e000000) {
+		result += 0x42000000 - 0x3c000000;
+	}
 	return result;
 
 error_just_free:
