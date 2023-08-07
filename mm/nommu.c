@@ -1213,6 +1213,9 @@ share:
 
 	up_write(&nommu_region_sem);
 
+	if ((vma->vm_flags & VM_EXEC) && result >= 0x3d800000 && result < 0x3e000000) {
+		result += 0x43000000 - 0x3d800000;
+	}
 	return result;
 
 error_just_free:
