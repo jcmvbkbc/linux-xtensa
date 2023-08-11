@@ -97,5 +97,16 @@
 			compatible = "esp,esp32-trng";
 			reg = <0x6003507c 0x4>;
 		};
+
+		ipc@600c0004 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32-ipc";
+			reg = <0x600c0004 4  /* queues address */
+			       0x600c0038 8  /* incoming and outgoing IRQ registers */
+			       >;
+			interrupts = <81 2 0>; /* CPU_INTR_FROM_CPU_2, IRQ 2, CPU0 */
+		};
+
 	};
 };
