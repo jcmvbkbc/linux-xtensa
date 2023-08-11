@@ -574,6 +574,12 @@ config NSM
 	  To compile this driver as a module, choose M here.
 	  The module will be called nsm.
 
+config ESP32_IPC
+	tristate "Espressif ESP32 firmware IPC support"
+	depends on OF && HAS_IOMEM
+	help
+	  Support IPC with firmware running on the other core of dual core ESP32 chips.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
