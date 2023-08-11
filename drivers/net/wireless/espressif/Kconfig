@@ -32,6 +32,7 @@ config ESP32_BT
 
 config ESP32_WIFI_SHMEM
 	def_bool y
+	select ESP32_IPC
 
 config ESP32_WIFI_SPI
 	bool

@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
+#include <linux/esp32-ipc-api.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
@@ -15,29 +16,25 @@
 #include "esp_api.h"
 #include "esp_bt_api.h"
 #include "esp_kernel_port.h"
-#include "esp_shmem.h"
 #include "esp_stats.h"
 
 #define SHMEM_BUF_SIZE			1600
 
-#define ESP_SHMEM_IRQ_FROM_WIFI_REG	0
-#define ESP_SHMEM_IRQ_TO_WIFI_REG	4
-
-#define ESP_SHMEM_READ_HW_Q		0
-#define ESP_SHMEM_WRITE_HW_Q		1
-
 volatile u8 host_sleep;
+
+struct esp_skb_shmem_cb {
+	struct esp_skb_cb cb;
+	u32 tag;
+};
 
 struct esp_wifi_shmem
 {
-	void __iomem *regs;
-	int irq;
-	struct esp_wifi_shmem_queue *hw_q;
-	u32 tx_done;
+	struct esp_adapter adapter;
 	struct sk_buff_head rx_q[MAX_PRIORITY_QUEUES];
 	struct sk_buff_head tx_q;
+	void *ipc;
+	u32 ipc_addr;
 	bool esp_reset_after_module_load;
-	struct esp_adapter adapter;
 };
 
 static struct sk_buff *read_packet(struct esp_adapter *adapter)
@@ -58,10 +55,7 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 {
 	u32 max_pkt_size = SHMEM_BUF_SIZE - sizeof(struct esp_payload_header);
 	struct esp_wifi_shmem *hw = container_of(adapter, struct esp_wifi_shmem, adapter);
-	struct esp_skb_cb *cb = NULL;
-	struct esp_wifi_shmem_queue *q = hw->hw_q + ESP_SHMEM_WRITE_HW_Q;
-	void **data = (void *)hw->hw_q + q->offset;
-	u32 r, w;
+	struct esp_skb_shmem_cb *cb = (struct esp_skb_shmem_cb *)skb->cb;
 
 	if (!adapter || !skb || !skb->data || !skb->len) {
 		pr_err("Invalid args\n");
@@ -77,31 +71,14 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 		return -EPERM;
 	}
 
-	r = READ_ONCE(q->read);
-	w = READ_ONCE(q->write);
-	rmb();
-	pr_debug("%s: q->read = %d, q->write = %d\n", __func__, r, w);
-	if (w - r == q->mask) {
+	if (esp32_ipc_tx(hw->ipc, hw->ipc_addr, skb->data, &cb->tag)) {
 		pr_debug("%s: write queue full\n", __func__);
-		cb = (struct esp_skb_cb *)skb->cb;
-		if (cb && cb->priv)
-			esp_tx_pause(cb->priv);
+		if (cb->cb.priv)
+			esp_tx_pause(cb->cb.priv);
 		dev_kfree_skb(skb);
 		return -EBUSY;
 	}
 
-	WRITE_ONCE(data[w & q->mask], skb->data);
-	wmb();
-	++w;
-	WRITE_ONCE(q->write, w);
-	wmb();
-	writel(1, hw->regs + ESP_SHMEM_IRQ_TO_WIFI_REG);
-
-	if (w - r == q->mask) {
-		cb = (struct esp_skb_cb *)skb->cb;
-		if (cb && cb->priv)
-			esp_tx_pause(cb->priv);
-	}
 	skb_queue_tail(&hw->tx_q, skb);
 
 	return 0;
@@ -303,129 +280,38 @@ static bool esp_wifi_shmem_handle_rx(struct esp_wifi_shmem *hw, void *p)
 	return ret == 0;
 }
 
-static void esp_wifi_shmem_handle_tx(struct esp_wifi_shmem *hw, u32 n)
+static void esp_wifi_shmem_handle_tx(struct esp_wifi_shmem *hw, u32 tag)
 {
 	struct sk_buff *skb;
 	bool resumed = false;
-	u32 i;
 
-	for (i = 0; i < n; ++i) {
-		skb = skb_dequeue(&hw->tx_q);
-		if (WARN_ON(!skb))
+	while ((skb = skb_dequeue(&hw->tx_q))) {
+		struct esp_skb_shmem_cb *cb = (struct esp_skb_shmem_cb *)skb->cb;
+
+		if ((s32)(cb->tag - tag) >= 0) {
+			skb_queue_head(&hw->tx_q, skb);
 			break;
-		if (!resumed && skb) {
-			struct esp_skb_cb *cb = (struct esp_skb_cb *)skb->cb;
-
-			if (cb->priv) {
-				esp_tx_resume(cb->priv);
+		} else if (!resumed) {
+			if (cb->cb.priv) {
+				esp_tx_resume(cb->cb.priv);
 				resumed = true;
 			}
 		}
 		dev_kfree_skb(skb);
 	}
-	hw->tx_done += n;
 }
 
-static irqreturn_t esp_wifi_shmem_irq_handler(int irq, void *dev)
+static int esp_wifi_shmem_rx_handler(void *dev, void *data)
+{
+	return esp_wifi_shmem_handle_rx(dev, data);
+}
+
+static void esp_wifi_shmem_rx_batch(void *dev, u32 tag)
 {
 	struct esp_wifi_shmem *hw = dev;
 
-	if (hw->hw_q) {
-		writel(0, hw->regs + ESP_SHMEM_IRQ_FROM_WIFI_REG);
-		return IRQ_WAKE_THREAD;
-	}
-	return IRQ_NONE;
-}
-
-static irqreturn_t esp_wifi_shmem_thread_handler(int irq, void *dev)
-{
-	struct esp_wifi_shmem *hw = dev;
-	struct esp_wifi_shmem_queue *q = hw->hw_q + ESP_SHMEM_READ_HW_Q;
-	void **data = (void *)hw->hw_q + q->offset;
-	u32 w, r;
-	bool rx_done = false;
-
-	for (;;) {
-		w = READ_ONCE(q->write);
-		r = READ_ONCE(q->read);
-		rmb();
-		if (r == w) {
-			break;
-		} else {
-			void *p = READ_ONCE(data[r & q->mask]);
-
-			pr_debug("%s: read queue: r = %d, w = %d\n", __func__, r, w);
-			if (esp_wifi_shmem_handle_rx(hw, p))
-				rx_done = true;
-			++r;
-			wmb();
-			WRITE_ONCE(q->read, r);
-		}
-	}
-
-	/* indicate reception of new packets */
-	if (rx_done)
-		esp_process_new_packet_intr(&hw->adapter);
-
-	q = hw->hw_q + ESP_SHMEM_WRITE_HW_Q;
-	w = READ_ONCE(q->write);
-	r = READ_ONCE(q->read);
-	rmb();
-	pr_debug("%s: write queue: r = %d, w = %d\n", __func__, r, w);
-	if (r != hw->tx_done)
-		esp_wifi_shmem_handle_tx(hw, r - hw->tx_done);
-
-	return IRQ_HANDLED;
-}
-
-static int init_hw(struct platform_device *pdev, struct esp_wifi_shmem *hw)
-{
-	void __user *p;
-
-	p = devm_of_iomap(&pdev->dev, pdev->dev.of_node, 0, NULL);
-	if (IS_ERR(p))
-		return PTR_ERR(p);
-	hw->hw_q = (void *)readl(p);
-	devm_iounmap(&pdev->dev, p);
-
-	hw->regs = devm_of_iomap(&pdev->dev, pdev->dev.of_node, 1, NULL);
-	if (IS_ERR(hw->regs))
-		return PTR_ERR(hw->regs);
-
-	dev_dbg(&pdev->dev, "%s: regs = %p, queues = %p\n",
-		__func__, hw->regs, hw->hw_q);
-	if (hw->hw_q) {
-		u32 i;
-
-		for (i = 0; i < 2; ++i) {
-			dev_dbg(&pdev->dev, "%s: queue %d: offset = %d, mask = %x\n",
-				__func__, i,
-				hw->hw_q[i].offset,
-				hw->hw_q[i].mask);
-		}
-		hw->tx_done = hw->hw_q[ESP_SHMEM_WRITE_HW_Q].write;
-	} else {
-		return -ENODEV;
-	}
-
-	hw->irq = platform_get_irq(pdev, 0);
-	if (hw->irq >= 0) {
-		int ret;
-
-		ret = devm_request_threaded_irq(&pdev->dev, hw->irq,
-						esp_wifi_shmem_irq_handler,
-						esp_wifi_shmem_thread_handler,
-						IRQF_SHARED, pdev->name, hw);
-		if (ret < 0) {
-			dev_err(&pdev->dev, "request_irq %d failed\n", hw->irq);
-			return ret;
-		}
-	} else {
-		dev_err(&pdev->dev, "missing IRQ property\n");
-		return -ENODEV;
-	}
-
-	return 0;
+	esp_process_new_packet_intr(&hw->adapter);
+	esp_wifi_shmem_handle_tx(hw, tag);
 }
 
 static int esp_wifi_shmem_probe(struct platform_device *pdev)
@@ -442,19 +328,22 @@ static int esp_wifi_shmem_probe(struct platform_device *pdev)
 		skb_queue_head_init(&hw->rx_q[i]);
 	skb_queue_head_init(&hw->tx_q);
 
-	ret = init_hw(pdev, hw);
+	hw->ipc = platform_get_drvdata(to_platform_device(pdev->dev.parent));
+	ret = of_property_read_u32(pdev->dev.of_node, "reg", &hw->ipc_addr);
 	if (ret < 0)
 		return ret;
+
+	ret = esp32_ipc_register_rx(hw->ipc, hw->ipc_addr, hw,
+				  esp_wifi_shmem_rx_handler,
+				  esp_wifi_shmem_rx_batch);
+	if (ret < 0)
+		return ret;
+
 	ret = esp_wifi_init(&hw->adapter, &if_ops);
 	if (ret < 0)
 		return ret;
 
-	hw->hw_q[ESP_SHMEM_WRITE_HW_Q].read = 0;
-	hw->hw_q[ESP_SHMEM_WRITE_HW_Q].write = 0;
-	wmb();
-	writel(1, hw->regs + ESP_SHMEM_IRQ_TO_WIFI_REG);
-
-	esp_wifi_shmem_thread_handler(0, hw);
+	esp32_ipc_tx(hw->ipc, hw->ipc_addr, NULL, NULL);
 
 	return ret;
 }
@@ -467,7 +356,7 @@ static int esp_wifi_shmem_remove(struct platform_device *pdev)
 	if (!hw)
 		return 0;
 
-	disable_irq(hw->irq);
+	esp32_ipc_register_rx(hw->ipc, hw->ipc_addr, NULL, NULL, NULL);
 	esp_wifi_deinit(&hw->adapter);
 	for (i = 0; i < MAX_PRIORITY_QUEUES; ++i)
 		skb_queue_purge(&hw->rx_q[i]);
@@ -477,7 +366,7 @@ static int esp_wifi_shmem_remove(struct platform_device *pdev)
 
 static const struct of_device_id esp_wifi_shmem_match[] = {
 	{
-		.compatible = "esp,esp-wifi-shmem",
+		.compatible = "esp,esp32-wifi-shmem",
 	}, {},
 };
 MODULE_DEVICE_TABLE(of, esp_wifi_shmem_match);
@@ -486,7 +375,7 @@ static struct platform_driver esp_wifi_shmem_driver = {
 	.probe   = esp_wifi_shmem_probe,
 	.remove  = esp_wifi_shmem_remove,
 	.driver  = {
-		.name = "esp-wifi-shmem",
+		.name = "esp32-wifi-shmem",
 		.of_match_table = of_match_ptr(esp_wifi_shmem_match),
 	},
 };
