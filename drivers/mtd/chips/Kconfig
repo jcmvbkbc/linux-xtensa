@@ -233,11 +233,18 @@ config MTD_ABSENT
 
 config MTD_XIP
 	bool "XIP aware MTD support"
-	depends on !SMP && (MTD_CFI_INTELEXT || MTD_CFI_AMDSTD) && ARCH_MTD_XIP
+	depends on !SMP && (MTD_CFI_INTELEXT || MTD_CFI_AMDSTD || MTD_ESP32) && ARCH_MTD_XIP
 	default y if XIP_KERNEL
 	help
 	  This allows MTD support to work with flash memory which is also
 	  used for XIP purposes.  If you're not sure what this is all about
 	  then say N.
+
+config MTD_ESP32
+	tristate "Support for ESP32 FLASH chips in bus mapping"
+	select ESP32_IPC
+	help
+	  This option enables basic support for SPI FLASH chips accessed through
+	  a bus mapping driver and controlled through the ESP32 IPC mechanism.
 
 endmenu
