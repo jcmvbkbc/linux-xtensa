@@ -276,7 +276,7 @@ static const struct of_device_id esp32_ipc_flash_match[] = {
 		.compatible = "esp,esp32-ipc-flash",
 	}, {},
 };
-MODULE_DEVICE_TABLE(of, esp_wifi_shmem_match);
+MODULE_DEVICE_TABLE(of, esp32_ipc_flash_match);
 
 static struct platform_driver esp32_ipc_flash_driver = {
 	.probe   = esp32_ipc_flash_probe,
