@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/mtd/map.h>
 #include <linux/mtd/mtd.h>
+#include <linux/mtd/partitions.h>
 #include <linux/mtd/xip.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
@@ -58,6 +59,20 @@ static int esp32_ipc_flash_read(struct esp32_ipc_flash *hw, u32 off, u32 size,
 				void *data);
 static int esp32_ipc_flash_write(struct esp32_ipc_flash *hw, u32 off, u32 size,
 				 const void *data);
+
+
+#define ESP32_PARTITION_TABLE_DEFAULT_ADDRESS	0x8000
+#define ESP32_PARTITION_RECORD_MAGIC0		0xaa
+#define ESP32_PARTITION_RECORD_MAGIC1		0x50
+
+struct esp32_partition_record {
+	u8 magic[2];
+	u8 type;
+	u8 subtype;
+	u32 offset;
+	u32 size;
+	char name[20];
+};
 
 static struct mtd_chip_driver map_esp32_chipdrv = {
 	.probe	= map_esp32_probe,
@@ -287,17 +302,80 @@ static struct platform_driver esp32_ipc_flash_driver = {
 	},
 };
 
+static const struct of_device_id mtd_parser_esp32_of_match_table[] = {
+	{
+		.compatible = "esp,esp32-partition-table",
+	}, {},
+};
+MODULE_DEVICE_TABLE(of, mtd_parser_esp32_of_match_table);
+
+static int esp32_flash_parse_partitions(struct mtd_info *mtd,
+					const struct mtd_partition **pparts,
+					struct mtd_part_parser_data *data)
+{
+	struct esp32_ipc_flash *hw = mtd->priv;
+	struct esp32_partition_record pr[16];
+	u32 addr = ESP32_PARTITION_TABLE_DEFAULT_ADDRESS;
+	struct device_node *of_node;
+	int ret;
+
+	of_node = mtd_get_of_node(mtd);
+	if (of_node) {
+		struct device_node *part = of_get_child_by_name(of_node, "partitions");
+
+		if (part) {
+			of_property_read_u32(part, "esp32-partition-table-addr", &addr);
+			of_node_put(part);
+		}
+	}
+
+	ret = esp32_ipc_flash_read(hw, addr, sizeof(pr), pr);
+	if (!ret) {
+		int i;
+		struct mtd_partition *mtd_part = kzalloc(sizeof(*mtd_part) * ARRAY_SIZE(pr),
+							 GFP_KERNEL);
+
+		if (!mtd_part)
+			return -ENOMEM;
+
+		*pparts = mtd_part;
+
+		for (i = 0; i < ARRAY_SIZE(pr); ++i) {
+			struct esp32_partition_record *p = pr + i;
+			struct mtd_partition *mp = mtd_part + i;
+
+			if (p->magic[0] != ESP32_PARTITION_RECORD_MAGIC0 ||
+			    p->magic[1] != ESP32_PARTITION_RECORD_MAGIC1)
+				break;
+			mp->size = p->size;
+			mp->offset = p->offset;
+			mp->name = kstrdup(p->name, GFP_KERNEL);
+		}
+		ret = i;
+	}
+	return ret;
+}
+
+static struct mtd_part_parser esp32_flash_partition_parser = {
+	.parse_fn = esp32_flash_parse_partitions,
+	.name = "esp32",
+	.of_match_table = mtd_parser_esp32_of_match_table,
+};
+
 static int __init map_esp32_init(void)
 {
 	int ret = platform_driver_register(&esp32_ipc_flash_driver);
 
-	if (!ret)
+	if (!ret) {
 		register_mtd_chip_driver(&map_esp32_chipdrv);
+		ret = register_mtd_parser(&esp32_flash_partition_parser);
+	}
 	return ret;
 }
 
 static void __exit map_esp32_exit(void)
 {
+	deregister_mtd_parser(&esp32_flash_partition_parser);
 	unregister_mtd_chip_driver(&map_esp32_chipdrv);
 	platform_driver_unregister(&esp32_ipc_flash_driver);
 }
