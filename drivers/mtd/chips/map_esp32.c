@@ -29,14 +29,21 @@ enum {
 	ESP32_IPC_FLASH_STATE_DONE,
 };
 
+enum {
+	ESP_IPC_FLASH_CMD_ERASE,
+	ESP_IPC_FLASH_CMD_READ,
+	ESP_IPC_FLASH_CMD_WRITE,
+};
+
 struct esp32_ipc_flash_cmd {
-	const void *data;
+	void *data;
 	u32 addr;
 	u32 size;
 	u32 local_state;
 
 	u32 remote_state;
 	u32 result;
+	u32 code;
 };
 
 struct esp32_ipc_flash {
@@ -47,6 +54,8 @@ struct esp32_ipc_flash {
 };
 
 static int esp32_ipc_flash_erase(struct esp32_ipc_flash *hw, u32 off, u32 size);
+static int esp32_ipc_flash_read(struct esp32_ipc_flash *hw, u32 off, u32 size,
+				void *data);
 static int esp32_ipc_flash_write(struct esp32_ipc_flash *hw, u32 off, u32 size,
 				 const void *data);
 
@@ -195,9 +204,22 @@ static int esp32_ipc_flash_erase(struct esp32_ipc_flash *hw, u32 off, u32 size)
 {
 	if (!hw->cmd)
 		return -EINVAL;
+	hw->cmd->code = ESP_IPC_FLASH_CMD_ERASE;
 	hw->cmd->addr = off;
 	hw->cmd->size = size;
 	hw->cmd->data = NULL;
+	return esp32_ipc_flash_io(hw, hw->cmd);
+}
+
+static int esp32_ipc_flash_read(struct esp32_ipc_flash *hw, u32 off, u32 size,
+				void *data)
+{
+	if (!hw->cmd)
+		return -EINVAL;
+	hw->cmd->code = ESP_IPC_FLASH_CMD_READ;
+	hw->cmd->addr = off;
+	hw->cmd->size = size;
+	hw->cmd->data = data;
 	return esp32_ipc_flash_io(hw, hw->cmd);
 }
 
@@ -206,9 +228,10 @@ static int esp32_ipc_flash_write(struct esp32_ipc_flash *hw, u32 off, u32 size,
 {
 	if (!hw->cmd)
 		return -EINVAL;
+	hw->cmd->code = ESP_IPC_FLASH_CMD_WRITE;
 	hw->cmd->addr = off;
 	hw->cmd->size = size;
-	hw->cmd->data = data;
+	hw->cmd->data = (void *)data;
 	return esp32_ipc_flash_io(hw, hw->cmd);
 }
 
