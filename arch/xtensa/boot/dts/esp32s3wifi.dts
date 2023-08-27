@@ -24,22 +24,13 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 			compatible = "mtd-rom";
-			reg = <0x42000000 0x00800000>;
+			reg = <0x42000000 0x01000000>;
 			bank-width = <2>;
 			device-width = <2>;
-			erase-size = <65536>;
+			erase-size = <0x10000>;
 			controller = <&flash_controller>;
-			partition@b0000 {
-				label = "etc";
-				reg = <0x000b0000 0x00070000>;
-			};
-			partition@120000 {
-				label = "linux";
-				reg = <0x00120000 0x00360000>;
-			};
-			partition@480000 {
-				label = "data";
-				reg = <0x00480000 0x00380000>;
+			partitions {
+				compatible = "esp,esp32-partition-table";
 			};
 		};
 	};
