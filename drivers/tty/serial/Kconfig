@@ -1587,6 +1587,15 @@ config SERIAL_ESP32
 	help
 	  Driver for Espressif ESP32 UARTs.
 
+config SERIAL_ESP32_ACM
+	tristate "Espressif ESP32 USB ACM support"
+	depends on XTENSA_PLATFORM_ESP32 || (COMPILE_TEST && OF)
+	select SERIAL_CORE
+	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
+	help
+	  Driver for Espressif ESP32 ACM.
+
 endmenu
 
 config SERIAL_MCTRL_GPIO
