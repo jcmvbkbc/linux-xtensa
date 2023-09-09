@@ -248,4 +248,7 @@
 /* Espressif ESP32 UART */
 #define PORT_ESP32UART	124
 
+/* Espressif ESP32 ACM */
+#define PORT_ESP32ACM	125
+
 #endif /* _UAPILINUX_SERIAL_CORE_H */
