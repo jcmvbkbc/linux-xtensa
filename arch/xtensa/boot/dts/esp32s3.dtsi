@@ -13,6 +13,7 @@
 
 	aliases {
 		serial0 = "/soc/serial@60000000";
+		serial1 = "/soc/acm@60038000";
 	};
 
 	cpus {
@@ -96,6 +97,12 @@
 		trng@6003507c {
 			compatible = "esp,esp32-trng";
 			reg = <0x6003507c 0x4>;
+		};
+
+		acm@60038000 {
+			compatible = "esp,esp32s3-acm";
+			reg = <0x60038000 0x1000>;
+			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
 		};
 
 		ipc@600c0004 {
