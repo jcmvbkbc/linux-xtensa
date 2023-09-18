@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#include <linux/completion.h>
 #include <linux/errno.h>
 #include <linux/esp32-ipc-api.h>
 #include <linux/init.h>
@@ -52,6 +53,7 @@ struct esp32_ipc_flash {
 	u32 ipc_addr;
 	struct map_info *map;
 	struct esp32_ipc_flash_cmd *cmd;
+	struct completion *completion;
 };
 
 static int esp32_ipc_flash_erase(struct esp32_ipc_flash *hw, u32 off, u32 size);
@@ -217,8 +219,6 @@ static int esp32_ipc_flash_io(struct esp32_ipc_flash *hw,
 
 static int esp32_ipc_flash_erase(struct esp32_ipc_flash *hw, u32 off, u32 size)
 {
-	if (!hw->cmd)
-		return -EINVAL;
 	hw->cmd->code = ESP_IPC_FLASH_CMD_ERASE;
 	hw->cmd->addr = off;
 	hw->cmd->size = size;
@@ -229,8 +229,6 @@ static int esp32_ipc_flash_erase(struct esp32_ipc_flash *hw, u32 off, u32 size)
 static int esp32_ipc_flash_read(struct esp32_ipc_flash *hw, u32 off, u32 size,
 				void *data)
 {
-	if (!hw->cmd)
-		return -EINVAL;
 	hw->cmd->code = ESP_IPC_FLASH_CMD_READ;
 	hw->cmd->addr = off;
 	hw->cmd->size = size;
@@ -241,8 +239,6 @@ static int esp32_ipc_flash_read(struct esp32_ipc_flash *hw, u32 off, u32 size,
 static int esp32_ipc_flash_write(struct esp32_ipc_flash *hw, u32 off, u32 size,
 				 const void *data)
 {
-	if (!hw->cmd)
-		return -EINVAL;
 	hw->cmd->code = ESP_IPC_FLASH_CMD_WRITE;
 	hw->cmd->addr = off;
 	hw->cmd->size = size;
@@ -255,6 +251,7 @@ static int esp32_ipc_flash_rx(void *p, void *data)
 	struct esp32_ipc_flash *hw = p;
 
 	hw->cmd = data;
+	complete(hw->completion);
 	return 1;
 }
 
@@ -262,12 +259,15 @@ static int esp32_ipc_flash_probe(struct platform_device *pdev)
 {
 	struct esp32_ipc_flash *hw =
 		devm_kzalloc(&pdev->dev, sizeof(*hw), GFP_KERNEL);
+	DECLARE_COMPLETION_ONSTACK(completion);
 	int ret;
 
 	if (!hw)
 		return -ENOMEM;
 	platform_set_drvdata(pdev, hw);
 
+	init_completion(&completion);
+	hw->completion = &completion;
 	hw->ipc = platform_get_drvdata(to_platform_device(pdev->dev.parent));
 	ret = of_property_read_u32(pdev->dev.of_node, "reg", &hw->ipc_addr);
 	if (ret < 0)
@@ -278,7 +278,12 @@ static int esp32_ipc_flash_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	return esp32_ipc_tx(hw->ipc, hw->ipc_addr, NULL, NULL);
+	while (esp32_ipc_tx(hw->ipc, hw->ipc_addr, NULL, NULL) != 0) {
+	}
+	wait_for_completion(&completion);
+	if (!hw->cmd)
+		return -ENOMEM;
+	return 0;
 }
 
 static int esp32_ipc_flash_remove(struct platform_device *pdev)
