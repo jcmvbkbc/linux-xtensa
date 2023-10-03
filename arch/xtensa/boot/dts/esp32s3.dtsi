@@ -13,7 +13,9 @@
 
 	aliases {
 		serial0 = "/soc/serial@60000000";
-		serial1 = "/soc/acm@60038000";
+		serial1 = "/soc/serial@60010000";
+		serial2 = "/soc/serial@6002e000";
+		serial3 = "/soc/acm@60038000";
 	};
 
 	cpus {
@@ -78,6 +80,8 @@
 			reg = <0x60000000 0x80>;
 			interrupts = <27 1 0>; /* UART0, external IRQ1, CPU0 */
 			clocks = <&serial_clk>;
+			pinctrl-0 = <&uart0_pins>;
+			pinctrl-names = "default";
 		};
 
 		gpio0: gpio@60004000 {
@@ -87,6 +91,32 @@
 			interrupts = <16 8 0>; /* GPIO, external IRQ8, CPU0 */
 			interrupt-controller;
 			#interrupt-cells = <2>;
+		};
+
+		gpio_in_mux@60004154 {
+			compatible = "pinctrl-single";
+			reg = <0x60004154 0x400>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xff>;
+
+			uart2_gpio_in: uart2_gpio_in {
+				pinctrl-single,pins = <
+					0x48 0x04>;	/* U2RXD: signal 18, GPIO4 */
+			};
+		};
+
+		gpio_out_mux@60004554 {
+			compatible = "pinctrl-single";
+			reg = <0x60004554 0xc4>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xfff>;
+
+			uart2_gpio_out: uart2_gpio_out {
+				pinctrl-single,pins = <
+					0x14 0x012>;	/* U2TXD: GPIO5, signal 18 */
+			};
 		};
 
 		lpm: lpm@60008000 {
@@ -100,6 +130,48 @@
 			offset = <0>;
 			value = <0x80000000>;
 			mask = <0x80000000>;
+		};
+
+		pinctrl@60009000 {
+			compatible = "pinctrl-single";
+			reg = <0x60009004 0xc4>;
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xffff>;
+
+			uart0_pins: uart0_pins {
+				pinctrl-single,pins = <
+					0xac 0x800	/* U0TXD: pin 43, function 0, 20ma */
+					0xb0 0xb00>;	/* U0RXD: pin 44, function 0, 20ma, FUN_IE, FUN_WPU */
+			};
+			uart1_pins: uart1_pins {
+				pinctrl-single,pins = <
+					0x44 0x2800	/* U1TXD: pin 17, function 2, 20ma */
+					0x48 0x2b00>;	/* U1RXD: pin 18, function 2, 20ma, FUN_IE, FUN_WPU */
+			};
+			uart2_pins: uart2_pins {
+				pinctrl-single,pins = <
+					0x10 0x800	/* GPIO4: pin 4, function 0, 20ma */
+					0x14 0xb00>;	/* GPIO5: pin 5, function 0, 20ma, FUN_IE, FUN_WPU */
+			};
+		};
+
+		serial@60010000 { /* needs clk and rst in syscon */
+			compatible = "esp,esp32s3-uart";
+			reg = <0x60010000 0x80>;
+			interrupts = <28 4 0>; /* UART1, external IRQ4, CPU0 */
+			clocks = <&serial_clk>;
+			pinctrl-0 = <&uart1_pins>;
+			pinctrl-names = "default";
+		};
+
+		serial@6002e000 {
+			compatible = "esp,esp32s3-uart";
+			reg = <0x6002e000 0x80>;
+			interrupts = <29 5 0>; /* UART2, external IRQ5, CPU0 */
+			clocks = <&serial_clk>;
+			pinctrl-0 = <&uart2_gpio_in>, <&uart2_gpio_out>, <&uart2_pins>;
+			pinctrl-names = "default", "default", "default";
 		};
 
 		trng@6003507c {
