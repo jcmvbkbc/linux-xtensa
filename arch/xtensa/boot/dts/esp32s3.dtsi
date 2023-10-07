@@ -85,6 +85,7 @@
 			pinctrl-names = "default";
 			resets = <&reset 2>;
 			reset-names = "reset";
+			wakeup-source;
 		};
 
 		gpio0: gpio@60004000 {
@@ -227,6 +228,7 @@
 			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
 			resets = <&reset 42>;
 			reset-names = "reset";
+			wakeup-source;
 		};
 
 		ipc@600c0004 {
