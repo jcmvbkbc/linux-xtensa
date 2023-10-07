@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/pm_wakeirq.h>
 #include <linux/serial_core.h>
 #include <linux/slab.h>
 #include <linux/tty_flip.h>
@@ -35,6 +36,12 @@
 #define USB_SERIAL_JTAG_IN_EP1_WR_ADDR			GENMASK(8, 2)
 #define USB_SERIAL_JTAG_OUT_EP1_ST_REG	0x3c
 #define USB_SERIAL_JTAG_OUT_EP1_REC_DATA_CNT		GENMASK(22, 16)
+
+struct esp32s3_acm_port {
+	struct uart_port port;
+	struct clk *clk;
+	bool wakeup_src;
+};
 
 static const struct of_device_id esp32s3_acm_dt_ids[] = {
 	{
@@ -187,6 +194,12 @@ static irqreturn_t esp32s3_acm_int(int irq, void *dev_id)
 	status = esp32s3_acm_read(port, USB_SERIAL_JTAG_INT_ST_REG);
 	esp32s3_acm_write(port, USB_SERIAL_JTAG_INT_CLR_REG, status);
 
+	if (irqd_is_wakeup_set(irq_get_irq_data(port->irq))) {
+		pr_info("%s:%d\n", __func__, __LINE__);
+		//pm_wakeup_event(port->dev, 0);
+		pm_wakeup_dev_event(port->dev, 0, true);
+	}
+
 	if (status & USB_SERIAL_JTAG_SERIAL_OUT_RECV_PKT_INT_ST)
 		esp32s3_acm_rxint(port);
 	if (status & USB_SERIAL_JTAG_SERIAL_IN_EMPTY_INT_ST)
@@ -213,7 +226,8 @@ static int esp32s3_acm_startup(struct uart_port *port)
 {
 	int ret;
 
-	ret = request_irq(port->irq, esp32s3_acm_int, 0, DRIVER_NAME, port);
+	ret = request_irq(port->irq, esp32s3_acm_int,
+			  IRQF_NO_SUSPEND, DRIVER_NAME, port);
 	if (ret)
 		return ret;
 	esp32s3_acm_write(port, USB_SERIAL_JTAG_INT_ENA_REG,
@@ -368,12 +382,15 @@ static int esp32s3_acm_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct uart_port *port;
+	struct esp32s3_acm_port *sport;
 	struct resource *res;
 	int ret;
 
-	port = devm_kzalloc(&pdev->dev, sizeof(*port), GFP_KERNEL);
-	if (!port)
+	sport = devm_kzalloc(&pdev->dev, sizeof(*sport), GFP_KERNEL);
+	if (!sport)
 		return -ENOMEM;
+
+	port = &sport->port;
 
 	ret = of_alias_get_id(np, "serial");
 	if (ret < 0) {
@@ -397,6 +414,8 @@ static int esp32s3_acm_probe(struct platform_device *pdev)
 	if (IS_ERR(port->membase))
 		return PTR_ERR(port->membase);
 
+	sport->wakeup_src = of_property_read_bool(np, "wakeup-source");
+
 	port->dev = &pdev->dev;
 	port->type = PORT_GENERIC;
 	port->iotype = UPIO_MEM;
@@ -408,25 +427,69 @@ static int esp32s3_acm_probe(struct platform_device *pdev)
 
 	esp32s3_acm_ports[port->line] = port;
 
-	platform_set_drvdata(pdev, port);
+	if (sport->wakeup_src) {
+		ret = device_init_wakeup(&pdev->dev, true);
+		if (ret)
+			return ret;
+		ret = dev_pm_set_wake_irq(&pdev->dev, port->irq);
+		if (ret)
+			return ret;
+	}
+
+	platform_set_drvdata(pdev, sport);
 
 	return uart_add_one_port(&esp32s3_acm_reg, port);
 }
 
 static int esp32s3_acm_remove(struct platform_device *pdev)
 {
-	struct uart_port *port = platform_get_drvdata(pdev);
+	struct esp32s3_acm_port *sport = platform_get_drvdata(pdev);
 
-	uart_remove_one_port(&esp32s3_acm_reg, port);
+	uart_remove_one_port(&esp32s3_acm_reg, &sport->port);
+	if (sport->wakeup_src) {
+		dev_pm_clear_wake_irq(&pdev->dev);
+		device_init_wakeup(&pdev->dev, false);
+	}
 	return 0;
 }
 
+static int __maybe_unused esp32_acm_suspend(struct device *dev)
+{
+	struct esp32s3_acm_port *sport = dev_get_drvdata(dev);
+	int ret;
+
+	ret = enable_irq_wake(sport->port.irq);
+	if (ret)
+		return ret;
+
+	return uart_suspend_port(&esp32s3_acm_reg, &sport->port);
+}
+
+static int __maybe_unused esp32_acm_resume(struct device *dev)
+{
+	struct esp32s3_acm_port *sport = dev_get_drvdata(dev);
+	int ret;
+
+	ret = disable_irq_wake(sport->port.irq);
+	if (ret)
+		return ret;
+
+	return uart_resume_port(&esp32s3_acm_reg, &sport->port);
+}
+
+static const struct dev_pm_ops esp32_acm_pm_ops = {
+	//SET_RUNTIME_PM_OPS(stm32_usart_runtime_suspend,
+	//		   stm32_usart_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(esp32_acm_suspend,
+				esp32_acm_resume)
+};
 
 static struct platform_driver esp32s3_acm_driver = {
 	.probe		= esp32s3_acm_probe,
 	.remove		= esp32s3_acm_remove,
 	.driver		= {
 		.name	= DRIVER_NAME,
+		.pm	= &esp32_acm_pm_ops,
 		.of_match_table	= esp32s3_acm_dt_ids,
 	},
 };
