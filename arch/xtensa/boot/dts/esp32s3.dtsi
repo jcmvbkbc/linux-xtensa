@@ -83,6 +83,7 @@
 			clocks = <&serial_clk>;
 			pinctrl-0 = <&uart0_pins>;
 			pinctrl-names = "default";
+			wakeup-source;
 		};
 
 		gpio0: gpio@60004000 {
@@ -219,6 +220,7 @@
 			compatible = "esp,esp32s3-acm";
 			reg = <0x60038000 0x1000>;
 			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
+			wakeup-source;
 		};
 
 		ipc@600c0004 {
