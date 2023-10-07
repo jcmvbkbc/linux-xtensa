@@ -104,6 +104,7 @@
 			clocks = <&uart0_clk>;
 			resets = <&reset 2>;
 			reset-names = "reset";
+			wakeup-source;
 			status = "disabled";
 		};
 
@@ -214,6 +215,7 @@
 			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
 			resets = <&reset 42>;
 			reset-names = "reset";
+			wakeup-source;
 			status = "disabled";
 		};
 
