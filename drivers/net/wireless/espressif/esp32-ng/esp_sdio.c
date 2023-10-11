@@ -18,8 +18,10 @@
 #include "esp_bt_api.h"
 #include <linux/kthread.h>
 #include "esp_stats.h"
+#include "esp_utils.h"
 #include "include/esp_kernel_port.h"
 
+extern u32 raw_tp_mode;
 #define MAX_WRITE_RETRIES       2
 #define TX_MAX_PENDING_COUNT    200
 #define TX_RESUME_THRESHOLD     (TX_MAX_PENDING_COUNT/5)
@@ -164,6 +166,16 @@ static int esp_slave_get_tx_buffer_num(struct esp_sdio_context *context, u32 *tx
 	return ret;
 }
 
+int esp_deinit_module(struct esp_adapter *adapter)
+{
+	/* Second & onward bootup cleanup is not required for SDIO:
+	 * As Removal of SDIO triggers complete Deinit and SDIO insertion/
+	 * detection, triggers probing which does initialization.
+	 */
+
+	return 0;
+}
+
 static int esp_get_len_from_slave(struct esp_sdio_context *context, u32 *rx_size, u8 is_lock_needed)
 {
 	u32 *len;
@@ -269,6 +281,7 @@ static void esp_remove(struct sdio_func *func)
 		}
 		memset(context, 0, sizeof(struct esp_sdio_context));
 	}
+	esp_dbg("ESP SDIO cleanup completed\n");
 }
 
 static struct esp_if_ops if_ops = {
@@ -598,9 +611,11 @@ static int tx_process(void *data)
 		cb = (struct esp_skb_cb *)tx_skb->cb;
 		if (cb && cb->priv && atomic_read(&tx_pending) < TX_RESUME_THRESHOLD) {
 			esp_tx_resume(cb->priv);
-			#if TEST_RAW_TP
+#if TEST_RAW_TP
+			if (raw_tp_mode != 0) {
 				esp_raw_tp_queue_resume();
-			#endif
+			}
+#endif
 		}
 
 		buf_needed = (tx_skb->len + ESP_RX_BUFFER_SIZE - 1) / ESP_RX_BUFFER_SIZE;
@@ -653,7 +668,7 @@ static int tx_process(void *data)
 	return 0;
 }
 
-static struct esp_sdio_context *init_sdio_func(struct sdio_func *func)
+static struct esp_sdio_context *init_sdio_func(struct sdio_func *func, int *sdio_ret)
 {
 	struct esp_sdio_context *context = NULL;
 	int ret = 0;
@@ -670,13 +685,24 @@ static struct esp_sdio_context *init_sdio_func(struct sdio_func *func)
 	/* Enable Function */
 	ret = sdio_enable_func(func);
 	if (ret) {
+		esp_err("sdio_enable_func ret: %d\n", ret);
+		if (sdio_ret)
+			*sdio_ret = ret;
+		sdio_release_host(func);
+
 		return NULL;
 	}
 
 	/* Register IRQ */
 	ret = sdio_claim_irq(func, esp_handle_isr);
 	if (ret) {
+		esp_err("sdio_claim_irq ret: %d\n", ret);
 		sdio_disable_func(func);
+
+		if (sdio_ret)
+			*sdio_ret = ret;
+		sdio_release_host(func);
+
 		return NULL;
 	}
 
@@ -757,10 +783,25 @@ static int esp_probe(struct sdio_func *func,
 
 	esp_info("ESP network device detected\n");
 
-	context = init_sdio_func(func);
+	context = init_sdio_func(func, &ret);;
 
 	if (!context) {
-		return -ENOMEM;
+		if (ret)
+			return ret;
+		else
+			return -EINVAL;
+	}
+
+	if (sdio_context.sdio_clk_mhz) {
+		struct mmc_host *host = func->card->host;
+		u32 hz = sdio_context.sdio_clk_mhz * NUMBER_1M;
+		/* Expansion of mmc_set_clock that isnt exported */
+		if (hz < host->f_min)
+			hz = host->f_min;
+		if (hz > host->f_max)
+			hz = host->f_max;
+		host->ios.clock = hz;
+		host->ops->set_ios(host, &host->ios);
 	}
 
 	context->state = ESP_CONTEXT_READY;
@@ -771,10 +812,10 @@ static int esp_probe(struct sdio_func *func,
 		return ret;
 	}
 
-	tx_thread = kthread_run(tx_process, context->adapter, "esp32_TX");
+	tx_thread = kthread_run(tx_process, context->adapter, "esp_TX");
 
 	if (!tx_thread)
-		esp_err("Failed to create esp32_sdio TX thread\n");
+		esp_err("Failed to create esp_sdio TX thread\n");
 
 	context->adapter->dev = &func->dev;
 	generate_slave_intr(context, BIT(ESP_OPEN_DATA_PATH));
@@ -786,6 +827,8 @@ static int esp_probe(struct sdio_func *func,
 	if (!monitor_thread)
 		esp_err("Failed to create monitor thread\n");
 #endif
+
+	esp_dbg("ESP SDIO probe completed\n");
 
 	return ret;
 }
@@ -866,20 +909,27 @@ static const struct dev_pm_ops esp_pm_ops = {
 	.resume = esp_resume,
 };
 
+static const struct of_device_id esp_sdio_of_match[] = {
+	{ .compatible = "espressif,esp_sdio", },
+	{ /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, esp_sdio_of_match);
+
 /* SDIO driver structure to be registered with kernel */
 static struct sdio_driver esp_sdio_driver = {
-	.name		= "esp_sdio",
+	.name		= KBUILD_MODNAME,
 	.id_table	= esp_devices,
 	.probe		= esp_probe,
 	.remove		= esp_remove,
 	.drv = {
+		.name = KBUILD_MODNAME,
 		.owner = THIS_MODULE,
 		.pm = &esp_pm_ops,
-	}
-
+		.of_match_table = esp_sdio_of_match,
+	},
 };
 
-int esp_init_interface_layer(struct esp_adapter *adapter)
+int esp_init_interface_layer(struct esp_adapter *adapter, u32 speed)
 {
 	if (!adapter)
 		return -EINVAL;
@@ -887,73 +937,41 @@ int esp_init_interface_layer(struct esp_adapter *adapter)
 	adapter->if_context = &sdio_context;
 	adapter->if_ops = &if_ops;
 	sdio_context.adapter = adapter;
+	sdio_context.sdio_clk_mhz = speed;
 
 	return sdio_register_driver(&esp_sdio_driver);
 }
 
-void process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8 len)
+int esp_validate_chipset(struct esp_adapter *adapter, u8 chipset)
 {
-	u8 len_left = len, tag_len;
-	u8 *pos;
-	struct esp_sdio_context *context = &sdio_context;
+	int ret = 0;
 
-	if (!adapter)
-		return;
-
-	if (!evt_buf)
-		return;
-
-	pos = evt_buf;
-
-	while (len_left) {
-		tag_len = *(pos + 1);
-
-		esp_info("EVENT: %d\n", *pos);
-
-		if (*pos == ESP_BOOTUP_CAPABILITY) {
-
-			adapter->capabilities = *(pos + 2);
-			process_capabilities(adapter);
-			print_capabilities(*(pos + 2));
-
-		} else if (*pos == ESP_BOOTUP_FIRMWARE_CHIP_ID) {
-
-			esp_info("ESP chipset detected [%s]\n",
-				*(pos+2) == ESP_FIRMWARE_CHIP_ESP32 ? "esp32" :
-				*(pos+2) == ESP_FIRMWARE_CHIP_ESP32S2 ? "esp32-s2" :
-				*(pos+2) == ESP_FIRMWARE_CHIP_ESP32C3 ? "esp32-c3" :
-				*(pos+2) == ESP_FIRMWARE_CHIP_ESP32S3 ? "esp32-s3" :
-				"unknown");
-
-			if (*(pos+2) != ESP_FIRMWARE_CHIP_ESP32)
-				esp_err("SDIO is only supported with ESP32\n");
-
-		} else if (*pos == ESP_BOOTUP_TEST_RAW_TP) {
-			process_test_capabilities(*(pos + 2));
-
-		} else if (*pos == ESP_BOOTUP_FW_DATA) {
-
-			if (tag_len != sizeof(struct fw_data))
-				esp_info("Length not matching to firmware data size\n");
-			else
-				if (process_fw_data((struct fw_data *)(pos + 2)))
-					if (context->func) {
-						generate_slave_intr(context, BIT(ESP_CLOSE_DATA_PATH));
-						return;
-					}
-
-		} else {
-			esp_warn("Unsupported tag in event");
-		}
-
-		pos += (tag_len+2);
-		len_left -= (tag_len+2);
+	switch(chipset) {
+	case ESP_FIRMWARE_CHIP_ESP32:
+	case ESP_FIRMWARE_CHIP_ESP32C6:
+		adapter->chipset = chipset;
+		esp_info("Chipset=%s ID=%02x detected over SDIO\n", esp_chipname_from_id(chipset), chipset);
+		break;
+	case ESP_FIRMWARE_CHIP_ESP32S2:
+	case ESP_FIRMWARE_CHIP_ESP32S3:
+	case ESP_FIRMWARE_CHIP_ESP32C2:
+	case ESP_FIRMWARE_CHIP_ESP32C3:
+		esp_err("Chipset=%s ID=%02x not supported for SDIO\n", esp_chipname_from_id(chipset), chipset);
+		adapter->chipset = ESP_FIRMWARE_CHIP_UNRECOGNIZED;
+		break;
+	default:
+		esp_err("Unrecognized Chipset ID=%02x\n", chipset);
+		adapter->chipset = ESP_FIRMWARE_CHIP_UNRECOGNIZED;
+		break;
 	}
 
-	if (esp_add_card(adapter)) {
-		esp_err("network iterface init failed\n");
-		generate_slave_intr(context, BIT(ESP_CLOSE_DATA_PATH));
-	}
+	return ret;
+}
+
+int esp_adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz)
+{
+	/* SPI bus specific call, silently discard */
+	return 0;
 }
 
 void esp_deinit_interface_layer(void)

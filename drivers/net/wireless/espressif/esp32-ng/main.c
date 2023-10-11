@@ -22,13 +22,22 @@
 #include "esp_cfg80211.h"
 #include "esp_stats.h"
 
+#define RELEASE_VERSION "1.0.3"
 #define HOST_GPIO_PIN_INVALID -1
 static int resetpin = HOST_GPIO_PIN_INVALID;
+static u32 clockspeed = 0;
 extern u8 ap_bssid[MAC_ADDR_LEN];
 extern volatile u8 host_sleep;
+u32 raw_tp_mode = 0;
 
 module_param(resetpin, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(resetpin, "Host's GPIO pin number which is connected to ESP32's EN to reset ESP32 device");
+
+module_param(clockspeed, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+MODULE_PARM_DESC(clockspeed, "Hosts clock speed in MHz");
+
+module_param(raw_tp_mode, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+MODULE_PARM_DESC(raw_tp_mode, "Mode choosed to test raw throughput");
 
 static void deinit_adapter(void);
 
@@ -203,12 +212,8 @@ void print_capabilities(u32 cap)
 	}
 }
 
-void process_capabilities(struct esp_adapter *adapter)
+void init_bt(struct esp_adapter *adapter)
 {
-	esp_info("ESP peripheral capabilities: 0x%x\n", adapter->capabilities);
-
-	/* Reset BT */
-	esp_deinit_bt(adapter);
 
 	if ((adapter->capabilities & ESP_BT_SPI_SUPPORT) ||
 		(adapter->capabilities & ESP_BT_SDIO_SUPPORT)) {
@@ -220,7 +225,7 @@ void process_capabilities(struct esp_adapter *adapter)
 
 static int check_esp_version(struct fw_version *ver)
 {
-	esp_info("esp32: ESP Firmware version: %u.%u.%u\n",
+	esp_info("ESP Firmware version: %u.%u.%u\n",
 			ver->major1, ver->major2, ver->minor);
 	if (!ver->major1) {
 		esp_err("Incompatible ESP firmware release detected, Please use correct ESP-Hosted branch/compatible release\n");
@@ -252,16 +257,87 @@ static void print_reset_reason(uint32_t reason)
 	}
 }
 
-int process_fw_data(struct fw_data *fw_p)
+static int process_fw_data(struct fw_data *fw_p, int tag_len)
 {
-	if (!fw_p) {
-		esp_err("Incomplete/incorrect bootup event received\n");
+	if (tag_len != sizeof(struct fw_data)) {
+		esp_err("Length not matching to firmware data size\n");
 		return -1;
 	}
 
 	esp_info("ESP chipset's last reset cause:\n");
 	print_reset_reason(le32_to_cpu(fw_p->last_reset_reason));
+
 	return check_esp_version(&fw_p->version);
+}
+
+int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8 len)
+{
+	int len_left = len, tag_len, ret = 0;
+	u8 *pos;
+
+	if (!adapter || !evt_buf)
+		return -1;
+
+	if (len_left >= 64) {
+		esp_info("ESP init event len looks unexpected: %u (>=64)\n", len_left);
+		esp_info("You probably facing timing mismatch at transport layer\n");
+	}
+
+	clear_bit(ESP_INIT_DONE, &adapter->state_flags);
+	/* Deinit module if already initialized */
+	esp_deinit_module(adapter);
+
+	pos = evt_buf;
+
+	while (len_left > 0) {
+		tag_len = *(pos + 1);
+
+		esp_info("Bootup Event tag: %d\n", *pos);
+
+		switch (*pos) {
+		case ESP_BOOTUP_CAPABILITY:
+			adapter->capabilities = *(pos + 2);
+			break;
+		case ESP_BOOTUP_FIRMWARE_CHIP_ID:
+			ret = esp_validate_chipset(adapter, *(pos + 2));
+			break;
+		case ESP_BOOTUP_FW_DATA:
+			ret = process_fw_data((struct fw_data *)(pos + 2), tag_len);
+			break;
+		case ESP_BOOTUP_SPI_CLK_MHZ:
+			ret = esp_adjust_spi_clock(adapter, *(pos + 2));
+			break;
+		default:
+			esp_warn("Unsupported tag=%x in bootup event\n", *pos);
+		}
+
+		if (ret < 0) {
+			esp_err("failed to process tag=%x in bootup event\n", *pos);
+			return -1;
+		}
+		pos += (tag_len + 2);
+		len_left -= (tag_len + 2);
+	}
+
+	if (esp_add_card(adapter)) {
+		esp_err("network iterface init failed\n");
+		return -1;
+	}
+	init_bt(adapter);
+
+	if (raw_tp_mode !=0) {
+#if TEST_RAW_TP
+		process_test_capabilities(raw_tp_mode);
+		esp_init_raw_tp(adapter);
+#else
+		esp_err("RAW TP mode selected but not enabled\n");
+		return -1;
+#endif
+	}
+	set_bit(ESP_INIT_DONE, &adapter->state_flags);
+	print_capabilities(adapter->capabilities);
+
+	return 0;
 }
 
 static int esp_open(struct net_device *ndev)
@@ -271,9 +347,6 @@ static int esp_open(struct net_device *ndev)
 
 static int esp_stop(struct net_device *ndev)
 {
-	struct esp_wifi_device *priv = netdev_priv(ndev);
-
-	ESP_MARK_SCAN_DONE(priv, true);
 	return 0;
 }
 
@@ -392,21 +465,13 @@ void esp_init_priv(struct net_device *ndev)
 			INTERFACE_HEADER_PADDING, 4);
 }
 
-static int add_network_iface(void)
+static int esp_add_network_ifaces(struct esp_adapter *adapter)
 {
-	int ret = 0;
-	struct esp_adapter *adapter = esp_get_adapter();
 	struct wireless_dev *wdev = NULL;
 
 	if (!adapter) {
 		esp_info("adapter not yet init\n");
 		return -EINVAL;
-	}
-
-	ret = esp_cfg80211_register(adapter);
-	if (ret) {
-		esp_err("Failed to register with cfg80211 (err code 0x%x)\n", ret);
-		return ret;
 	}
 
 	rtnl_lock();
@@ -420,16 +485,22 @@ static int add_network_iface(void)
 	return -1;
 }
 
+int esp_init_raw_tp(struct esp_adapter *adapter)
+{
+	RET_ON_FAIL(cmd_init_raw_tp_task_timer(adapter->priv[ESP_STA_NW_IF]));
+	return 0;
+}
+
 int esp_add_card(struct esp_adapter *adapter)
 {
 	RET_ON_FAIL(esp_commands_setup(adapter));
-
-	RET_ON_FAIL(add_network_iface());
+	RET_ON_FAIL(esp_add_wiphy(adapter));
+	RET_ON_FAIL(esp_add_network_ifaces(adapter));
 
 	return 0;
 }
 
-void esp_remove_network_interfaces(struct esp_adapter *adapter)
+static int esp_remove_network_ifaces(struct esp_adapter *adapter)
 {
 	uint8_t iface_idx = 0;
 	struct net_device *ndev = NULL;
@@ -438,59 +509,88 @@ void esp_remove_network_interfaces(struct esp_adapter *adapter)
 	for (iface_idx = 0; iface_idx < ESP_MAX_INTERFACE; iface_idx++) {
 
 		priv = adapter->priv[iface_idx];
-
 		if (!priv)
 			continue;
-
 		if (!test_bit(ESP_NETWORK_UP, &priv->priv_flags))
 			continue;
 
-		/* stop and unregister network */
 		ndev = priv->ndev;
-
-		if (ndev) {
-
-			if (netif_carrier_ok(ndev))
-				netif_carrier_off(ndev);
-
-			netif_device_detach(ndev);
-
-			if (ndev->reg_state == NETREG_REGISTERED) {
-				unregister_inetaddr_notifier(&(adapter->priv[0]->nb));
-				unregister_netdev(ndev);
-				free_netdev(ndev);
-				ndev = NULL;
-			}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		if (ndev)
+			ndev->needs_free_netdev = true;
+		rtnl_lock();
+		wiphy_lock(adapter->wiphy);
+		cfg80211_unregister_wdev(&priv->wdev);
+		wiphy_unlock(adapter->wiphy);
+		rtnl_unlock();
+#else
+		if (ndev && ndev->reg_state == NETREG_REGISTERED) {
+			unregister_netdev(ndev);
+			free_netdev(ndev);
+			ndev = NULL;
 		}
-		clear_bit(ESP_NETWORK_UP, &priv->priv_flags);
+#endif
+		adapter->priv[iface_idx] = NULL;
 	}
 
-	if (adapter->wiphy) {
+	return 0;
+}
 
-		wiphy_unregister(adapter->wiphy);
-		wiphy_free(adapter->wiphy);
-		adapter->wiphy = NULL;
+static int stop_network_iface(struct esp_wifi_device *priv)
+{
+	struct net_device *ndev;
+
+	if (!priv)
+		return 0;
+
+	if (!test_bit(ESP_NETWORK_UP, &priv->priv_flags))
+		return 0;
+
+	esp_mark_scan_done_and_disconnect(priv, false);
+	esp_port_close(priv);
+
+	/* stop and unregister network */
+	ndev = priv->ndev;
+
+	if (ndev) {
+		netif_carrier_off(ndev);
+		netif_device_detach(ndev);
+
+		unregister_inetaddr_notifier(&(priv->nb));
 	}
+
+	return 0;
+}
+
+int esp_stop_network_ifaces(struct esp_adapter *adapter)
+{
+	uint8_t iface_idx = 0;
+
+	for (iface_idx = 0; iface_idx < ESP_MAX_INTERFACE; iface_idx++) {
+		stop_network_iface(adapter->priv[iface_idx]);
+	}
+
+	rtnl_lock();
+	if (adapter->wiphy)
+		cfg80211_shutdown_all_interfaces(adapter->wiphy);
+
+	rtnl_unlock();
+
+	return 0;
 }
 
 int esp_remove_card(struct esp_adapter *adapter)
 {
-	uint8_t iface_idx = 0;
-
 	if (!adapter) {
 		return 0;
 	}
 
+	esp_stop_network_ifaces(adapter);
+	/* BT may have been initialized after fw bootup event, deinit it */
 	esp_deinit_bt(adapter);
-
 	esp_commands_teardown(adapter);
-
-	esp_remove_network_interfaces(adapter);
-
-	for (iface_idx = 0; iface_idx < ESP_MAX_INTERFACE; iface_idx++) {
-		esp_port_close(adapter->priv[iface_idx]);
-		adapter->priv[iface_idx] = NULL;
-	}
+	esp_remove_network_ifaces(adapter);
+	esp_remove_wiphy(adapter);
 
 	return 0;
 }
@@ -531,7 +631,7 @@ static void process_esp_bootup_event(struct esp_adapter *adapter,
 		return;
 	}
 
-	esp_info("\nReceived ESP bootup event\n");
+	esp_info("Received ESP bootup event\n");
 	process_event_esp_bootup(adapter, evt->data, evt->len);
 }
 
@@ -541,7 +641,7 @@ static int process_internal_event(struct esp_adapter *adapter,
 	struct event_header *header = NULL;
 
 	if (!skb || !adapter) {
-		esp_err("esp32: Incorrect event data!\n");
+		esp_err("Incorrect event data!\n");
 		return -1;
 	}
 
@@ -683,9 +783,11 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 			dev_kfree_skb_any(skb);
 
 	} else if (payload_header->if_type == ESP_TEST_IF) {
-		#if TEST_RAW_TP
+#if TEST_RAW_TP
+		if (raw_tp_mode != 0) {
 			update_test_raw_tp_rx_stats(len);
-		#endif
+		}
+#endif
 		dev_kfree_skb_any(skb);
 	} else {
 		dev_kfree_skb_any(skb);
@@ -884,7 +986,7 @@ static int __init esp_init(void)
 		return -EFAULT;
 
 	/* Init transport layer */
-	ret = esp_init_interface_layer(adapter);
+	ret = esp_init_interface_layer(adapter, clockspeed);
 
 	if (ret != 0) {
 		deinit_adapter();
@@ -897,7 +999,9 @@ static void __exit esp_exit(void)
 {
 	uint8_t iface_idx = 0;
 #if TEST_RAW_TP
-	test_raw_tp_cleanup();
+	if (raw_tp_mode != 0) {
+		test_raw_tp_cleanup();
+	}
 #endif
 	for (iface_idx = 0; iface_idx < ESP_MAX_INTERFACE; iface_idx++) {
 		cmd_deinit_interface(adapter.priv[iface_idx]);
@@ -916,6 +1020,6 @@ MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");
 MODULE_AUTHOR("Mangesh Malusare <mangesh.malusare@espressif.com>");
 MODULE_AUTHOR("Yogesh Mantri <yogesh.mantri@espressif.com>");
 MODULE_DESCRIPTION("Wifi driver for ESP-Hosted solution");
-MODULE_VERSION("0.1");
+MODULE_VERSION(RELEASE_VERSION);
 module_init(esp_init);
 module_exit(esp_exit);
