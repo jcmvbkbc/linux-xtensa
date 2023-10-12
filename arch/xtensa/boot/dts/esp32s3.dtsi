@@ -85,6 +85,12 @@
 			wakeup-source;
 		};
 
+		gpio@60004000 {
+			compatible = "esp,esp32s3-gpio";
+			reg = <0x60004000 0x138>;
+			interrupts = <16 8 0>; /* GPIO, external IRQ8, CPU0 */
+		};
+
 		gpio_in_mux@60004154 {
 			compatible = "pinctrl-single";
 			reg = <0x60004154 0x400>;
