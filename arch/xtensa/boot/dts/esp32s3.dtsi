@@ -126,18 +126,18 @@
 
 			uart0_pins: uart0_pins {
 				pinctrl-single,pins = <
-					0xac 0x800	/* U0TXD: pin 43, function 0 */
-					0xb0 0x800>;	/* U0RXD: pin 44, function 0 */
+					0xac 0x800	/* U0TXD: pin 43, function 0, 20ma */
+					0xb0 0xb00>;	/* U0RXD: pin 44, function 0, 20ma, FUN_IE, FUN_WPU */
 			};
 			uart1_pins: uart1_pins {
 				pinctrl-single,pins = <
-					0x44 0x2800	/* U1TXD: pin 17, function 2 */
-					0x48 0x2800>;	/* U1RXD: pin 18, function 2 */
+					0x44 0x2800	/* U1TXD: pin 17, function 2, 20ma */
+					0x48 0x2b00>;	/* U1RXD: pin 18, function 2, 20ma, FUN_IE, FUN_WPU */
 			};
 			uart2_pins: uart2_pins {
 				pinctrl-single,pins = <
-					0x10 0x800	/* GPIO4: pin 4, function 0 */
-					0x14 0x800>;	/* GPIO5: pin 5, function 0 */
+					0x10 0x800	/* GPIO4: pin 4, function 0, 20ma */
+					0x14 0xb00>;	/* GPIO5: pin 5, function 0, 20ma, FUN_IE, FUN_WPU */
 			};
 		};
 
