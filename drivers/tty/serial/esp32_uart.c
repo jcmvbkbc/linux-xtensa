@@ -67,6 +67,7 @@
 #define ESP32S3_UART_TXFIFO_EMPTY_THRHD_SHIFT	10
 #define ESP32_UART_RX_FLOW_EN			BIT(23)
 #define ESP32S3_UART_RX_FLOW_EN			BIT(22)
+#define ESP32S3_UART_CLK_CONF_REG	0x78
 
 struct esp32_port {
 	struct uart_port port;
@@ -80,6 +81,7 @@ struct esp32_uart_variant {
 	u32 txfifo_empty_thrhd_shift;
 	u32 rx_flow_en;
 	const char *type;
+	bool has_clkconf;
 };
 
 static const struct esp32_uart_variant esp32_variant = {
@@ -98,6 +100,7 @@ static const struct esp32_uart_variant esp32s3_variant = {
 	.txfifo_empty_thrhd_shift = ESP32S3_UART_TXFIFO_EMPTY_THRHD_SHIFT,
 	.rx_flow_en = ESP32S3_UART_RX_FLOW_EN,
 	.type = "ESP32S3 UART",
+	.has_clkconf = true,
 };
 
 static const struct of_device_id esp32_uart_dt_ids[] = {
@@ -314,6 +317,8 @@ static int esp32_uart_startup(struct uart_port *port)
 	}
 
 	spin_lock_irqsave(&port->lock, flags);
+	if (port_variant(port)->has_clkconf)
+		esp32_uart_write(port, ESP32S3_UART_CLK_CONF_REG, 0x03700000);
 	esp32_uart_write(port, UART_CONF1_REG,
 			 (1 << UART_RXFIFO_FULL_THRHD_SHIFT) |
 			 (1 << port_variant(port)->txfifo_empty_thrhd_shift));
