@@ -87,6 +87,8 @@ static struct linux_binfmt elf_fdpic_format = {
 #endif
 };
 
+unsigned long default_stack_size = 131072UL;
+
 static int __init init_elf_fdpic_binfmt(void)
 {
 	register_binfmt(&elf_fdpic_format);
@@ -332,7 +334,7 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 
 	retval = -ENOEXEC;
 	if (stack_size == 0)
-		stack_size = 131072UL; /* same as exec.c's default commit */
+		stack_size = default_stack_size; /* same as exec.c's default commit */
 
 	if (is_constdisp(&interp_params.hdr))
 		interp_params.flags |= ELF_FDPIC_FLAG_CONSTDISP;
