@@ -2034,6 +2034,15 @@ static struct ctl_table kern_table[] = {
 		.extra2		= SYSCTL_INT_MAX,
 	},
 #endif
+#ifdef CONFIG_BINFMT_ELF_FDPIC
+	{
+		.procname	= "default_stack_size",
+		.data		= &default_stack_size,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644,
+		.proc_handler	= proc_doulongvec_minmax,
+	},
+#endif
 	{ }
 };
 
