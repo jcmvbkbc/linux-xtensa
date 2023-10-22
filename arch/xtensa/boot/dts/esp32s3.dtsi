@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 
 / {
 	compatible = "esp32s3";
@@ -186,6 +187,10 @@
 					PIN(6) FUN0_20MA_IE_WPU			/* SDA */
 					PIN(7) FUN0_20MA_IE_WPU>;		/* SCL */
 			};
+			accelerometer0_pins: accelerometer0_pins {
+				pinctrl-single,pins = <
+					PIN(8) FUN0_20MA_IE>;			/* mpu6050 IRQ */
+			};
 			spi0_pins: spi0_pins {
 				pinctrl-single,pins = <
 					PIN(9) FUN0_20MA			/* SCK */
@@ -262,6 +267,16 @@
 
 		pinctrl-0 = <&i2c0_pins>;
 		pinctrl-names = "default";
+
+		mpu6050@68 {
+			compatible = "invensense,mpu6050";
+			reg = <0x68>;
+			interrupt-parent = <&gpio0>;
+			interrupts = <8 IRQ_TYPE_EDGE_RISING>;
+
+			pinctrl-0 = <&accelerometer0_pins>;
+			pinctrl-names = "default";
+		};
 	};
 
 	spi0 {
