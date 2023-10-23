@@ -11,6 +11,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/property.h>
+#include <linux/reset.h>
 #include <linux/serial_core.h>
 #include <linux/slab.h>
 #include <linux/tty_flip.h>
@@ -682,6 +683,7 @@ static int esp32_uart_probe(struct platform_device *pdev)
 	struct uart_port *port;
 	struct esp32_port *sport;
 	struct resource *res;
+	struct reset_control *rst;
 	int ret;
 
 	sport = devm_kzalloc(&pdev->dev, sizeof(*sport), GFP_KERNEL);
@@ -714,6 +716,10 @@ static int esp32_uart_probe(struct platform_device *pdev)
 	sport->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(sport->clk))
 		return PTR_ERR(sport->clk);
+
+	rst = devm_reset_control_get(&pdev->dev, NULL);
+	if (!IS_ERR(rst))
+		reset_control_deassert(rst);
 
 	port->uartclk = clk_get_rate(sport->clk);
 	port->dev = &pdev->dev;
