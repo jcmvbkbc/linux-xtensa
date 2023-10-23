@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/reset.h>
 #include <linux/serial_core.h>
 #include <linux/slab.h>
 #include <linux/tty_flip.h>
@@ -369,6 +370,7 @@ static int esp32s3_acm_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct uart_port *port;
 	struct resource *res;
+	struct reset_control *rst;
 	int ret;
 
 	port = devm_kzalloc(&pdev->dev, sizeof(*port), GFP_KERNEL);
@@ -396,6 +398,10 @@ static int esp32s3_acm_probe(struct platform_device *pdev)
 	port->membase = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(port->membase))
 		return PTR_ERR(port->membase);
+
+	rst = devm_reset_control_get(&pdev->dev, NULL);
+	if (!IS_ERR(rst))
+		reset_control_deassert(rst);
 
 	port->dev = &pdev->dev;
 	port->type = PORT_GENERIC;
