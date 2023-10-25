@@ -292,5 +292,10 @@
 
 		pinctrl-0 = <&spi0_pins>;
 		pinctrl-names = "default";
+
+		mmc_spi@0 {
+			compatible = "mmc-spi-slot";
+			reg = <0>;
+		};
 	};
 };
