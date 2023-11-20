@@ -360,6 +360,13 @@ config SPI_EP93XX
 	  This enables using the Cirrus EP93xx SPI controller in master
 	  mode.
 
+config SPI_ESP32
+	tristate "ESP32 SPI controller"
+	depends on XTENSA_PLATFORM_ESP32 || COMPILE_TEST
+	depends on HAS_IOMEM
+	help
+	  Driver for the SPI controllers of the Espressif ESP32xx SoCs.
+
 config SPI_FALCON
 	bool "Falcon SPI controller support"
 	depends on SOC_FALCON
