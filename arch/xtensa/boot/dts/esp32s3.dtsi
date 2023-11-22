@@ -69,6 +69,19 @@
 			clocks = <&serial_clk>;
 			enable-gpios = <&clk_gpio1 9 0>;
 		};
+
+		spi2_clk: spi2_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&apb>;
+			enable-gpios = <&clk_gpio0 6 0>;
+		};
+		spi3_clk: spi3_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&apb>;
+			enable-gpios = <&clk_gpio0 16 0>;
+		};
 	};
 
 	pic: pic {
@@ -216,10 +229,17 @@
 			};
 			spi0_pins: spi0_pins {
 				pinctrl-single,pins = <
-					PIN(9) FUN0_20MA			/* SCK */
-					PIN(10) FUN0_20MA_IE			/* MISO */
+					PIN(10) FUN0_20MA			/* CS */
 					PIN(11) FUN0_20MA			/* MOSI */
-					PIN(12) FUN0_20MA>;			/* CS */
+					PIN(12) FUN0_20MA			/* SCK */
+					PIN(13) FUN0_20MA_IE_WPU>;		/* MISO */
+			};
+			spi2_pins: spi2_pins {
+				pinctrl-single,pins = <
+					PIN(10) (FUN_SEL(4) | FUN_DRV_20MA)	/* CS0 */
+					PIN(11) (FUN_SEL(4) | FUN_DRV_40MA)	/* MOSI */
+					PIN(12) (FUN_SEL(4) | FUN_DRV_40MA)	/* SCK */
+					PIN(13) (FUN_SEL(4) | FUN0_20MA_IE_WPU)>;/* MISO */
 			};
 		};
 
@@ -232,6 +252,25 @@
 			pinctrl-names = "default";
 			resets = <&reset 5>;
 			reset-names = "reset";
+		};
+
+		spi2: spi@60024000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32s3-spi";
+			reg = <0x60024000 0x100>;
+			interrupts = <21 9 0>; /* SPI2, external IRQ9, CPU0 */
+			clocks = <&spi2_clk>;
+			pinctrl-0 = <&spi2_pins>;
+			pinctrl-names = "default";
+			resets = <&reset 6>;
+			reset-names = "reset";
+			status = "ok";
+
+			mmc1_spi@0 {
+				compatible = "mmc-spi-slot";
+				reg = <0>;
+			};
 		};
 
 		serial@6002e000 {
@@ -319,16 +358,18 @@
 		#size-cells = <0>;
 		compatible = "spi-gpio";
 
-		sck-gpios = <&gpio0 9 0>;
-		miso-gpios = <&gpio0 10 0>;
+		sck-gpios = <&gpio0 12 0>;
+		miso-gpios = <&gpio0 13 0>;
 		mosi-gpios = <&gpio0 11 0>;
-		cs-gpios = <&gpio0 12 0>;
+		cs-gpios = <&gpio0 10 0>;
 		num-chipselects = <1>;
 
 		pinctrl-0 = <&spi0_pins>;
 		pinctrl-names = "default";
 
-		mmc_spi@0 {
+		status = "disabled";
+
+		mmc0_spi@0 {
 			compatible = "mmc-spi-slot";
 			reg = <0>;
 		};
