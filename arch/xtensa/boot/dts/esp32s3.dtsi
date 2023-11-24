@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/interrupt-controller/irq.h>
 
 / {
 	compatible = "esp32s3";
@@ -101,28 +99,29 @@
 		interrupt-parent = <&intc>;
 		ranges;
 
-		intc: intc@600c2000 {
-			compatible = "esp,esp32-intc";
-			reg = <0x600c2000 0x800>;
-			/* first cell: interrupt matrix row
-			 * second cell: internal xtensa core IRQ number to connect to
-			 * third cell: target CPU
-			 */
-			#interrupt-cells = <3>;
-			interrupt-controller;
-			interrupt-parent = <&pic>;
+		flash@42000000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "mtd-rom";
+			reg = <0x42000000 0x01000000>;
+			bank-width = <2>;
+			device-width = <2>;
+			erase-size = <0x10000>;
+			controller = <&flash_controller>;
+			partitions {
+				compatible = "esp,esp32-partition-table";
+			};
 		};
 
-		serial0: serial@60000000 {
+		uart0: serial@60000000 {
 			compatible = "esp,esp32s3-uart";
 			reg = <0x60000000 0x80>;
 			interrupts = <27 1 0>; /* UART0, external IRQ1, CPU0 */
 			clocks = <&uart0_clk>;
-			pinctrl-0 = <&uart0_pins>;
-			pinctrl-names = "default";
 			resets = <&reset 2>;
 			reset-names = "reset";
 			wakeup-source;
+			status = "disabled";
 		};
 
 		gpio0: gpio@60004000 {
@@ -139,32 +138,22 @@
  */
 #define GPIO_FUNC_IN_SEL(peri)	((peri) * 4)
 
-		gpio_in_mux@60004154 {
+		gpio_in_mux: gpio_in_mux@60004154 {
 			compatible = "pinctrl-single";
 			reg = <0x60004154 0x400>;
 			#pinctrl-cells = <1>;
 			pinctrl-single,register-width = <32>;
 			pinctrl-single,function-mask = <0xff>;
-
-			uart2_gpio_in: uart2_gpio_in {
-				pinctrl-single,pins = <
-					GPIO_FUNC_IN_SEL(18) 5>;	/* U2RXD: signal 18, GPIO5 */
-			};
 		};
 
 #define GPIO_FUNC_OUT_SEL(pin)	((pin) * 4)
 
-		gpio_out_mux@60004554 {
+		gpio_out_mux: gpio_out_mux@60004554 {
 			compatible = "pinctrl-single";
 			reg = <0x60004554 0xc4>;
 			#pinctrl-cells = <1>;
 			pinctrl-single,register-width = <32>;
 			pinctrl-single,function-mask = <0xfff>;
-
-			uart2_gpio_out: uart2_gpio_out {
-				pinctrl-single,pins = <
-					GPIO_FUNC_OUT_SEL(4) 18>;	/* U2TXD: GPIO4, signal 18 */
-			};
 		};
 
 		lpm: lpm@60008000 {
@@ -196,62 +185,22 @@
 #define FUN0_20MA_IE		(FUN_SEL(0) | FUN_DRV_20MA | FUN_IE)
 #define FUN0_20MA_IE_WPU	(FUN_SEL(0) | FUN_DRV_20MA | FUN_IE | FUN_WPU)
 
-		pinctrl@60009000 {
+		iomux: pinctrl@60009000 {
 			compatible = "pinctrl-single";
 			reg = <0x60009004 0xc4>;
 			#pinctrl-cells = <1>;
 			pinctrl-single,register-width = <32>;
 			pinctrl-single,function-mask = <0xffff>;
-
-			uart0_pins: uart0_pins {
-				pinctrl-single,pins = <
-					PIN(43) FUN0_20MA			/* U0TXD */
-					PIN(44) FUN0_20MA_IE_WPU>;		/* U0RXD */
-			};
-			uart1_pins: uart1_pins {
-				pinctrl-single,pins = <
-					PIN(17) (FUN_SEL(2) | FUN0_20MA)	/* U1TXD */
-					PIN(18) (FUN_SEL(2) | FUN0_20MA_IE_WPU)>;/* U1RXD */
-			};
-			uart2_pins: uart2_pins {
-				pinctrl-single,pins = <
-					PIN(4) FUN0_20MA			/* U2TXD on GPIO4 */
-					PIN(5) FUN0_20MA_IE_WPU>;		/* U2RXD on GPIO5 */
-			};
-			i2c0_pins: i2c0_pins {
-				pinctrl-single,pins = <
-					PIN(6) FUN0_20MA_IE_WPU			/* SDA */
-					PIN(7) FUN0_20MA_IE_WPU>;		/* SCL */
-			};
-			accelerometer0_pins: accelerometer0_pins {
-				pinctrl-single,pins = <
-					PIN(8) FUN0_20MA_IE>;			/* mpu6050 IRQ */
-			};
-			spi0_pins: spi0_pins {
-				pinctrl-single,pins = <
-					PIN(10) FUN0_20MA			/* CS */
-					PIN(11) FUN0_20MA			/* MOSI */
-					PIN(12) FUN0_20MA			/* SCK */
-					PIN(13) FUN0_20MA_IE_WPU>;		/* MISO */
-			};
-			spi2_pins: spi2_pins {
-				pinctrl-single,pins = <
-					PIN(10) (FUN_SEL(4) | FUN_DRV_20MA)	/* CS0 */
-					PIN(11) (FUN_SEL(4) | FUN_DRV_40MA)	/* MOSI */
-					PIN(12) (FUN_SEL(4) | FUN_DRV_40MA)	/* SCK */
-					PIN(13) (FUN_SEL(4) | FUN0_20MA_IE_WPU)>;/* MISO */
-			};
 		};
 
-		serial@60010000 { /* needs clk and rst in syscon */
+		uart1: serial@60010000 { /* needs clk and rst in syscon */
 			compatible = "esp,esp32s3-uart";
 			reg = <0x60010000 0x80>;
 			interrupts = <28 4 0>; /* UART1, external IRQ4, CPU0 */
 			clocks = <&uart1_clk>;
-			pinctrl-0 = <&uart1_pins>;
-			pinctrl-names = "default";
 			resets = <&reset 5>;
 			reset-names = "reset";
+			status = "disabled";
 		};
 
 		spi2: spi@60024000 {
@@ -261,27 +210,31 @@
 			reg = <0x60024000 0x100>;
 			interrupts = <21 9 0>; /* SPI2, external IRQ9, CPU0 */
 			clocks = <&spi2_clk>;
-			pinctrl-0 = <&spi2_pins>;
-			pinctrl-names = "default";
 			resets = <&reset 6>;
 			reset-names = "reset";
-			status = "ok";
-
-			mmc1_spi@0 {
-				compatible = "mmc-spi-slot";
-				reg = <0>;
-			};
+			status = "disabled";
 		};
 
-		serial@6002e000 {
+		spi3: spi@60025000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "esp,esp32s3-spi";
+			reg = <0x60025000 0x100>;
+			interrupts = <22 12 0>; /* SPI3, external IRQ12, CPU0 */
+			clocks = <&spi3_clk>;
+			resets = <&reset 16>;
+			reset-names = "reset";
+			status = "disabled";
+		};
+
+		uart2: serial@6002e000 {
 			compatible = "esp,esp32s3-uart";
 			reg = <0x6002e000 0x80>;
 			interrupts = <29 5 0>; /* UART2, external IRQ5, CPU0 */
 			clocks = <&uart2_clk>;
-			pinctrl-0 = <&uart2_gpio_in>, <&uart2_gpio_out>, <&uart2_pins>;
-			pinctrl-names = "default", "default", "default";
 			resets = <&reset 41>;
 			reset-names = "reset";
+			status = "disabled";
 		};
 
 		trng@6003507c {
@@ -289,16 +242,17 @@
 			reg = <0x6003507c 0x4>;
 		};
 
-		acm@60038000 {
+		acm: acm@60038000 {
 			compatible = "esp,esp32s3-acm";
 			reg = <0x60038000 0x1000>;
 			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
 			resets = <&reset 42>;
 			reset-names = "reset";
 			wakeup-source;
+			status = "disabled";
 		};
 
-		ipc@600c0004 {
+		ipc: ipc@600c0004 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "esp,esp32-ipc";
@@ -306,6 +260,7 @@
 			       0x600c0038 8  /* incoming and outgoing IRQ registers */
 			       >;
 			interrupts = <81 2 0>; /* CPU_INTR_FROM_CPU_2, IRQ 2, CPU0 */
+
 			flash_controller: flash@2 {
 				compatible = "esp,esp32-ipc-flash";
 				reg = <2>;
@@ -329,49 +284,17 @@
 			compatible = "esp,esp32-reset";
 			reg = <0x600c0020 8>;
 		};
-	};
 
-	i2c0 {
-		#address-cells = <1>;
-		#size-cells = <0>;
-		compatible = "i2c-gpio";
-
-		sda-gpios = <&gpio0 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
-		scl-gpios = <&gpio0 7 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
-
-		pinctrl-0 = <&i2c0_pins>;
-		pinctrl-names = "default";
-
-		mpu6050@68 {
-			compatible = "invensense,mpu6050";
-			reg = <0x68>;
-			interrupt-parent = <&gpio0>;
-			interrupts = <8 IRQ_TYPE_EDGE_RISING>;
-
-			pinctrl-0 = <&accelerometer0_pins>;
-			pinctrl-names = "default";
-		};
-	};
-
-	spi0 {
-		#address-cells = <1>;
-		#size-cells = <0>;
-		compatible = "spi-gpio";
-
-		sck-gpios = <&gpio0 12 0>;
-		miso-gpios = <&gpio0 13 0>;
-		mosi-gpios = <&gpio0 11 0>;
-		cs-gpios = <&gpio0 10 0>;
-		num-chipselects = <1>;
-
-		pinctrl-0 = <&spi0_pins>;
-		pinctrl-names = "default";
-
-		status = "disabled";
-
-		mmc0_spi@0 {
-			compatible = "mmc-spi-slot";
-			reg = <0>;
+		intc: intc@600c2000 {
+			compatible = "esp,esp32-intc";
+			reg = <0x600c2000 0x800>;
+			/* first cell: interrupt matrix row
+			 * second cell: internal xtensa core IRQ number to connect to
+			 * third cell: target CPU
+			 */
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			interrupt-parent = <&pic>;
 		};
 	};
 };
