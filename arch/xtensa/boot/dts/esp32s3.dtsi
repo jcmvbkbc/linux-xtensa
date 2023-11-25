@@ -31,6 +31,10 @@
 	};
 
 	clocks {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
 		osc: clk160 {
 			#clock-cells = <0>;
 			compatible = "fixed-clock";
@@ -45,6 +49,25 @@
 			#clock-cells = <0>;
 			compatible = "fixed-clock";
 			clock-frequency = <40000000>;
+		};
+
+		uart0_clk: uart0_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&serial_clk>;
+			enable-gpios = <&clk_gpio0 2 0>;
+		};
+		uart1_clk: uart1_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&serial_clk>;
+			enable-gpios = <&clk_gpio0 5 0>;
+		};
+		uart2_clk: uart2_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&serial_clk>;
+			enable-gpios = <&clk_gpio1 9 0>;
 		};
 	};
 
@@ -81,7 +104,7 @@
 			compatible = "esp,esp32s3-uart";
 			reg = <0x60000000 0x80>;
 			interrupts = <27 1 0>; /* UART0, external IRQ1, CPU0 */
-			clocks = <&serial_clk>;
+			clocks = <&uart0_clk>;
 			pinctrl-0 = <&uart0_pins>;
 			pinctrl-names = "default";
 			resets = <&reset 2>;
@@ -204,7 +227,7 @@
 			compatible = "esp,esp32s3-uart";
 			reg = <0x60010000 0x80>;
 			interrupts = <28 4 0>; /* UART1, external IRQ4, CPU0 */
-			clocks = <&serial_clk>;
+			clocks = <&uart1_clk>;
 			pinctrl-0 = <&uart1_pins>;
 			pinctrl-names = "default";
 			resets = <&reset 5>;
@@ -215,7 +238,7 @@
 			compatible = "esp,esp32s3-uart";
 			reg = <0x6002e000 0x80>;
 			interrupts = <29 5 0>; /* UART2, external IRQ5, CPU0 */
-			clocks = <&serial_clk>;
+			clocks = <&uart2_clk>;
 			pinctrl-0 = <&uart2_gpio_in>, <&uart2_gpio_out>, <&uart2_pins>;
 			pinctrl-names = "default", "default", "default";
 			resets = <&reset 41>;
@@ -250,6 +273,18 @@
 			};
 		};
 
+		clk_gpio0: clk_gpio@600c0018 {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32-clk-gpio";
+			reg = <0x600c0018 4>;
+			reg-names = "dat";
+		};
+		clk_gpio1: clk_gpio@600c001c {
+			#gpio-cells = <2>;
+			compatible = "esp,esp32-clk-gpio";
+			reg = <0x600c001c 4>;
+			reg-names = "dat";
+		};
 		reset: reset@600c0020 {
 			#reset-cells = <1>;
 			compatible = "esp,esp32-reset";
