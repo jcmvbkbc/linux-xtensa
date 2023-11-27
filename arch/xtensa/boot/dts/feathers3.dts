@@ -35,10 +35,6 @@
     };
 };
 
-&chosen {
-    bootargs = "earlycon=esp32s3acm,mmio32,0x60038000 console=ttyACM1 debug rw root=mtd:rootfs no_hash_pointers";
-};
-
 &iomux {
 	i2c0_pins: i2c0_pins {
 		pinctrl-single,pins = <
