@@ -64,6 +64,13 @@
 			clocks = <&clk 2>;
 			enable-gpios = <&clk_gpio0 16 0>;
 		};
+
+		gdma_clk: gdma_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 2>;
+			enable-gpios = <&clk_gpio1 6 0>;
+		};
 	};
 
 	pic: pic {
@@ -174,6 +181,8 @@
 			compatible = "esp,esp32s3-spi";
 			reg = <0x60024000 0x100>;
 			interrupts = <21 9 0>; /* SPI2, external IRQ9, CPU0 */
+			//dmas = <&gdma 0>, <&gdma 0>;
+			//dma-names = "rx", "tx";
 			clocks = <&spi2_clk>;
 			resets = <&reset 6>;
 			reset-names = "reset";
@@ -187,6 +196,8 @@
 			compatible = "esp,esp32s3-spi";
 			reg = <0x60025000 0x100>;
 			interrupts = <22 12 0>; /* SPI3, external IRQ12, CPU0 */
+			dmas = <&gdma 1>, <&gdma 1>;
+			dma-names = "rx", "tx";
 			clocks = <&spi3_clk>;
 			resets = <&reset 16>;
 			reset-names = "reset";
@@ -216,6 +227,15 @@
 			resets = <&reset 42>;
 			reset-names = "reset";
 			wakeup-source;
+			status = "disabled";
+		};
+
+		gdma: dma@6003f000 {
+			#dma-cells = <1>;
+			compatible = "esp,esp32s3-gdma";
+			reg = <0x6003f000 0x1000>;
+			clocks = <&gdma_clk>;
+			resets = <&reset 38>;
 			status = "disabled";
 		};
 

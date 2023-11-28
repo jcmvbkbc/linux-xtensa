@@ -71,6 +71,10 @@
 	status = "ok";
 };
 
+&gdma {
+	status = "ok";
+};
+
 &ipc {
 	wifi@1 {
 		compatible = "esp,esp32-wifi-shmem";

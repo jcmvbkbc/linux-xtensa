@@ -3,6 +3,7 @@
 #include <linux/bitfield.h>
 #include <linux/bits.h>
 #include <linux/clk.h>
+#include <linux/dmaengine.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -96,6 +97,7 @@ struct esp32_spi {
 	void __iomem *regs;		/* virt. address of control registers */
 	struct clk *clk;		/* bus clock */
 	u32 speed_hz;			/* bus speed configured in SPI_CLOCK_REG */
+	struct spi_controller *ctrl;
 	struct completion done;		/* wake-up from interrupt */
 };
 
@@ -265,25 +267,25 @@ static irqreturn_t esp32_spi_irq(int irq, void *dev_id)
 
 static void esp32_spi_wait(struct esp32_spi *spi)
 {
+#if 0
+	reinit_completion(&spi->done);
+	esp32_spi_write(spi, SPI_DMA_INT_ENA_REG, SPI_TRANS_DONE_INT);
+	wait_for_completion(&spi->done);
+	esp32_spi_write(spi, SPI_DMA_INT_CLR_REG, SPI_TRANS_DONE_INT);
+#else
 	esp32_spi_wait_bit(spi, SPI_USR);
 	if (esp32_spi_read(spi, SPI_DMA_INT_RAW_REG) & SPI_TRANS_DONE_INT) {
 		esp32_spi_write(spi, SPI_DMA_INT_CLR_REG, SPI_TRANS_DONE_INT);
 	} else {
 		WARN_ONCE(1, "wait complete, but no SPI_TRANS_DONE_INT\n");
 	}
-#if 0
-		reinit_completion(&spi->done);
-		esp32_spi_write(spi, SPI_DMA_INT_ENA_REG, SPI_TRANS_DONE_INT);
-		wait_for_completion(&spi->done);
-		esp32_spi_write(spi, SPI_DMA_INT_CLR_REG, SPI_TRANS_DONE_INT);
 #endif
 }
 
-static int esp32_spi_transfer_one(struct spi_controller *host,
-				  struct spi_device *device,
-				  struct spi_transfer *t)
+static int esp32_spi_transfer_one_cpu(struct esp32_spi *spi,
+				      struct spi_device *device,
+				      struct spi_transfer *t)
 {
-	struct esp32_spi *spi = spi_controller_get_devdata(host);
 	const u8 *tx_ptr = t->tx_buf;
 	u8 *rx_ptr = t->rx_buf;
 	unsigned int remaining_words = t->len;
@@ -295,15 +297,17 @@ static int esp32_spi_transfer_one(struct spi_controller *host,
 
 		esp32_spi_prepare_transfer(spi, device, t, n_words);
 
-		if (n32)
-			memcpy_toio(spi->regs + SPI_W0_REG, tx_ptr, n32);
-		if (r32) {
-			u32 w = 0;
+		if (tx_ptr) {
+			if (n32)
+				memcpy_toio(spi->regs + SPI_W0_REG, tx_ptr, n32);
+			if (r32) {
+				u32 w = 0;
 
-			memcpy(&w, tx_ptr + n32, r32);
-			memcpy_toio(spi->regs + SPI_W0_REG + n32, &w, 4);
+				memcpy(&w, tx_ptr + n32, r32);
+				memcpy_toio(spi->regs + SPI_W0_REG + n32, &w, 4);
+			}
+			tx_ptr += n_words;
 		}
-		tx_ptr += n_words;
 
 		esp32_spi_start_transfer(spi);
 		esp32_spi_wait(spi);
@@ -325,6 +329,90 @@ static int esp32_spi_transfer_one(struct spi_controller *host,
 	return 0;
 }
 
+static int esp32_spi_transfer_one_dma(struct esp32_spi *spi,
+				      struct spi_device *device,
+				      struct spi_transfer *t)
+{
+	struct spi_controller *ctrl = spi->ctrl;
+	struct dma_async_tx_descriptor *tx_dma_desc = NULL;
+	struct dma_async_tx_descriptor *rx_dma_desc = NULL;
+
+	if (t->tx_buf && ctrl->dma_tx) {
+		struct dma_slave_config conf = {0};
+
+		dmaengine_slave_config(ctrl->dma_tx, &conf);
+		tx_dma_desc = dmaengine_prep_slave_sg(ctrl->dma_tx,
+						      t->tx_sg.sgl,
+						      t->tx_sg.nents,
+						      DMA_MEM_TO_DEV, 0);
+	}
+	if (t->rx_buf && ctrl->dma_rx) {
+		struct dma_slave_config conf = {0};
+
+		dmaengine_slave_config(ctrl->dma_rx, &conf);
+		rx_dma_desc = dmaengine_prep_slave_sg(ctrl->dma_rx,
+						      t->tx_sg.sgl,
+						      t->tx_sg.nents,
+						      DMA_DEV_TO_MEM, 0);
+	}
+
+	if ((t->tx_buf && ctrl->dma_tx && !tx_dma_desc) ||
+	    (t->rx_buf && ctrl->dma_rx && !rx_dma_desc))
+		goto dma_desc_error;
+
+	if (tx_dma_desc) {
+		if (dma_submit_error(dmaengine_submit(tx_dma_desc))) {
+			pr_err("tx DMA submit failed\n");
+			goto dma_desc_error;
+		}
+		dma_async_issue_pending(ctrl->dma_tx);
+	}
+	if (rx_dma_desc) {
+		if (dma_submit_error(dmaengine_submit(rx_dma_desc))) {
+			pr_err("rx DMA submit failed\n");
+			goto dma_submit_error;
+		}
+		dma_async_issue_pending(ctrl->dma_tx);
+	}
+
+dma_submit_error:
+	if (ctrl->dma_tx)
+		dmaengine_terminate_sync(ctrl->dma_tx);
+
+dma_desc_error:
+	pr_info("fallback to CPU transfer\n");
+
+	return 0;
+}
+
+static bool esp32_spi_can_dma(struct spi_controller *host,
+			      struct spi_device *device,
+			      struct spi_transfer *t)
+{
+	if (t->tx_buf) {
+		if (!host->dma_tx)
+			return false;
+	}
+	if (t->rx_buf) {
+		if (!host->dma_rx)
+			return false;
+	}
+	return t->len > ESP32_SPI_FIFO_SIZE;
+}
+
+static int esp32_spi_transfer_one(struct spi_controller *host,
+				  struct spi_device *device,
+				  struct spi_transfer *t)
+{
+	struct esp32_spi *spi = spi_controller_get_devdata(host);
+
+	if (esp32_spi_can_dma(host, device, t)) {
+		return esp32_spi_transfer_one_dma(spi, device, t);
+	} else {
+		return esp32_spi_transfer_one_cpu(spi, device, t);
+	}
+}
+
 static int esp32_spi_probe(struct platform_device *pdev)
 {
 	struct esp32_spi *spi;
@@ -341,6 +429,7 @@ static int esp32_spi_probe(struct platform_device *pdev)
 	}
 
 	spi = spi_controller_get_devdata(host);
+	spi->ctrl = host;
 	init_completion(&spi->done);
 	platform_set_drvdata(pdev, host);
 
@@ -379,6 +468,26 @@ static int esp32_spi_probe(struct platform_device *pdev)
 	rst = devm_reset_control_get(&pdev->dev, "reset");
 	if (!IS_ERR(rst))
 		reset_control_deassert(rst);
+
+	host->dma_tx = dma_request_chan(&pdev->dev, "tx");
+	if (IS_ERR(host->dma_tx)) {
+		if (PTR_ERR(host->dma_tx) == -EPROBE_DEFER) {
+			ret = -EPROBE_DEFER;
+			goto put_host;
+		}
+		host->dma_tx = NULL;
+	}
+
+	host->dma_rx = dma_request_chan(&pdev->dev, "rx");
+	if (IS_ERR(host->dma_rx)) {
+		if (PTR_ERR(host->dma_rx) == -EPROBE_DEFER) {
+			ret = -EPROBE_DEFER;
+			goto put_host;
+		}
+		host->dma_rx = NULL;
+	}
+	if (host->dma_tx || host->dma_rx)
+		host->can_dma = esp32_spi_can_dma;
 
 	/* Define our host */
 	host->dev.of_node = np;
