@@ -218,6 +218,13 @@ config COMMON_CLK_EN7523
 	  This driver provides the fixed clocks and gates present on Airoha
 	  ARM silicon.
 
+config COMMON_CLK_ESP32S3
+	bool "Clock driver for Espressif ESP32S3 SoC system clocks"
+	depends on OF
+	depends on XTENSA_PLATFORM_ESP32 || COMPILE_TEST
+	help
+	  This driver provides the XTAL, CPU and APB clocks on esp32s3.
+
 config COMMON_CLK_FSL_FLEXSPI
 	tristate "Clock driver for FlexSPI on Layerscape SoCs"
 	depends on ARCH_LAYERSCAPE || COMPILE_TEST
