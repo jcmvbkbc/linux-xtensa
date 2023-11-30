@@ -24,7 +24,7 @@
 		cpu@0 {
 			compatible = "cdns,xtensa-cpu";
 			reg = <0>;
-			clocks = <&osc>;
+			clocks = <&clk 1>;
 		};
 	};
 
@@ -33,51 +33,35 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		osc: clk160 {
-			#clock-cells = <0>;
-			compatible = "fixed-clock";
-			clock-frequency = <160000000>;
-		};
-		apb: clk80 {
-			#clock-cells = <0>;
-			compatible = "fixed-clock";
-			clock-frequency = <80000000>;
-		};
-		serial_clk: serial_clk {
-			#clock-cells = <0>;
-			compatible = "fixed-clock";
-			clock-frequency = <40000000>;
-		};
-
 		uart0_clk: uart0_clk {
 			#clock-cells = <0>;
 			compatible = "gpio-gate-clock";
-			clocks = <&serial_clk>;
+			clocks = <&clk 0>;
 			enable-gpios = <&clk_gpio0 2 0>;
 		};
 		uart1_clk: uart1_clk {
 			#clock-cells = <0>;
 			compatible = "gpio-gate-clock";
-			clocks = <&serial_clk>;
+			clocks = <&clk 0>;
 			enable-gpios = <&clk_gpio0 5 0>;
 		};
 		uart2_clk: uart2_clk {
 			#clock-cells = <0>;
 			compatible = "gpio-gate-clock";
-			clocks = <&serial_clk>;
+			clocks = <&clk 0>;
 			enable-gpios = <&clk_gpio1 9 0>;
 		};
 
 		spi2_clk: spi2_clk {
 			#clock-cells = <0>;
 			compatible = "gpio-gate-clock";
-			clocks = <&apb>;
+			clocks = <&clk 2>;
 			enable-gpios = <&clk_gpio0 6 0>;
 		};
 		spi3_clk: spi3_clk {
 			#clock-cells = <0>;
 			compatible = "gpio-gate-clock";
-			clocks = <&apb>;
+			clocks = <&clk 2>;
 			enable-gpios = <&clk_gpio0 16 0>;
 		};
 	};
@@ -267,6 +251,13 @@
 			};
 		};
 
+		clk: clk@600c0010 {
+			compatible = "esp,esp32s3-core-clock";
+			reg = <0x600c0010 4
+			       0x600c0060 4>;
+			#clock-cells = <1>;
+			/* clock-output-names = "xtal_clk", "cpu_clk", "apb_clk"; */
+		};
 		clk_gpio0: clk_gpio@600c0018 {
 			#gpio-cells = <2>;
 			compatible = "esp,esp32-clk-gpio";
