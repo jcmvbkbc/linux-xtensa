@@ -197,6 +197,14 @@ config EP93XX_DMA
 	help
 	  Enable support for the Cirrus Logic EP93xx M2P/M2M DMA controller.
 
+config ESP32S3_GDMA
+	bool "ESP32S3 GDMA support"
+	depends on XTENSA_PLATFORM_ESP32 || COMPILE_TEST
+	select DMA_ENGINE
+	select DMA_VIRTUAL_CHANNELS
+	help
+	  Enable support for the Espressif esp32s3 GDMA controller.
+
 config FSL_DMA
 	tristate "Freescale Elo series DMA support"
 	depends on FSL_SOC
