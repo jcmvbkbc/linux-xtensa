@@ -15,7 +15,10 @@
 
 #include "virt-dma.h"
 
-#define ESP32_GDMA_MAX_SIZE	32768
+#define ESP32_GDMA_MAX_SIZE	4095
+#define ESP32_GDMA_MIN_BURST	16
+#define ESP32_GDMA_MAX_BURST	64
+
 #define ESP32_GDMA_CHANNELS	10
 
 #define GDMA_CONF0_CH_REG		0x00
@@ -108,6 +111,55 @@ struct esp32_dma_device {
 	struct esp32_dma_chan chan[ESP32_GDMA_CHANNELS];
 };
 
+static struct esp32_dma_chan *to_esp32_dma_chan(struct dma_chan *c)
+{
+	return container_of(c, struct esp32_dma_chan, vc.chan);
+}
+
+#if 0
+static struct esp32_dma_desc *to_esp32_dma_desc(struct virt_dma_desc *vdesc)
+{
+	return container_of(vdesc, struct esp32_dma_desc, vdesc);
+}
+#endif
+
+static struct device *chan2dev(struct esp32_dma_chan *chan)
+{
+	return &chan->vc.chan.dev->device;
+}
+
+static void esp32_dma_issue_pending(struct dma_chan *c)
+{
+#if 0
+	struct esp32_dma_chan *chan = to_esp32_dma_chan(c);
+	unsigned long flags;
+
+	spin_lock_irqsave(&chan->vc.lock, flags);
+	if (vchan_issue_pending(&chan->vc) && !chan->desc && !chan->busy) {
+		dev_dbg(chan2dev(chan), "vchan %pK: issued\n", &chan->vc);
+		stm32_dma_start_transfer(chan);
+
+	}
+	spin_unlock_irqrestore(&chan->vc.lock, flags);
+#endif
+}
+
+static struct dma_async_tx_descriptor *
+esp32_dma_prep_dma_cyclic(struct dma_chan *c, dma_addr_t buf_addr,
+			  size_t buf_len, size_t period_len,
+			  enum dma_transfer_direction direction,
+			  unsigned long flags)
+{
+	return NULL;
+}
+
+static enum dma_status esp32_dma_tx_status(struct dma_chan *c,
+					   dma_cookie_t cookie,
+					   struct dma_tx_state *state)
+{
+	return DMA_ERROR;
+}
+
 static struct dma_chan *esp32_dma_of_xlate(struct of_phandle_args *dma_spec,
 					   struct of_dma *ofdma)
 {
@@ -189,37 +241,38 @@ static int esp32_dma_probe(struct platform_device *pdev)
 
 	dma_set_max_seg_size(&pdev->dev, ESP32_GDMA_MAX_SIZE);
 
-	dd->dev = &pdev->dev;
-
+	INIT_LIST_HEAD(&dd->channels);
 	dma_cap_set(DMA_SLAVE, dd->cap_mask);
 	dma_cap_set(DMA_PRIVATE, dd->cap_mask);
-	dma_cap_set(DMA_CYCLIC, dd->cap_mask);
-	dd->directions = BIT(DMA_DEV_TO_MEM) | BIT(DMA_MEM_TO_DEV);
-#if 0
-	dd->device_alloc_chan_resources = esp32_dma_alloc_chan_resources;
-	dd->device_free_chan_resources = esp32_dma_free_chan_resources;
-	dd->device_tx_status = esp32_dma_tx_status;
-	dd->device_issue_pending = esp32_dma_issue_pending;
-	dd->device_prep_slave_sg = esp32_dma_prep_slave_sg;
+	//dma_cap_set(DMA_CYCLIC, dd->cap_mask);
 	dd->device_prep_dma_cyclic = esp32_dma_prep_dma_cyclic;
-	dd->device_config = esp32_dma_slave_config;
-	dd->device_pause = esp32_dma_pause;
-	dd->device_resume = esp32_dma_resume;
-	dd->device_terminate_all = esp32_dma_terminate_all;
-	dd->device_synchronize = esp32_dma_synchronize;
 	dd->src_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_1_BYTE) |
 		BIT(DMA_SLAVE_BUSWIDTH_2_BYTES) |
 		BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
 	dd->dst_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_1_BYTE) |
 		BIT(DMA_SLAVE_BUSWIDTH_2_BYTES) |
 		BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
-	dd->residue_granularity = DMA_RESIDUE_GRANULARITY_BURST;
+	dd->directions = BIT(DMA_DEV_TO_MEM) | BIT(DMA_MEM_TO_DEV);
+	dd->residue_granularity = DMA_RESIDUE_GRANULARITY_SEGMENT;
+	dd->dev = &pdev->dev;
+
+	dd->min_burst = ESP32_GDMA_MIN_BURST;
+	dd->max_burst = ESP32_GDMA_MAX_BURST;
+
+	dd->device_tx_status = esp32_dma_tx_status;
+	dd->device_issue_pending = esp32_dma_issue_pending;
+#if 0
+	dd->device_alloc_chan_resources = esp32_dma_alloc_chan_resources;
+	dd->device_free_chan_resources = esp32_dma_free_chan_resources;
+	dd->device_prep_slave_sg = esp32_dma_prep_slave_sg;
+	dd->device_config = esp32_dma_slave_config;
+	dd->device_pause = esp32_dma_pause;
+	dd->device_resume = esp32_dma_resume;
+	dd->device_terminate_all = esp32_dma_terminate_all;
+	dd->device_synchronize = esp32_dma_synchronize;
 	dd->copy_align = DMAENGINE_ALIGN_32_BYTES;
-	dd->max_burst = STM32_DMA_MAX_BURST;
-	dd->max_sg_burst = STM32_DMA_ALIGNED_MAX_DATA_ITEMS;
 	dd->descriptor_reuse = true;
 #endif
-	INIT_LIST_HEAD(&dd->channels);
 
 	for (i = 0; i < ESP32_GDMA_CHANNELS; ++i) {
 		chan = &dmadev->chan[i];
