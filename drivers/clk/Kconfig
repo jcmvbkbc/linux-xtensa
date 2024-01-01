@@ -226,6 +226,14 @@ config COMMON_CLK_EP93XX
 	help
 	  This driver supports the SoC clocks on the Cirrus Logic ep93xx.
 
+config COMMON_CLK_ESP32
+	bool "Clock driver for Espressif ESP32 SoC system clocks"
+	depends on OF
+	depends on XTENSA_PLATFORM_ESP32 || COMPILE_TEST
+	help
+	  This driver provides the XTL, RC_FAST, APLL, CPU and APB clocks
+	  on esp32.
+
 config COMMON_CLK_ESP32S3
 	bool "Clock driver for Espressif ESP32S3 SoC system clocks"
 	depends on OF
