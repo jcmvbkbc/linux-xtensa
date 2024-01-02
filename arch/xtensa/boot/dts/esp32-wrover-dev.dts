@@ -40,6 +40,21 @@
 
 		pinctrl-0 = <&i2c0_pins>;
 		pinctrl-names = "default";
+
+		ov2640: camera@30 {
+			compatible = "ovti,ov2640";
+			reg = <0x30>;
+			resetb-gpios = <&gpio0 2 GPIO_ACTIVE_LOW>;
+			pwdn-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+			clocks = <&clk 1>;
+			clock-names = "xvclk";
+
+			port {
+				ov2640_0: endpoint {
+				//	remote-endpoint = <&isi_0>;
+				};
+			};
+		};
 	};
 };
 
