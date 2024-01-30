@@ -51,6 +51,15 @@ define allow-override
     $(eval $(1) = $(2)))
 endef
 
+# When a Makefile overrides a variable and exports it for the nested $(MAKE)
+# invocations to use its modified value, it must remove that variable definition
+# from the MAKEOVERRIDES variable, otherwise the original definition from the
+# MAKEOVERRIDES takes precedence over the exported value.
+drop-var-from-overrides = $(eval $(drop-var-from-overrides-code))
+define drop-var-from-overrides-code
+MAKEOVERRIDES := $(subst \-,\\,$(subst \_,\ ,$(filter-out $(1)=%,$(subst \ ,\_,$(subst \\,\-,$(MAKEOVERRIDES))))))
+endef
+
 ifneq ($(LLVM),)
 ifneq ($(filter %/,$(LLVM)),)
 LLVM_PREFIX := $(LLVM)
