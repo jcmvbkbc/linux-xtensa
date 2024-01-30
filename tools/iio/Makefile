@@ -20,6 +20,7 @@ ALL_PROGRAMS := $(patsubst %,$(OUTPUT)%,$(ALL_TARGETS))
 all: $(ALL_PROGRAMS)
 
 export srctree OUTPUT CC LD CFLAGS
+$(call drop-var-from-overrides,CFLAGS)
 include $(srctree)/tools/build/Makefile.include
 
 #
