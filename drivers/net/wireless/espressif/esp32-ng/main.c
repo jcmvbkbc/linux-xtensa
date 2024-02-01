@@ -305,7 +305,9 @@ int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8 len)
 			ret = process_fw_data((struct fw_data *)(pos + 2), tag_len);
 			break;
 		case ESP_BOOTUP_SPI_CLK_MHZ:
+#ifdef CONFIG_ESP32_WIFI_SPI
 			ret = esp_adjust_spi_clock(adapter, *(pos + 2));
+#endif
 			break;
 		default:
 			esp_warn("Unsupported tag=%x in bootup event\n", *pos);
