@@ -34,6 +34,14 @@
 	};
 };
 
+&gpio_out_mux {
+	status = "ok";
+	spi2_gpio_out: spi2_gpio_out {
+		pinctrl-single,pins = <
+			GPIO_FUNC_OUT_SEL(9) 111>;		/* SPI2 CS1: GPIO9, signal 111 */
+	};
+};
+
 &iomux {
 	status = "ok";
 
@@ -48,6 +56,7 @@
 	};
 	spi2_pins: spi2_pins {
 		pinctrl-single,pins = <
+			PIN(9) (FUN0_20MA)			/* CS1 */
 			PIN(10) (FUN_SEL(4) | FUN_DRV_20MA)	/* CS0 */
 			PIN(11) (FUN_SEL(4) | FUN_DRV_40MA)	/* MOSI */
 			PIN(12) (FUN_SEL(4) | FUN_DRV_40MA)	/* SCK */
@@ -71,13 +80,17 @@
 };
 
 &spi2 {
-	pinctrl-0 = <&spi2_pins>;
+	pinctrl-0 = <&spi2_pins &spi2_gpio_out>;
 	pinctrl-names = "default";
 	status = "ok";
 
 	mmc_spi@0 {
 		compatible = "mmc-spi-slot";
 		reg = <0>;
+	};
+	mmc_spi@1 {
+		compatible = "mmc-spi-slot";
+		reg = <1>;
 	};
 };
 
