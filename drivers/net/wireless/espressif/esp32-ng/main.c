@@ -747,6 +747,10 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 		} else if (payload_header->packet_type == PACKET_TYPE_EVENT) {
 			process_cmd_event(priv, skb);
 			dev_kfree_skb_any(skb);
+		} else {
+			pr_err("%s unrecognized payload_header->packet_type %d\n",
+			       __func__, payload_header->packet_type);
+			dev_kfree_skb_any(skb);
 		}
 
 	} else if (payload_header->if_type == ESP_HCI_IF) {
