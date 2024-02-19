@@ -781,12 +781,13 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	} else if (payload_header->if_type == ESP_INTERNAL_IF) {
 
 		/* Queue event skb for processing in events workqueue */
-		skb_queue_tail(&adapter->events_skb_q, skb);
 
-		if (adapter->events_wq)
+		if (adapter->events_wq) {
+			skb_queue_tail(&adapter->events_skb_q, skb);
 			queue_work(adapter->events_wq, &adapter->events_work);
-		else
+		} else {
 			dev_kfree_skb_any(skb);
+		}
 
 	} else if (payload_header->if_type == ESP_TEST_IF) {
 #if TEST_RAW_TP
