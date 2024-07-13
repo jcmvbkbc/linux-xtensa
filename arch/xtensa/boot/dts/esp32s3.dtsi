@@ -64,6 +64,13 @@
 			clocks = <&clk 2>;
 			enable-gpios = <&clk_gpio0 16 0>;
 		};
+
+		usb_clk: usb_clk {
+			#clock-cells = <0>;
+			compatible = "gpio-gate-clock";
+			clocks = <&clk 2>;
+			enable-gpios = <&clk_gpio0 23 0>;
+		};
 	};
 
 	pic: pic {
@@ -223,6 +230,21 @@
 			interrupts = <96 3 0>; /* USB device, external IRQ3, CPU0 */
 			resets = <&reset 42>;
 			reset-names = "reset";
+			status = "disabled";
+		};
+
+		usb: usb@60080000 {
+			compatible = "esp,esp32s3-usb", "snps,dwc2";
+			reg = <0x60080000 0x40000>;
+			interrupts = <38 13 0>; /* USB, external IRQ13, CPU0 */
+			clocks = <&usb_clk>;
+			clock-names = "otg";
+			resets = <&reset 23>;
+			reset-names = "dwc2";
+
+			g-rx-fifo-size = <64>;
+			g-np-tx-fifo-size = <16>;
+			g-tx-fifo-size = <64 16 16 16>;
 			status = "disabled";
 		};
 

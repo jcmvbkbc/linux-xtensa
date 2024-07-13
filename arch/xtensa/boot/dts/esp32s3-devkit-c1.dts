@@ -24,6 +24,34 @@
 	};
 };
 
+&gpio_in_mux {
+	status = "ok";
+	usb_device_in: usb_device_in {
+		pinctrl-single,pins = <
+			GPIO_FUNC_IN_SEL(58) 0x38		/* usb_otg_iddig_in: fixed '1' */
+			GPIO_FUNC_IN_SEL(59) 0x3c		/* usb_srp_avalid_in: fixed '0' */
+			GPIO_FUNC_IN_SEL(60) 0x38		/* usb_srp_bvalid_in: fixed '1' */
+			GPIO_FUNC_IN_SEL(61) 0x38>;		/* usb_otg_vbusvalid_in: fixed '1' */
+	};
+
+	usb_host_in: usb_host_in {
+		pinctrl-single,pins = <
+			GPIO_FUNC_IN_SEL(58) 0x3c		/* usb_otg_iddig_in: fixed '0' */
+			GPIO_FUNC_IN_SEL(59) 0x38		/* usb_srp_avalid_in: fixed '1' */
+			GPIO_FUNC_IN_SEL(60) 0x3c		/* usb_srp_bvalid_in: fixed '0' */
+			GPIO_FUNC_IN_SEL(61) 0x38>;		/* usb_otg_vbusvalid_in: fixed '1' */
+	};
+};
+
+&rtc_iomux {
+	status = "ok";
+	usb_rtc_pins: usb_rtc_pins {
+		pinctrl-single,pins = <
+			PIN(19) RTC_MUX_SEL			/* USB_D- */
+			PIN(20) RTC_MUX_SEL>;			/* USB_D+ */
+	};
+};
+
 &iomux {
 	status = "ok";
 
@@ -43,6 +71,11 @@
 		pinctrl-single,pins = <
 			PIN(43) FUN0_20MA			/* U0TXD */
 			PIN(44) FUN0_20MA_IE_WPU>;		/* U0RXD */
+	};
+	usb_pins: usb_pins {
+		pinctrl-single,pins = <
+			PIN(19) MUX_SLP_SEL			/* USB_D- */
+			PIN(20) MUX_SLP_SEL>;			/* USB_D+ */
 	};
 };
 
@@ -68,6 +101,18 @@
 };
 
 &acm {
+	status = "ok";
+};
+
+&usb {
+#if 1
+	dr_mode = "host";
+	pinctrl-0 = <&usb_host_in &usb_rtc_pins>;
+#else
+	dr_mode = "peripheral";
+	pinctrl-0 = <&usb_device_in &usb_rtc_pins>;
+#endif
+	pinctrl-names = "default";
 	status = "ok";
 };
 
