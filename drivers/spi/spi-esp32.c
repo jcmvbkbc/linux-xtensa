@@ -221,8 +221,10 @@ static void esp32_spi_prepare_transfer(struct esp32_spi *spi,
 	}
 
 	/* SPI_MS_DLEN_REG */
+	WARN_ON_ONCE(t->bits_per_word == 0);
 	esp32_spi_write(spi, SPI_MS_DLEN_REG,
-			FIELD_PREP(SPI_MS_DATA_BITLEN, n_words * 8 - 1));
+			FIELD_PREP(SPI_MS_DATA_BITLEN,
+				   t->bits_per_word * n_words - 1));
 
 	/* SPI_USER_REG */
 	cr = SPI_CS_HOLD | SPI_CS_SETUP | SPI_DOUTDIN;
@@ -388,7 +390,7 @@ static int esp32_spi_probe(struct platform_device *pdev)
 		SPI_CS_HIGH | SPI_LSB_FIRST |
 		SPI_TX_DUAL | SPI_TX_QUAD |
 		SPI_RX_DUAL | SPI_RX_QUAD;
-	host->bits_per_word_mask = SPI_BPW_MASK(8);
+	host->bits_per_word_mask = SPI_BPW_RANGE_MASK(1, 32);
 	host->prepare_message = esp32_spi_prepare_message;
 	host->set_cs = esp32_spi_set_cs;
 	host->transfer_one = esp32_spi_transfer_one;
