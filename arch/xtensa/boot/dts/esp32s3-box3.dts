@@ -1,0 +1,177 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include "gpio-esp32.h"
+#include "esp32s3.dtsi"
+
+/ {
+	chosen {
+		bootargs = "console=tty0 rw root=mtd:rootfs no_hash_pointers ";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x3d000000 0x01000000>;
+	};
+
+	i2c0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "i2c-gpio";
+
+		sda-gpios = <&gpio0 8  (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio0 18 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+
+		pinctrl-0 = <&i2c0_pins>;
+		pinctrl-names = "default";
+
+		touch_panel@5d {
+			compatible = "goodix,gt911";
+			reg = <0x5d>;
+			interrupt-parent = <&gpio0>;
+			interrupts = <3 IRQ_TYPE_EDGE_RISING>;
+			irq-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+
+			pinctrl-0 = <&touch_panel_pins>;
+			pinctrl-names = "default";
+		};
+	};
+};
+
+&gpio_in_mux {
+	status = "ok";
+	usb_device_in: usb_device_in {
+		pinctrl-single,pins = <
+			GPIO_FUNC_IN_SEL(58) 0x38		/* usb_otg_iddig_in: fixed '1' */
+			GPIO_FUNC_IN_SEL(59) 0x3c		/* usb_srp_avalid_in: fixed '0' */
+			GPIO_FUNC_IN_SEL(60) 0x38		/* usb_srp_bvalid_in: fixed '1' */
+			GPIO_FUNC_IN_SEL(61) 0x38>;		/* usb_otg_vbusvalid_in: fixed '1' */
+	};
+
+	usb_host_in: usb_host_in {
+		pinctrl-single,pins = <
+			GPIO_FUNC_IN_SEL(58) 0x3c		/* usb_otg_iddig_in: fixed '0' */
+			GPIO_FUNC_IN_SEL(59) 0x38		/* usb_srp_avalid_in: fixed '1' */
+			GPIO_FUNC_IN_SEL(60) 0x3c		/* usb_srp_bvalid_in: fixed '0' */
+			GPIO_FUNC_IN_SEL(61) 0x38>;		/* usb_otg_vbusvalid_in: fixed '1' */
+	};
+};
+
+&gpio_out_mux {
+	status = "ok";
+	spi2_gpio_out: spi2_gpio_out {
+		pinctrl-single,pins = <
+			GPIO_FUNC_OUT_SEL(5) 110		/* SPI2 CS0:  GPIO5, signal 110 */
+			GPIO_FUNC_OUT_SEL(6) 103		/* SPI2 MOSI: GPIO6, signal 103 */
+			GPIO_FUNC_OUT_SEL(7) 101>;		/* SPI2 SCK:  GPIO7, signal 101 */
+	};
+};
+
+&rtc_iomux {
+	status = "ok";
+	usb_rtc_pins: usb_rtc_pins {
+		pinctrl-single,pins = <
+			PIN(19) RTC_MUX_SEL			/* USB_D- */
+			PIN(20) RTC_MUX_SEL>;			/* USB_D+ */
+	};
+};
+
+&iomux {
+	status = "ok";
+
+	spi2_pins: spi2_pins {
+		pinctrl-single,pins = <
+			PIN(5) (FUN_SEL(0) | FUN_DRV_20MA)	/* CS0 */
+			PIN(6) (FUN_SEL(0) | FUN_DRV_40MA)	/* MOSI */
+			PIN(7) (FUN_SEL(0) | FUN_DRV_40MA)>;	/* SCK */
+	};
+	i2c0_pins: i2c0_pins {
+		pinctrl-single,pins = <
+			PIN(8)  FUN0_20MA_IE_WPU		/* SDA */
+			PIN(18) FUN0_20MA_IE_WPU>;		/* SCL */
+	};
+	uart0_pins: uart0_pins {
+		pinctrl-single,pins = <
+			PIN(43) FUN0_20MA			/* U0TXD */
+			PIN(44) FUN0_20MA_IE_WPU>;		/* U0RXD */
+	};
+	usb_pins: usb_pins {
+		pinctrl-single,pins = <
+			PIN(19) MUX_SLP_SEL			/* USB_D- */
+			PIN(20) MUX_SLP_SEL>;			/* USB_D+ */
+	};
+	lcd_pins: lcd_pins {
+		pinctrl-single,pins = <
+			PIN(4) FUN0_20MA			/* LCD_DC */
+			PIN(47) (FUN_SEL(1) | FUN_DRV_20MA)	/* LCD_CTRL */
+			PIN(48) (FUN_SEL(1) | FUN_DRV_20MA)>;	/* LCD_RST */
+	};
+	touch_panel_pins: touch_panel_pins {
+		pinctrl-single,pins = <
+			PIN(3)  FUN0_20MA_IE>;			/* INT */
+	};
+};
+
+&gpio0 {
+	status = "ok";
+};
+
+&uart0 {
+	pinctrl-0 = <&uart0_pins>;
+	pinctrl-names = "default";
+	status = "ok";
+};
+
+&spi2 {
+	pinctrl-0 = <&spi2_pins &spi2_gpio_out>;
+	pinctrl-names = "default";
+	status = "ok";
+
+	lcd_spi@0 {
+		compatible = "ilitek,ili9341";
+		reg = <0>;
+		spi-max-frequency = <15000000>;
+		buswidth = <8>;
+		dc-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+		led-gpios = <&gpio0 47 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio0 48 GPIO_ACTIVE_HIGH>;
+		width = <320>;
+		height = <240>;
+		bgr;
+
+		pinctrl-0 = <&lcd_pins>;
+		pinctrl-names = "default";
+	};
+};
+
+&acm {
+	status = "ok";
+};
+
+&usb_phy {
+	status = "ok";
+};
+
+&usb {
+#if 1
+	dr_mode = "host";
+	pinctrl-0 = <&usb_host_in &usb_rtc_pins>;
+#else
+	dr_mode = "peripheral";
+	pinctrl-0 = <&usb_device_in &usb_rtc_pins>;
+#endif
+	pinctrl-names = "default";
+	status = "ok";
+};
+
+&ipc {
+	wifi@1 {
+		compatible = "esp,esp32-wifi-shmem";
+		reg = <1>;
+	};
+};
+
+&intc {
+	reg = <0x600c2800 0x800>;
+};
