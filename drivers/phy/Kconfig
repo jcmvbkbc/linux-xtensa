@@ -101,6 +101,14 @@ config PHY_NXP_PTN3222
 	  schemes. It supports all three USB 2.0 data rates: Low Speed, Full
 	  Speed and High Speed.
 
+config PHY_ESP32S3_USB
+	tristate "ESP32S3 USB PHY driver"
+	depends on XTENSA_PLATFORM_ESP32 || COMPILE_TEST
+	depends on OF
+	select GENERIC_PHY
+	help
+	  Enable this to support built-in USB2.0 PHY on the ESP32S3.
+
 source "drivers/phy/allwinner/Kconfig"
 source "drivers/phy/amlogic/Kconfig"
 source "drivers/phy/broadcom/Kconfig"
