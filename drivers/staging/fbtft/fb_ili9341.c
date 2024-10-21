@@ -87,7 +87,7 @@ static int set_var(struct fbtft_par *par)
 	switch (par->info->var.rotate) {
 	case 0:
 		write_reg(par, MIPI_DCS_SET_ADDRESS_MODE,
-			  MEM_X | (par->bgr << MEM_BGR));
+			  MEM_Y | MEM_X | (par->bgr << MEM_BGR));
 		break;
 	case 270:
 		write_reg(par, MIPI_DCS_SET_ADDRESS_MODE,
