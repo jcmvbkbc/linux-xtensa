@@ -65,13 +65,13 @@ jiffies = jiffies_64;
   {									    \
     . = ALIGN(4);							    \
     sym ## _start = ABSOLUTE(.);		 			    \
-    *(section)								    \
+    KEEP(*(section))							    \
     sym ## _end = ABSOLUTE(.);						    \
   }
 
 #define SECTION_VECTOR2(section, addr)					    \
   . = addr;								    \
-  *(section)
+  KEEP(*(section))
 
 /*
  *  Mapping of input sections to output sections when linking.
@@ -161,7 +161,7 @@ SECTIONS
   {
     . = ALIGN(0x4);
     __tagtable_begin = .;
-    *(.taglist)
+    KEEP(*(.taglist))
     __tagtable_end = .;
 
     . = ALIGN(16);
