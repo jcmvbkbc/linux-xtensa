@@ -575,6 +575,7 @@ static int esp_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev
 
 static int esp_cfg80211_get_tx_power(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
+				     unsigned int link_id,
 				     int *dbm)
 {
 	struct esp_wifi_device *priv = NULL;
