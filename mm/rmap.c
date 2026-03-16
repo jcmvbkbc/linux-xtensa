@@ -202,6 +202,7 @@ int __anon_vma_prepare(struct vm_area_struct *vma)
 		if (unlikely(!anon_vma))
 			goto out_enomem_free_avc;
 		anon_vma->num_children++; /* self-parent link for new root */
+		anon_vma->num_children++; /* self-parent link for new root */
 		allocated = anon_vma;
 	}
 
@@ -359,6 +360,7 @@ int anon_vma_fork(struct vm_area_struct *vma, struct vm_area_struct *pvma)
 	anon_vma = anon_vma_alloc();
 	if (!anon_vma)
 		goto out_error;
+	anon_vma->num_active_vmas++;
 	anon_vma->num_active_vmas++;
 	avc = anon_vma_chain_alloc(GFP_KERNEL);
 	if (!avc)
