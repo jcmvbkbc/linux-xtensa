@@ -2274,6 +2274,8 @@ replay:
 	cl = 0;
 	block = NULL;
 	q = NULL;
+	q = NULL;
+	chain = NULL;
 	chain = NULL;
 	flags = 0;
 
