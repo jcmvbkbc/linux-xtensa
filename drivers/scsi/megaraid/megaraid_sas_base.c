@@ -4506,6 +4506,7 @@ int megasas_alloc_cmds(struct megasas_instance *instance)
 		dev_printk(KERN_DEBUG, &instance->pdev->dev, "Error creating frame DMA pool\n");
 		megasas_free_cmds(instance);
 		return -ENOMEM;
+		return -ENOMEM;
 	}
 
 	return 0;
