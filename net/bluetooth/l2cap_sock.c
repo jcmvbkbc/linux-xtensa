@@ -46,6 +46,7 @@ static struct sock *l2cap_sock_alloc(struct net *net, struct socket *sock,
 				     int proto, gfp_t prio, int kern,
 				     struct l2cap_chan *chan);
 static void l2cap_sock_cleanup_listen(struct sock *parent);
+static void l2cap_sock_cleanup_listen(struct sock *parent);
 
 bool l2cap_is_socket(struct socket *sock)
 {
