@@ -400,5 +400,5 @@ static void __exit simdisk_exit(void)
 module_exit(simdisk_exit);
 
 MODULE_ALIAS_BLOCKDEV_MAJOR(SIMDISK_MAJOR);
-
+MODULE_DESCRIPTION("Xtensa simulated block device");
 MODULE_LICENSE("GPL");
